@@ -27,11 +27,12 @@ COUNCIL_MODELS = [
     "nex-agi/deepseek-v3.1-nex-n1:free",
     "openai/gpt-5.2",
     "google/gemini-3-pro-preview"
-
+ #   "google/gemini-3-flash-preview"
 ]
 
 # Chairman model - synthesizes final response
 CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
+#CHAIRMAN_MODEL = "google/gemini-3-flash-preview"
 
 # OpenRouter API endpoint
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
