@@ -25,7 +25,6 @@ COUNCIL_MODELS = [
     "xiaomi/mimo-v2-flash:free",
     "mistralai/devstral-2512:free",
     "nex-agi/deepseek-v3.1-nex-n1:free",
-    "moonshotai/kimi-k2:free",
     "deepseek/deepseek-r1-0528:free"
 ]
 
