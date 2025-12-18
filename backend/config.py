@@ -25,11 +25,13 @@ COUNCIL_MODELS = [
     "xiaomi/mimo-v2-flash:free",
     "mistralai/devstral-2512:free",
     "nex-agi/deepseek-v3.1-nex-n1:free",
-    "deepseek/deepseek-r1-0528:free"
+    "openai/gpt-5.2",
+    "google/gemini-3-pro-preview"
+
 ]
 
 # Chairman model - synthesizes final response
-CHAIRMAN_MODEL = "mistralai/devstral-2512:free"
+CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
 
 # OpenRouter API endpoint
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
