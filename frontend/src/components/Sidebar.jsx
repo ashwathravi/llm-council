@@ -7,11 +7,29 @@ export default function Sidebar({
   onSelectConversation,
   onNewConversation,
 }) {
+  const [selectedFramework, setSelectedFramework] = useState('standard');
+
   return (
     <div className="sidebar">
       <div className="sidebar-header">
         <h1>LLM Council</h1>
-        <button className="new-conversation-btn" onClick={onNewConversation}>
+
+        <div className="framework-select-container">
+          <label htmlFor="framework-select">Council Mode:</label>
+          <select
+            id="framework-select"
+            value={selectedFramework}
+            onChange={(e) => setSelectedFramework(e.target.value)}
+            className="framework-select"
+          >
+            <option value="standard">Standard Council</option>
+            <option value="debate">Chain of Debate</option>
+            <option value="six_hats">Six Thinking Hats</option>
+            <option value="ensemble">Ensemble (Fast)</option>
+          </select>
+        </div>
+
+        <button className="new-conversation-btn" onClick={() => onNewConversation(selectedFramework)}>
           + New Conversation
         </button>
       </div>
@@ -23,9 +41,8 @@ export default function Sidebar({
           conversations.map((conv) => (
             <div
               key={conv.id}
-              className={`conversation-item ${
-                conv.id === currentConversationId ? 'active' : ''
-              }`}
+              className={`conversation-item ${conv.id === currentConversationId ? 'active' : ''
+                }`}
               onClick={() => onSelectConversation(conv.id)}
             >
               <div className="conversation-title">

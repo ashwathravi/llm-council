@@ -10,7 +10,12 @@ import json
 import asyncio
 
 from . import storage
-from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
+from .council import (
+    run_full_council, generate_conversation_title,
+    stage1_collect_responses, stage1_collect_responses_six_hats,
+    stage2_collect_rankings, stage2_collect_critiques,
+    stage3_synthesize_final, calculate_aggregate_rankings
+)
 
 app = FastAPI(title="LLM Council API")
 
@@ -26,7 +31,7 @@ app.add_middleware(
 
 class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
-    pass
+    framework: str = "standard"
 
 
 class SendMessageRequest(BaseModel):
@@ -39,6 +44,7 @@ class ConversationMetadata(BaseModel):
     id: str
     created_at: str
     title: str
+    framework: str = "standard"
     message_count: int
 
 
@@ -47,6 +53,7 @@ class Conversation(BaseModel):
     id: str
     created_at: str
     title: str
+    framework: str = "standard"
     messages: List[Dict[str, Any]]
 
 
@@ -66,7 +73,7 @@ async def list_conversations():
 async def create_conversation(request: CreateConversationRequest):
     """Create a new conversation."""
     conversation_id = str(uuid.uuid4())
-    conversation = storage.create_conversation(conversation_id)
+    conversation = storage.create_conversation(conversation_id, request.framework)
     return conversation
 
 
@@ -102,8 +109,10 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         storage.update_conversation_title(conversation_id, title)
 
     # Run the 3-stage council process
+    framework = conversation.get("framework", "standard")
     stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
-        request.content
+        request.content,
+        framework=framework
     )
 
     # Add assistant message with all stages
@@ -136,6 +145,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 
     # Check if this is the first message
     is_first_message = len(conversation["messages"]) == 0
+    framework = conversation.get("framework", "standard")
 
     async def event_generator():
         try:
@@ -149,18 +159,37 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 
             # Stage 1: Collect responses
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-            stage1_results = await stage1_collect_responses(request.content)
+            
+            if framework == "six_hats":
+                stage1_results = await stage1_collect_responses_six_hats(request.content)
+            else:
+                stage1_results = await stage1_collect_responses(request.content)
+                
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
-            # Stage 2: Collect rankings
+            # Stage 2: Collect rankings/critiques
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-            stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
-            aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
-            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
+            
+            if framework == "ensemble":
+                # Ensemble: Skip Stage 2
+                stage2_results = []
+                label_to_model = {f"Response {chr(65+i)}": r['model'] for i, r in enumerate(stage1_results)}
+                aggregate_rankings = []
+                yield f"data: {json.dumps({'type': 'stage2_skipped', 'metadata': {'label_to_model': label_to_model}})}\n\n"
+            
+            elif framework == "debate":
+                 # Debate: Stage 2 is Critiques
+                 stage2_results, label_to_model = await stage2_collect_critiques(request.content, stage1_results)
+                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'mode': 'debate'}})}\n\n"
+
+            else: # standard and six_hats both use ranking for Stage 2
+                 stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
+                 aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
 
             # Stage 3: Synthesize final answer
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results)
+            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results, mode=framework)
             yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
 
             # Wait for title generation if it was started

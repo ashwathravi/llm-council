@@ -293,25 +293,27 @@ Title:"""
     return title
 
 
-async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
+async def run_full_council(user_query: str, framework: str = "standard") -> Tuple[List, List, Dict, Dict]:
     """
-    Run the complete 3-stage council process.
-
-    Args:
-        user_query: The user's question
-
-    Returns:
-        Tuple of (stage1_results, stage2_results, stage3_result, metadata)
+    Run the council process with the specified framework.
     """
+    if framework == "debate":
+        return await run_debate_council(user_query)
+    elif framework == "six_hats":
+        return await run_six_hats_council(user_query)
+    elif framework == "ensemble":
+        return await run_ensemble_council(user_query)
+    else:
+        return await run_standard_council(user_query)
+
+
+async def run_standard_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
+    """Standard 3-stage process."""
     # Stage 1: Collect individual responses
     stage1_results = await stage1_collect_responses(user_query)
-
-    # If no models responded successfully, return error
+    
     if not stage1_results:
-        return [], [], {
-            "model": "error",
-            "response": "All models failed to respond. Please try again."
-        }, {}
+        return _return_error()
 
     # Stage 2: Collect rankings
     stage2_results, label_to_model = await stage2_collect_rankings(user_query, stage1_results)
@@ -326,10 +328,251 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
         stage2_results
     )
 
-    # Prepare metadata
     metadata = {
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings
     }
 
     return stage1_results, stage2_results, stage3_result, metadata
+
+
+async def run_debate_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
+    """Chain of Debate: Models critique each other."""
+    # Stage 1: Collect individual responses
+    stage1_results = await stage1_collect_responses(user_query)
+    
+    if not stage1_results:
+        return _return_error()
+
+    # Stage 2: Collect Critiques (instead of rankings)
+    stage2_results, label_to_model = await stage2_collect_critiques(user_query, stage1_results)
+
+    # Stage 3: Synthesize with critiques
+    stage3_result = await stage3_synthesize_final(
+        user_query,
+        stage1_results,
+        stage2_results,
+        mode="debate"
+    )
+
+    metadata = {
+        "label_to_model": label_to_model,
+        "mode": "debate"
+    }
+    
+    return stage1_results, stage2_results, stage3_result, metadata
+
+
+async def run_six_hats_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
+    """Six Thinking Hats: Assigned perspectives."""
+    # Stage 1: Collect responses with Hats
+    stage1_results = await stage1_collect_responses_six_hats(user_query)
+    
+    if not stage1_results:
+        return _return_error()
+
+    # Stage 2: Standard ranking (evaluates which perspective is most valuable)
+    stage2_results, label_to_model = await stage2_collect_rankings(user_query, stage1_results)
+    
+    aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+
+    # Stage 3: Synthesize
+    stage3_result = await stage3_synthesize_final(
+        user_query,
+        stage1_results,
+        stage2_results,
+        mode="six_hats"
+    )
+
+    metadata = {
+        "label_to_model": label_to_model,
+        "aggregate_rankings": aggregate_rankings,
+        "mode": "six_hats"
+    }
+
+    return stage1_results, stage2_results, stage3_result, metadata
+
+
+async def run_ensemble_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
+    """Ensemble: Parallel query + unbiased synthesis (skip Stage 2)."""
+    # Stage 1: Collect individual responses
+    stage1_results = await stage1_collect_responses(user_query)
+    
+    if not stage1_results:
+        return _return_error()
+
+    # Stage 2: Skipped
+    stage2_results = []
+    
+    # Create label mapping for synthesis
+    labels = [chr(65 + i) for i in range(len(stage1_results))]
+    label_to_model = {
+        f"Response {label}": result['model']
+        for label, result in zip(labels, stage1_results)
+    }
+
+    # Stage 3: Synthesize directly
+    stage3_result = await stage3_synthesize_final(
+        user_query,
+        stage1_results,
+        stage2_results,
+        mode="ensemble"
+    )
+
+    metadata = {
+        "label_to_model": label_to_model,
+        "mode": "ensemble"
+    }
+
+    return stage1_results, stage2_results, stage3_result, metadata
+
+
+def _return_error():
+    return [], [], {
+        "model": "error",
+        "response": "All models failed to respond. Please try again."
+    }, {}
+
+
+async def stage1_collect_responses_six_hats(user_query: str) -> List[Dict[str, Any]]:
+    """Stage 1 for Six Hats: Assign prompts to models."""
+    hats = [
+        ("White Hat", "Focus on available data and facts. Be neutral and objective."),
+        ("Red Hat", "Focus on intuition, feelings, and hunches. No need to justify them."),
+        ("Black Hat", "Focus on caution, risks, and potential problems. Be critical."),
+        ("Yellow Hat", "Focus on benefits, optimism, and value. Be positive."),
+        ("Green Hat", "Focus on creativity, alternatives, and new ideas."),
+        ("Blue Hat", "Focus on process control, organization, and next steps.")
+    ]
+    
+    # Assign hats to available models
+    # If more models than hats, repeat/cycle hats. If fewer, some hats are missed.
+    model_tasks = []
+    assigned_hats = []
+    
+    for i, model in enumerate(COUNCIL_MODELS):
+        hat_name, hat_prompt = hats[i % len(hats)]
+        
+        system_prompt = f"You are wearing the {hat_name}. {hat_prompt}"
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_query}
+        ]
+        
+        # We need to query models individually since they have different prompts
+        # But we can still run them in parallel if we restructure query_models_parallel
+        # For now, let's use a gathered list of coroutines
+        model_tasks.append(query_model(model, messages))
+        assigned_hats.append(hat_name)
+
+    import asyncio
+    responses = await asyncio.gather(*model_tasks)
+    
+    results = []
+    for i, response in enumerate(responses):
+        if response:
+            model = COUNCIL_MODELS[i]
+            hat = assigned_hats[i]
+            results.append({
+                "model": f"{model} ({hat})",
+                "response": response.get('content', '')
+            })
+            
+    return results
+
+
+async def stage2_collect_critiques(user_query: str, stage1_results: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+    """Stage 2 for Debate: Critiques instead of rankings."""
+    labels = [chr(65 + i) for i in range(len(stage1_results))]
+    label_to_model = {f"Response {label}": result['model'] for label, result in zip(labels, stage1_results)}
+
+    responses_text = "\n\n".join([
+        f"Response {label}:\n{result['response']}"
+        for label, result in zip(labels, stage1_results)
+    ])
+
+    critique_prompt = f"""You are participating in a debate about: "{user_query}"
+
+Here are the arguments from other participants (anonymized):
+
+{responses_text}
+
+Your task:
+1. Critically analyze each response. identifying weak points, logical fallacies, or missing information.
+2. Highlight the strongest counter-arguments.
+3. Be direct and constructive.
+
+Provide your critique for each response."""
+
+    messages = [{"role": "user", "content": critique_prompt}]
+    
+    responses = await query_models_parallel(COUNCIL_MODELS, messages)
+    
+    results = []
+    for model, response in responses.items():
+        if response:
+            results.append({
+                "model": model,
+                "ranking": response.get('content', ''), # Reuse 'ranking' field for specific critique text
+                "parsed_ranking": [] # No ranking in debate
+            })
+            
+    return results, label_to_model
+
+
+async def stage3_synthesize_final(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    stage2_results: List[Dict[str, Any]],
+    mode: str = "standard"
+) -> Dict[str, Any]:
+    """Stage 3: Synthesis with mode-specific prompts."""
+    
+    stage1_text = "\n\n".join([
+        f"Model: {result['model']}\nResponse: {result['response']}"
+        for result in stage1_results
+    ])
+
+    stage2_text = "\n\n".join([
+        f"Model: {result['model']}\nFeedback: {result['ranking']}"
+        for result in stage2_results
+    ])
+    
+    if mode == "debate":
+        instruction = "Synthesize a final answer by weighing the original arguments and the peer critiques. Resolve the conflicts and find the strongest truth."
+        stage2_label = "STAGE 2 - Peer Critiques:"
+    elif mode == "six_hats":
+        instruction = "Synthesize a final answer that integrates these diverse perspectives (Hats). Ensure the final decision considers facts, feelings, risks, benefits, and creativity."
+        stage2_label = "STAGE 2 - Perspective Review:"
+    elif mode == "ensemble":
+        stage2_text = "(Stage 2 skipped for Ensemble mode)"
+        instruction = "Synthesize the provided responses into a single, high-quality answer. Identify the consensus and best insights from the ensemble."
+        stage2_label = "STAGE 2 - Skipped"
+    else: # standard
+        instruction = "Synthesize all of this information into a single, comprehensive, accurate answer. Consider the individual responses and the peer rankings."
+        stage2_label = "STAGE 2 - Peer Rankings:"
+
+    chairman_prompt = f"""You are the Chairman of an LLM Council.
+    
+Original Question: {user_query}
+
+STAGE 1 - Individual Responses:
+{stage1_text}
+
+{stage2_label}
+{stage2_text}
+
+Your task: {instruction}
+
+Provide a clear, well-reasoned final answer:"""
+
+    messages = [{"role": "user", "content": chairman_prompt}]
+    response = await query_model(CHAIRMAN_MODEL, messages)
+
+    if response is None:
+        return {"model": CHAIRMAN_MODEL, "response": "Error: Unable to generate final synthesis."}
+
+    return {
+        "model": CHAIRMAN_MODEL,
+        "response": response.get('content', '')
+    }

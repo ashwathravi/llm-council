@@ -14,8 +14,30 @@
 
 .sidebar-header h1 {
   font-size: 18px;
-  margin: 0 0 12px 0;
+  margin: 0 0 16px 0;
   color: #333;
+}
+
+.framework-select-container {
+  margin-bottom: 12px;
+}
+
+.framework-select-container label {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.framework-select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  font-size: 14px;
+  color: #333;
+  margin-bottom: 8px;
 }
 
 .new-conversation-btn {
