@@ -1,0 +1,39 @@
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background-color: #f0f2f5;
+}
+
+.login-card {
+    background: white;
+    padding: 40px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    width: 100%;
+    max-width: 400px;
+}
+
+.login-card h1 {
+    margin: 0 0 8px 0;
+    color: #333;
+}
+
+.login-card p {
+    color: #666;
+    margin-bottom: 24px;
+}
+
+.google-btn-container {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 16px;
+}
+
+.error-message {
+    color: #d93025;
+    font-size: 14px;
+    margin-top: 16px;
+}

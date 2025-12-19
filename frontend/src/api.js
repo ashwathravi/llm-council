@@ -4,12 +4,37 @@
 
 const API_BASE = 'http://localhost:8001';
 
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('auth_token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+};
+
 export const api = {
+  /**
+   * Verify Google ID token and get session.
+   */
+  async login(idToken) {
+    const response = await fetch(`${API_BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_token: idToken })
+    });
+    if (!response.ok) {
+      throw new Error('Login failed');
+    }
+    return response.json();
+  },
+
   /**
    * List all conversations.
    */
   async listConversations() {
-    const response = await fetch(`${API_BASE}/api/conversations`);
+    const response = await fetch(`${API_BASE}/api/conversations`, {
+      headers: getAuthHeaders()
+    });
     if (!response.ok) {
       throw new Error('Failed to list conversations');
     }
@@ -22,9 +47,7 @@ export const api = {
   async createConversation(framework = 'standard') {
     const response = await fetch(`${API_BASE}/api/conversations`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ framework }),
     });
     if (!response.ok) {
@@ -38,7 +61,8 @@ export const api = {
    */
   async getConversation(conversationId) {
     const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}`
+      `${API_BASE}/api/conversations/${conversationId}`,
+      { headers: getAuthHeaders() }
     );
     if (!response.ok) {
       throw new Error('Failed to get conversation');
@@ -54,9 +78,7 @@ export const api = {
       `${API_BASE}/api/conversations/${conversationId}/message`,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ content }),
       }
     );
@@ -68,19 +90,13 @@ export const api = {
 
   /**
    * Send a message and receive streaming updates.
-   * @param {string} conversationId - The conversation ID
-   * @param {string} content - The message content
-   * @param {function} onEvent - Callback function for each event: (eventType, data) => void
-   * @returns {Promise<void>}
    */
   async sendMessageStream(conversationId, content, onEvent) {
     const response = await fetch(
       `${API_BASE}/api/conversations/${conversationId}/message/stream`,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ content }),
       }
     );

@@ -1,26 +1,35 @@
 import { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
+import Login from './components/Login';
 import { api } from './api';
+import { useAuth } from './contexts/AuthContext';
 import './App.css';
 
 function App() {
+  const { user, isLoading: authLoading, logout } = useAuth();
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Load conversations on mount
+  // Load conversations on mount or when user changes
   useEffect(() => {
-    loadConversations();
-  }, []);
+    if (user) {
+      loadConversations();
+    } else {
+      setConversations([]);
+      setCurrentConversationId(null);
+      setCurrentConversation(null);
+    }
+  }, [user]);
 
   // Load conversation details when selected
   useEffect(() => {
-    if (currentConversationId) {
+    if (currentConversationId && user) {
       loadConversation(currentConversationId);
     }
-  }, [currentConversationId]);
+  }, [currentConversationId, user]);
 
   const loadConversations = async () => {
     try {
@@ -28,6 +37,9 @@ function App() {
       setConversations(convs);
     } catch (error) {
       console.error('Failed to load conversations:', error);
+      if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+        logout();
+      }
     }
   };
 
@@ -166,6 +178,17 @@ function App() {
             setIsLoading(false);
             break;
 
+          case 'stage2_skipped':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              lastMsg.stage2 = []; // Empty or skipped
+              lastMsg.metadata = event.metadata;
+              lastMsg.loading.stage2 = false;
+              return { ...prev, messages };
+            });
+            break;
+
           default:
             console.log('Unknown event type:', eventType);
         }
@@ -181,6 +204,9 @@ function App() {
     }
   };
 
+  if (authLoading) return <div className="loading">Loading...</div>;
+  if (!user) return <Login />;
+
   return (
     <div className="app">
       <Sidebar
@@ -189,11 +215,17 @@ function App() {
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
       />
-      <ChatInterface
-        conversation={currentConversation}
-        onSendMessage={handleSendMessage}
-        isLoading={isLoading}
-      />
+      <div className="main-content">
+        <div className="user-header">
+          <span>{user.name}</span>
+          <button onClick={logout} className="logout-btn">Logout</button>
+        </div>
+        <ChatInterface
+          conversation={currentConversation}
+          onSendMessage={handleSendMessage}
+          isLoading={isLoading}
+        />
+      </div>
     </div>
   );
 }

@@ -1,15 +1,17 @@
 """FastAPI backend for LLM Council."""
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Dict, Any
 import uuid
 import json
 import asyncio
+import os
 
-from . import storage
+from . import storage, auth
 from .council import (
     run_full_council, generate_conversation_title,
     stage1_collect_responses, stage1_collect_responses_six_hats,
@@ -57,43 +59,82 @@ class Conversation(BaseModel):
     messages: List[Dict[str, Any]]
 
 
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: Dict[str, Any]
+
+
 @app.get("/")
 async def root():
     """Health check endpoint."""
     return {"status": "ok", "service": "LLM Council API"}
 
 
+@app.post("/api/auth/login", response_model=LoginResponse)
+async def login(request: auth.GoogleLoginRequest):
+    """
+    Verify Google ID token and return session JWT.
+    """
+    # Verify Google token
+    google_user = auth.verify_google_token(request.id_token)
+    
+    # Create session token
+    user_id = google_user["sub"]
+    access_token = auth.create_access_token(data={"sub": user_id})
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user_id,
+            "email": google_user.get("email"),
+            "name": google_user.get("name"),
+            "picture": google_user.get("picture")
+        }
+    }
+
+
 @app.get("/api/conversations", response_model=List[ConversationMetadata])
-async def list_conversations():
-    """List all conversations (metadata only)."""
-    return storage.list_conversations()
+async def list_conversations(user_id: str = Depends(auth.get_current_user_id)):
+    """List conversations for the current user."""
+    return storage.list_conversations(user_id)
 
 
 @app.post("/api/conversations", response_model=Conversation)
-async def create_conversation(request: CreateConversationRequest):
-    """Create a new conversation."""
+async def create_conversation(
+    request: CreateConversationRequest,
+    user_id: str = Depends(auth.get_current_user_id)
+):
+    """Create a new conversation for the current user."""
     conversation_id = str(uuid.uuid4())
-    conversation = storage.create_conversation(conversation_id, request.framework)
+    conversation = storage.create_conversation(conversation_id, user_id, request.framework)
     return conversation
 
 
 @app.get("/api/conversations/{conversation_id}", response_model=Conversation)
-async def get_conversation(conversation_id: str):
-    """Get a specific conversation with all its messages."""
-    conversation = storage.get_conversation(conversation_id)
+async def get_conversation(
+    conversation_id: str,
+    user_id: str = Depends(auth.get_current_user_id)
+):
+    """Get a specific conversation if owned by current user."""
+    conversation = storage.get_conversation(conversation_id, user_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
 
 
 @app.post("/api/conversations/{conversation_id}/message")
-async def send_message(conversation_id: str, request: SendMessageRequest):
+async def send_message(
+    conversation_id: str,
+    request: SendMessageRequest,
+    user_id: str = Depends(auth.get_current_user_id)
+):
     """
     Send a message and run the 3-stage council process.
-    Returns the complete response with all stages.
     """
-    # Check if conversation exists
-    conversation = storage.get_conversation(conversation_id)
+    # Check if conversation exists and verify ownership
+    conversation = storage.get_conversation(conversation_id, user_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -101,12 +142,12 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
     is_first_message = len(conversation["messages"]) == 0
 
     # Add user message
-    storage.add_user_message(conversation_id, request.content)
+    storage.add_user_message(conversation_id, user_id, request.content)
 
     # If this is the first message, generate a title
     if is_first_message:
         title = await generate_conversation_title(request.content)
-        storage.update_conversation_title(conversation_id, title)
+        storage.update_conversation_title(conversation_id, user_id, title)
 
     # Run the 3-stage council process
     framework = conversation.get("framework", "standard")
@@ -118,6 +159,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
     # Add assistant message with all stages
     storage.add_assistant_message(
         conversation_id,
+        user_id,
         stage1_results,
         stage2_results,
         stage3_result
@@ -133,13 +175,16 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
 
 
 @app.post("/api/conversations/{conversation_id}/message/stream")
-async def send_message_stream(conversation_id: str, request: SendMessageRequest):
+async def send_message_stream(
+    conversation_id: str,
+    request: SendMessageRequest,
+    user_id: str = Depends(auth.get_current_user_id)
+):
     """
     Send a message and stream the 3-stage council process.
-    Returns Server-Sent Events as each stage completes.
     """
-    # Check if conversation exists
-    conversation = storage.get_conversation(conversation_id)
+    # Check if conversation exists and verify ownership
+    conversation = storage.get_conversation(conversation_id, user_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -150,7 +195,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
     async def event_generator():
         try:
             # Add user message
-            storage.add_user_message(conversation_id, request.content)
+            storage.add_user_message(conversation_id, user_id, request.content)
 
             # Start title generation in parallel (don't await yet)
             title_task = None
@@ -195,12 +240,13 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             # Wait for title generation if it was started
             if title_task:
                 title = await title_task
-                storage.update_conversation_title(conversation_id, title)
+                storage.update_conversation_title(conversation_id, user_id, title)
                 yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
             # Save complete assistant message
             storage.add_assistant_message(
                 conversation_id,
+                user_id,
                 stage1_results,
                 stage2_results,
                 stage3_result
@@ -222,6 +268,32 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
         }
     )
 
+
+# ... existing code ...
+
+# Serve frontend in production (if dist exists)
+# This usually runs inside Docker where frontend is built to /app/frontend/dist
+# or relative to working directory.
+frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+
+if os.path.exists(frontend_dist):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Allow API routes to pass through (though they should be matched above)
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        # Return index.html for all other routes (SPA routing)
+        return FileResponse(os.path.join(frontend_dist, "index.html"))
+
+    if __name__ == "__main__":
+        import uvicorn
+        uvicorn.run(app, host="0.0.0.0", port=8001)
+else:
+    # Development mode or no build found
+    pass
 
 if __name__ == "__main__":
     import uvicorn
