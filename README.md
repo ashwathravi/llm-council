@@ -48,10 +48,14 @@ Edit `backend/config.py` to customize the council:
 
 ```python
 COUNCIL_MODELS = [
-    "openai/gpt-5.1",
-    "google/gemini-3-pro-preview",
-    "anthropic/claude-sonnet-4.5",
-    "x-ai/grok-4",
+    "nvidia/nemotron-3-nano-30b-a3b:free",
+    "xiaomi/mimo-v2-flash:free",
+    "mistralai/devstral-2512:free",
+    "nex-agi/deepseek-v3.1-nex-n1:free",
+    "anthropic/claude-opus-4.5",
+    "x-ai/grok-4.1-fast",
+    "openai/gpt-5.2",
+    "google/gemini-3-pro-preview"
 ]
 
 CHAIRMAN_MODEL = "google/gemini-3-pro-preview"

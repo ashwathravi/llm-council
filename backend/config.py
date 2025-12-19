@@ -25,6 +25,8 @@ COUNCIL_MODELS = [
     "xiaomi/mimo-v2-flash:free",
     "mistralai/devstral-2512:free",
     "nex-agi/deepseek-v3.1-nex-n1:free",
+    "anthropic/claude-opus-4.5",
+    "x-ai/grok-4.1-fast",
     "openai/gpt-5.2",
     "google/gemini-3-pro-preview"
  #   "google/gemini-3-flash-preview"
