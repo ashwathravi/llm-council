@@ -39,6 +39,10 @@ export default function Login() {
                 </div>
 
                 {error && <div className="error-message">{error}</div>}
+
+                <div className="login-footer">
+                    Powered by OpenRouter & LLM Council
+                </div>
             </div>
         </div>
     );

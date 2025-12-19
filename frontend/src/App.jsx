@@ -13,24 +13,6 @@ function App() {
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Load conversations on mount or when user changes
-  useEffect(() => {
-    if (user) {
-      loadConversations();
-    } else {
-      setConversations([]);
-      setCurrentConversationId(null);
-      setCurrentConversation(null);
-    }
-  }, [user]);
-
-  // Load conversation details when selected
-  useEffect(() => {
-    if (currentConversationId && user) {
-      loadConversation(currentConversationId);
-    }
-  }, [currentConversationId, user]);
-
   const loadConversations = async () => {
     try {
       const convs = await api.listConversations();
@@ -51,6 +33,31 @@ function App() {
       console.error('Failed to load conversation:', error);
     }
   };
+
+  // Load conversations on mount or when user changes
+  useEffect(() => {
+    const fetchConversations = async () => {
+      if (user) {
+        await loadConversations();
+      } else {
+        setConversations([]);
+        setCurrentConversationId(null);
+        setCurrentConversation(null);
+      }
+    };
+    fetchConversations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // Load conversation details when selected
+  useEffect(() => {
+    const fetchConversation = async () => {
+      if (currentConversationId && user) {
+        await loadConversation(currentConversationId);
+      }
+    };
+    fetchConversation();
+  }, [currentConversationId, user]);
 
   const handleNewConversation = async (framework = 'standard') => {
     try {
