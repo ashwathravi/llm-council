@@ -63,6 +63,12 @@ async def root():
     return {"status": "ok", "service": "LLM Council API"}
 
 
+@app.get("/api/health")
+async def health_check():
+    """Explicit health check endpoint."""
+    return {"status": "ok", "service": "LLM Council API"}
+
+
 @app.get("/api/conversations", response_model=List[ConversationMetadata])
 async def list_conversations():
     """List all conversations (metadata only)."""
