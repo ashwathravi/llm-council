@@ -10,4 +10,10 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "httpx>=0.27.0",
     "pydantic>=2.9.0",
+    "aiofiles>=25.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "requests>=2.32.5",
 ]

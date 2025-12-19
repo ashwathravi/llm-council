@@ -3,11 +3,14 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any
 import uuid
 import json
 import asyncio
+import os
 
 from . import storage
 from .council import (
@@ -55,12 +58,6 @@ class Conversation(BaseModel):
     title: str
     framework: str = "standard"
     messages: List[Dict[str, Any]]
-
-
-@app.get("/")
-async def root():
-    """Health check endpoint."""
-    return {"status": "ok", "service": "LLM Council API"}
 
 
 @app.get("/api/health")
@@ -229,6 +226,31 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
     )
 
 
+# Mount static files (Frontend)
+# Ensure frontend/dist exists before mounting
+if os.path.exists("frontend/dist"):
+    app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """Serve the frontend SPA."""
+        dist_dir = os.path.abspath("frontend/dist")
+        potential_path = os.path.abspath(os.path.join(dist_dir, full_path))
+
+        # Security check: Ensure potential_path is within dist_dir
+        if not potential_path.startswith(dist_dir):
+            # Attempted directory traversal or accessing outside dist
+            # Fallback to index.html for safety, or raise 404
+            return FileResponse(os.path.join(dist_dir, "index.html"))
+
+        # Check if the file exists in dist
+        if os.path.isfile(potential_path):
+            return FileResponse(potential_path)
+
+        # Otherwise serve index.html for SPA routing
+        return FileResponse(os.path.join(dist_dir, "index.html"))
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    port = int(os.environ.get("PORT", 8001))
+    uvicorn.run(app, host="0.0.0.0", port=port)
