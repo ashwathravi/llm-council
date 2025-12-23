@@ -43,13 +43,43 @@ export const api = {
   },
 
   /**
+   * Get available models from OpenRouter (via backend).
+   */
+  async getModels() {
+    const response = await fetch(`${API_BASE}/api/models`, {
+      headers: getAuthHeaders()
+    });
+    if (!response.ok) {
+      throw new Error('Failed to fetch models');
+    }
+    return response.json();
+  },
+
+  /**
+   * Get backend status.
+   */
+  async getStatus() {
+    const response = await fetch(`${API_BASE}/api/status`, {
+      headers: getAuthHeaders()
+    });
+    if (!response.ok) {
+      throw new Error('Failed to get status');
+    }
+    return response.json();
+  },
+
+  /**
    * Create a new conversation.
    */
-  async createConversation(framework = 'standard') {
+  async createConversation(framework = 'standard', councilModels = [], chairmanModel = null) {
     const response = await fetch(`${API_BASE}/api/conversations`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ framework }),
+      body: JSON.stringify({
+        framework,
+        council_models: councilModels,
+        chairman_model: chairmanModel
+      }),
     });
     if (!response.ok) {
       throw new Error('Failed to create conversation');

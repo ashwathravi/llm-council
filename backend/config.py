@@ -41,3 +41,14 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Data directory for conversation storage
 DATA_DIR = "data/conversations"
+
+# Database Configuration
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Origin Detection
+if os.getenv("RENDER"):
+    APP_ORIGIN = "render"
+elif os.getenv("REPLIT_ID") or os.getenv("REPLIT_SLUG"):
+    APP_ORIGIN = "replit"
+else:
+    APP_ORIGIN = "local"

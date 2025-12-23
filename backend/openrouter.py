@@ -1,9 +1,39 @@
-"""OpenRouter API client for making LLM requests."""
 
 import httpx
 from typing import List, Dict, Any, Optional
 from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
 
+async def fetch_models() -> List[Dict[str, Any]]:
+    """
+    Fetch available models from OpenRouter.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get("https://openrouter.ai/api/v1/models")
+            response.raise_for_status()
+            data = response.json().get("data", [])
+            
+            # Filter logic
+            models = []
+            for m in data:
+                # Basic filter for now, or match previous logic
+                supported_params = m.get("supported_parameters", [])
+                if "tools" in supported_params: # Match previous logic
+                    models.append({
+                        "id": m["id"],
+                        "name": m["name"],
+                        "description": m.get("description", ""),
+                        "context_length": m.get("context_length", 0),
+                        "pricing": m.get("pricing", {}),
+                        "architecture": m.get("architecture", {})
+                    })
+            
+            models.sort(key=lambda x: x["name"])
+            return models
+            
+    except Exception as e:
+        print(f"Error fetching models: {e}")
+        raise e
 
 async def query_model(
     model: str,

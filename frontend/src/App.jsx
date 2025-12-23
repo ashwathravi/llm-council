@@ -52,16 +52,19 @@ function App() {
     }
   };
 
-  const handleNewConversation = async (framework = 'standard') => {
+  const handleNewConversation = async (framework, councilModels, chairmanModel) => {
     try {
-      const newConv = await api.createConversation(framework);
-      setConversations([
-        { id: newConv.id, created_at: newConv.created_at, message_count: 0, framework: newConv.framework },
-        ...conversations,
-      ]);
-      setCurrentConversationId(newConv.id);
+      setIsLoading(true);
+      const data = await api.createConversation(framework, councilModels, chairmanModel);
+      setConversations([data, ...conversations]);
+      setCurrentConversationId(data.id);
+      // Store framework/models in local state if needed, or just let backend handle it
+      // We might want to pass these to sendMessage if backend needs them, but backend stores them in conversation now.
+      // So no need to track standard/custom models here for sending messages.
     } catch (error) {
       console.error('Failed to create conversation:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 

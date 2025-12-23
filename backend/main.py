@@ -10,8 +10,11 @@ import uuid
 import json
 import asyncio
 import os
+import requests
+from contextlib import asynccontextmanager
 
-from . import storage, auth
+from . import storage, auth, openrouter
+from .database import init_db
 from .council import (
     run_full_council, generate_conversation_title,
     stage1_collect_responses, stage1_collect_responses_six_hats,
@@ -19,12 +22,18 @@ from .council import (
     stage3_synthesize_final, calculate_aggregate_rankings
 )
 
-app = FastAPI(title="LLM Council API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize DB (create tables) on startup
+    await init_db()
+    yield
+
+app = FastAPI(title="LLM Council API", lifespan=lifespan)
 
 # Enable CORS for local development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,6 +43,8 @@ app.add_middleware(
 class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
     framework: str = "standard"
+    council_models: List[str] = []
+    chairman_model: str | None = None
 
 
 class SendMessageRequest(BaseModel):
@@ -56,6 +67,8 @@ class Conversation(BaseModel):
     created_at: str
     title: str
     framework: str = "standard"
+    council_models: List[str] | None = None
+    chairman_model: str | None = None
     messages: List[Dict[str, Any]]
 
 
@@ -95,10 +108,33 @@ async def login(request: auth.GoogleLoginRequest):
     }
 
 
+
 @app.get("/api/conversations", response_model=List[ConversationMetadata])
 async def list_conversations(user_id: str = Depends(auth.get_current_user_id)):
     """List conversations for the current user."""
-    return storage.list_conversations(user_id)
+    return await storage.list_conversations(user_id)
+
+
+@app.get("/api/models")
+async def list_models(user_id: str = Depends(auth.get_current_user_id)):
+    """Fetch available models from OpenRouter."""
+    try:
+        models = await openrouter.fetch_models()
+        return models
+    except Exception as e:
+        print(f"Error fetching models: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch models")
+
+@app.get("/api/status")
+async def get_status():
+    """Get infrastructure status."""
+    from . import config
+    is_db = bool(config.DATABASE_URL)
+    return {
+        "storage_mode": "database" if is_db else "filesystem",
+        "origin": config.APP_ORIGIN,
+        "database_url_configured": is_db
+    }
 
 
 @app.post("/api/conversations", response_model=Conversation)
@@ -108,7 +144,13 @@ async def create_conversation(
 ):
     """Create a new conversation for the current user."""
     conversation_id = str(uuid.uuid4())
-    conversation = storage.create_conversation(conversation_id, user_id, request.framework)
+    conversation = await storage.create_conversation(
+        conversation_id, 
+        user_id, 
+        request.framework,
+        request.council_models,
+        request.chairman_model
+    )
     return conversation
 
 
@@ -118,7 +160,7 @@ async def get_conversation(
     user_id: str = Depends(auth.get_current_user_id)
 ):
     """Get a specific conversation if owned by current user."""
-    conversation = storage.get_conversation(conversation_id, user_id)
+    conversation = await storage.get_conversation(conversation_id, user_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
@@ -134,7 +176,7 @@ async def send_message(
     Send a message and run the 3-stage council process.
     """
     # Check if conversation exists and verify ownership
-    conversation = storage.get_conversation(conversation_id, user_id)
+    conversation = await storage.get_conversation(conversation_id, user_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -142,22 +184,27 @@ async def send_message(
     is_first_message = len(conversation["messages"]) == 0
 
     # Add user message
-    storage.add_user_message(conversation_id, user_id, request.content)
+    await storage.add_user_message(conversation_id, user_id, request.content)
 
     # If this is the first message, generate a title
     if is_first_message:
         title = await generate_conversation_title(request.content)
-        storage.update_conversation_title(conversation_id, user_id, title)
+        await storage.update_conversation_title(conversation_id, user_id, title)
 
     # Run the 3-stage council process
     framework = conversation.get("framework", "standard")
+    council_models = conversation.get("council_models", [])
+    chairman_model = conversation.get("chairman_model")
+
     stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
         request.content,
-        framework=framework
+        framework=framework,
+        council_models=council_models,
+        chairman_model=chairman_model
     )
 
     # Add assistant message with all stages
-    storage.add_assistant_message(
+    await storage.add_assistant_message(
         conversation_id,
         user_id,
         stage1_results,
@@ -184,18 +231,21 @@ async def send_message_stream(
     Send a message and stream the 3-stage council process.
     """
     # Check if conversation exists and verify ownership
-    conversation = storage.get_conversation(conversation_id, user_id)
+    conversation = await storage.get_conversation(conversation_id, user_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     # Check if this is the first message
     is_first_message = len(conversation["messages"]) == 0
     framework = conversation.get("framework", "standard")
+    council_models = conversation.get("council_models", [])
+    chairman_model = conversation.get("chairman_model")
 
     async def event_generator():
         try:
+
             # Add user message
-            storage.add_user_message(conversation_id, user_id, request.content)
+            await storage.add_user_message(conversation_id, user_id, request.content)
 
             # Start title generation in parallel (don't await yet)
             title_task = None
@@ -206,9 +256,9 @@ async def send_message_stream(
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
             
             if framework == "six_hats":
-                stage1_results = await stage1_collect_responses_six_hats(request.content)
+                stage1_results = await stage1_collect_responses_six_hats(request.content, council_models)
             else:
-                stage1_results = await stage1_collect_responses(request.content)
+                stage1_results = await stage1_collect_responses(request.content, council_models)
                 
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
@@ -224,27 +274,28 @@ async def send_message_stream(
             
             elif framework == "debate":
                  # Debate: Stage 2 is Critiques
-                 stage2_results, label_to_model = await stage2_collect_critiques(request.content, stage1_results)
+                 stage2_results, label_to_model = await stage2_collect_critiques(request.content, stage1_results, council_models)
                  yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'mode': 'debate'}})}\n\n"
 
             else: # standard and six_hats both use ranking for Stage 2
-                 stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
+                 stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results, council_models, chairman_model)
                  aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
                  yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
 
             # Stage 3: Synthesize final answer
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results, mode=framework)
+            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results, chairman_model=chairman_model, mode=framework)
             yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
 
             # Wait for title generation if it was started
             if title_task:
-                title = await title_task
-                storage.update_conversation_title(conversation_id, user_id, title)
-                yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
+             if title_task:
+                 title = await title_task
+                 await storage.update_conversation_title(conversation_id, user_id, title)
+                 yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
             # Save complete assistant message
-            storage.add_assistant_message(
+            await storage.add_assistant_message(
                 conversation_id,
                 user_id,
                 stage1_results,

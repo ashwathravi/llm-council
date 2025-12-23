@@ -5,20 +5,22 @@ from .openrouter import query_models_parallel, query_model
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
 
 
-async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
+async def stage1_collect_responses(user_query: str, council_models: List[str] = None) -> List[Dict[str, Any]]:
     """
     Stage 1: Collect individual responses from all council models.
 
     Args:
         user_query: The user's question
+        council_models: Optional list of models to use. Defaults to config COUNCIL_MODELS.
 
     Returns:
         List of dicts with 'model' and 'response' keys
     """
+    active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
     messages = [{"role": "user", "content": user_query}]
 
     # Query all models in parallel
-    responses = await query_models_parallel(COUNCIL_MODELS, messages)
+    responses = await query_models_parallel(active_models, messages)
 
     # Format results
     stage1_results = []
@@ -34,7 +36,9 @@ async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
 
 async def stage2_collect_rankings(
     user_query: str,
-    stage1_results: List[Dict[str, Any]]
+    stage1_results: List[Dict[str, Any]],
+    council_models: List[str] = None,
+    chairman_model: str = None
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """
     Stage 2: Each model ranks the anonymized responses.
@@ -42,10 +46,13 @@ async def stage2_collect_rankings(
     Args:
         user_query: The original user query
         stage1_results: Results from Stage 1
+        council_models: Optional list of models to use. Defaults to config COUNCIL_MODELS.
+        chairman_model: Unused here but kept for consistency if needed later.
 
     Returns:
         Tuple of (rankings list, label_to_model mapping)
     """
+    active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
     # Create anonymized labels for responses (Response A, Response B, etc.)
     labels = [chr(65 + i) for i in range(len(stage1_results))]  # A, B, C, ...
 
@@ -95,7 +102,7 @@ Now provide your evaluation and ranking:"""
     messages = [{"role": "user", "content": ranking_prompt}]
 
     # Get rankings from all council models in parallel
-    responses = await query_models_parallel(COUNCIL_MODELS, messages)
+    responses = await query_models_parallel(active_models, messages)
 
     # Format results
     stage2_results = []
@@ -293,19 +300,69 @@ Title:"""
     return title
 
 
-async def run_full_council(user_query: str, framework: str = "standard") -> Tuple[List, List, Dict, Dict]:
+async def run_full_council(prompt: str, framework: str = "standard", council_models: list = None, chairman_model: str = None):
     """
-    Run the council process with the specified framework.
+    Orchestrates the selected council process.
     """
-    if framework == "debate":
-        return await run_debate_council(user_query)
-    elif framework == "six_hats":
-        return await run_six_hats_council(user_query)
-    elif framework == "ensemble":
-        return await run_ensemble_council(user_query)
-    else:
-        return await run_standard_council(user_query)
+    # Use provided models or fallback to config defaults
+    active_council_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
+    active_chairman_model = chairman_model if chairman_model else CHAIRMAN_MODEL
 
+    # Stage 1: Collect responses
+    # We need to pass the models to stage 1 functions
+    if framework == "six_hats":
+        stage1_results = await stage1_collect_responses_six_hats(prompt, active_council_models)
+    else:
+        stage1_results = await stage1_collect_responses(prompt, active_council_models)
+    
+    if not stage1_results:
+        return _return_error()
+
+    # Stage 2: Rank or Critique
+    if framework == "debate":
+        stage2_results, label_to_model = await stage2_collect_critiques(prompt, stage1_results, active_council_models)
+    elif framework == "ensemble":
+         # Ensemble doesn't use Stage 2 for logic, but we need to return something
+         stage2_results = []
+         # Create label mapping for synthesis even if no ranking
+         labels = [chr(65 + i) for i in range(len(stage1_results))]
+         label_to_model = {
+             f"Response {label}": result['model']
+             for label, result in zip(labels, stage1_results)
+         }
+    else:
+        # Standard and Six Hats use ranking
+        stage2_results, label_to_model = await stage2_collect_rankings(prompt, stage1_results, active_council_models, active_chairman_model)
+
+    # Calculate aggregate rankings if applicable
+    aggregate_rankings = []
+    if framework in ["standard", "six_hats"] and stage2_results:
+        aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+
+    # Stage 3: Synthesize
+    stage3_result = await stage3_synthesize_final(
+        prompt, 
+        stage1_results, 
+        stage2_results, 
+        active_chairman_model, # Pass chairman model
+        mode=framework
+    )
+
+    metadata = {
+        "framework": framework,
+        "council_models": [r['model'] for r in stage1_results], # Actual models that responded
+        "chairman_model": active_chairman_model,
+        "label_to_model": label_to_model,
+        "aggregate_rankings": aggregate_rankings
+    }
+
+    return stage1_results, stage2_results, stage3_result, metadata
+
+
+# The following functions (run_standard_council, run_debate_council, etc.) are now
+# superseded by the new run_full_council logic and can be removed or refactored
+# if they are no longer called directly. For this change, we will keep them
+# as they are not explicitly removed by the instruction, but note their redundancy.
 
 async def run_standard_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
     """Standard 3-stage process."""
@@ -434,8 +491,9 @@ def _return_error():
     }, {}
 
 
-async def stage1_collect_responses_six_hats(user_query: str) -> List[Dict[str, Any]]:
+async def stage1_collect_responses_six_hats(user_query: str, council_models: List[str] = None) -> List[Dict[str, Any]]:
     """Stage 1 for Six Hats: Assign prompts to models."""
+    active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
     hats = [
         ("White Hat", "Focus on available data and facts. Be neutral and objective."),
         ("Red Hat", "Focus on intuition, feelings, and hunches. No need to justify them."),
@@ -450,7 +508,10 @@ async def stage1_collect_responses_six_hats(user_query: str) -> List[Dict[str, A
     model_tasks = []
     assigned_hats = []
     
-    for i, model in enumerate(COUNCIL_MODELS):
+    model_tasks = []
+    assigned_hats = []
+    
+    for i, model in enumerate(active_models):
         hat_name, hat_prompt = hats[i % len(hats)]
         
         system_prompt = f"You are wearing the {hat_name}. {hat_prompt}"
@@ -471,7 +532,7 @@ async def stage1_collect_responses_six_hats(user_query: str) -> List[Dict[str, A
     results = []
     for i, response in enumerate(responses):
         if response:
-            model = COUNCIL_MODELS[i]
+            model = active_models[i]
             hat = assigned_hats[i]
             results.append({
                 "model": f"{model} ({hat})",
@@ -481,8 +542,9 @@ async def stage1_collect_responses_six_hats(user_query: str) -> List[Dict[str, A
     return results
 
 
-async def stage2_collect_critiques(user_query: str, stage1_results: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+async def stage2_collect_critiques(user_query: str, stage1_results: List[Dict[str, Any]], council_models: List[str] = None) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """Stage 2 for Debate: Critiques instead of rankings."""
+    active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
     labels = [chr(65 + i) for i in range(len(stage1_results))]
     label_to_model = {f"Response {label}": result['model'] for label, result in zip(labels, stage1_results)}
 
@@ -506,7 +568,7 @@ Provide your critique for each response."""
 
     messages = [{"role": "user", "content": critique_prompt}]
     
-    responses = await query_models_parallel(COUNCIL_MODELS, messages)
+    responses = await query_models_parallel(active_models, messages)
     
     results = []
     for model, response in responses.items():
@@ -524,9 +586,13 @@ async def stage3_synthesize_final(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
     stage2_results: List[Dict[str, Any]],
+    chairman_model: str = None,
     mode: str = "standard"
 ) -> Dict[str, Any]:
     """Stage 3: Synthesis with mode-specific prompts."""
+    
+    # Use provided chairman model or fallback
+    active_chairman_model = chairman_model or CHAIRMAN_MODEL
     
     stage1_text = "\n\n".join([
         f"Model: {result['model']}\nResponse: {result['response']}"
@@ -567,12 +633,12 @@ Your task: {instruction}
 Provide a clear, well-reasoned final answer:"""
 
     messages = [{"role": "user", "content": chairman_prompt}]
-    response = await query_model(CHAIRMAN_MODEL, messages)
+    response = await query_model(active_chairman_model, messages)
 
     if response is None:
-        return {"model": CHAIRMAN_MODEL, "response": "Error: Unable to generate final synthesis."}
+        return {"model": active_chairman_model, "response": "Error: Unable to generate final synthesis."}
 
     return {
-        "model": CHAIRMAN_MODEL,
+        "model": active_chairman_model,
         "response": response.get('content', '')
     }

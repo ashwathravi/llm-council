@@ -1,0 +1,154 @@
+.model-select-container {
+    position: relative;
+    margin-bottom: 15px;
+}
+
+.model-select-container label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #555;
+    text-align: left;
+}
+
+.model-select-trigger {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #333;
+}
+
+.model-select-trigger:hover {
+    border-color: #bbb;
+}
+
+.selected-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 5px;
+}
+
+.tag {
+    background: #eef2ff;
+    color: #4f46e5;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    border: 1px solid #c7d2fe;
+}
+
+.model-select-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 300px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    z-index: 1000;
+    margin-top: 5px;
+}
+
+.model-search {
+    width: 100%;
+    padding: 8px;
+    border: none;
+    border-bottom: 1px solid #eee;
+    outline: none;
+    font-size: 14px;
+}
+
+.model-options {
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.model-option {
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #333;
+    text-align: left;
+}
+
+.model-option:hover {
+    background-color: #f3f4f6;
+}
+
+.model-option.selected {
+    background-color: #eef2ff;
+    color: #4f46e5;
+    font-weight: 500;
+}
+
+.check {
+    color: #4f46e5;
+}
+
+.no-options {
+    padding: 12px;
+    color: #999;
+    font-style: italic;
+    font-size: 13px;
+}
+
+/* Tooltip Styles */
+.model-tooltip {
+    position: absolute;
+    left: 100%;
+    top: 0;
+    margin-left: 10px;
+    width: 250px;
+    background: #1f2937;
+    color: #fff;
+    padding: 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    z-index: 1100;
+    pointer-events: none;
+    /* Let clicks pass through */
+    text-align: left;
+}
+
+.model-tooltip h3 {
+    margin: 0 0 5px 0;
+    font-size: 14px;
+    color: #fff;
+}
+
+.model-tooltip .model-description {
+    margin: 0 0 10px 0;
+    color: #d1d5db;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.model-meta {
+    border-top: 1px solid #374151;
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.price-info {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #9ca3af;
+}
