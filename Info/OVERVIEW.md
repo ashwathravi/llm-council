@@ -94,7 +94,7 @@ It is a 3-stage deliberation system where multiple LLMs collaboratively answer u
 
 The Stage 2 prompt is very specific to ensure parseable output:
 
-```text
+```
 1. Evaluate each response individually first
 2. Provide "FINAL RANKING:" header
 3. Numbered list format: "1. Response C", "2. Response A", etc.
