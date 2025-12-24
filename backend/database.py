@@ -50,7 +50,9 @@ if DATABASE_URL:
     
     # Clean up sslmode in query params (asyncpg doesn't support it in DSN)
     query_params = dict(url_obj.query)
-    connect_args = {}
+    
+    # Disable prepared statement caching for connection poolers (PgBouncer/Supabase)
+    connect_args = {"statement_cache_size": 0}
     
     if "sslmode" in query_params:
         ssl_mode = query_params.pop("sslmode")
