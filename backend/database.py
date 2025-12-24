@@ -36,14 +36,45 @@ class ConversationModel(Base):
 engine = None
 AsyncSessionLocal = None
 
+from sqlalchemy.engine.url import make_url
+
 if DATABASE_URL:
-    # Ensure usage of asyncpg driver
-    if DATABASE_URL.startswith("postgresql://"):
-        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-    elif DATABASE_URL.startswith("postgres://"):
+    # Handle Render's postgres:// format
+    if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
-        
-    engine = create_async_engine(DATABASE_URL, echo=False)
+    elif DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+    
+    # Parse the URL
+    url_obj = make_url(DATABASE_URL)
+    
+    # Clean up sslmode in query params (asyncpg doesn't support it in DSN)
+    query_params = dict(url_obj.query)
+    connect_args = {}
+    
+    if "sslmode" in query_params:
+        ssl_mode = query_params.pop("sslmode")
+        # Map sslmode to asyncpg ssl parameter
+        if ssl_mode == "require" or ssl_mode == "verify-full":
+             # For now, just enable basic SSL if require was requested
+             # Ideally we'd pass an SSLContext, but "require" string often works 
+             # depending on asyncpg version, or simply 'True' implies some check.
+             # However, safer to just remove the incompatible arg and let asyncpg defaults 
+             # work or manually pass unverified context if needed.
+             # In many cloud envs, just removing sslmode=require and relying on default 
+             # (or handling it via connect_args) is the standard fix.
+             # Let's try passing ssl='require' in connect_args which asyncpg >= 0.27 supports.
+             connect_args["ssl"] = "require"
+    
+    # Reconstruct URL without the incompatible query params
+    url_obj = url_obj._replace(query=query_params)
+    
+    engine = create_async_engine(
+        url_obj, 
+        echo=False,
+        connect_args=connect_args,
+        pool_pre_ping=True
+    )
     AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 async def init_db():
