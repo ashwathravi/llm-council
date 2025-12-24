@@ -392,13 +392,7 @@ if os.path.exists(frontend_dist):
         # Return index.html for all other routes (SPA routing)
         return FileResponse(os.path.join(frontend_dist, "index.html"))
 
-    if __name__ == "__main__":
-        import uvicorn
-        uvicorn.run(app, host="0.0.0.0", port=8001)
-else:
-    # Development mode or no build found
-    pass
-
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    port = int(os.environ.get("PORT", 8001))
+    uvicorn.run(app, host="0.0.0.0", port=port)
