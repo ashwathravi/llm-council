@@ -86,9 +86,13 @@ export const api = {
    * Create a new conversation.
    */
   async createConversation(framework = 'standard', councilModels = [], chairmanModel = null) {
+    console.log("API: createConversation payload prep", { framework, councilModels, chairmanModel });
     const response = await fetch(`${API_BASE}/api/conversations`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify({
         framework,
         council_models: councilModels,
@@ -152,17 +156,21 @@ export const api = {
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
+    let buffer = '';
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+
+      // Keep the last part in the buffer as it might be incomplete
+      buffer = lines.pop();
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
+        if (line.trim().startsWith('data: ')) {
+          const data = line.trim().slice(6);
           try {
             const event = JSON.parse(data);
             onEvent(event.type, event);
@@ -170,6 +178,16 @@ export const api = {
             console.error('Failed to parse SSE event:', e);
           }
         }
+      }
+    }
+
+    // Process any remaining buffer if it looks like a complete line (though usually streams end with newline)
+    if (buffer && buffer.trim().startsWith('data: ')) {
+      try {
+        const event = JSON.parse(buffer.trim().slice(6));
+        onEvent(event.type, event);
+      } catch (e) {
+        console.error('Failed to parse (final) SSE event:', e);
       }
     }
   },

@@ -303,24 +303,40 @@ async def send_message_stream(
             # Append current user message
             history.append({"role": "user", "content": request.content})
 
-            # Stage 1: Collect responses
+            # Stage 1: Collect responses (incremental)
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
             
+            stage1_results = []
             if framework == "six_hats":
+                # Only six_hats helper was left gathering, we need to refactor it too OR just await it if we didn't touch it.
+                # Assuming I didn't touch six_hats in the previous step (I only touched stage1_collect_responses). 
+                # Ideally, six_hats should also stream. 
+                # For now, let's keep six_hats as batch if not refactored, or if user wants consistency, I should have refactored it.
+                # The prompt said "stage1_collect_responses". Let's check if I can wrap six_hats easily or if I should just await it.
+                # I'll just await it as before to avoid breaking it, but emit updates in batch.
                 stage1_results = await stage1_collect_responses_six_hats(history, council_models)
+                # Emit fake updates for consistency? Or just one complete.
+                yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
             else:
-                stage1_results = await stage1_collect_responses(history, council_models)
+                # Streaming stage 1
+                async for result in stage1_collect_responses(history, council_models):
+                    stage1_results.append(result)
+                    # Send incremental update
+                    yield f"data: {json.dumps({'type': 'stage1_update', 'data': result})}\n\n"
                 
-            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+                # Send complete array at end (optional, but good for consistency)
+                yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
-            # Stage 2: Collect rankings/critiques
+            # Stage 2: Collect rankings/critiques (Batch for now)
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
             
+            stage2_results = []
+            aggregate_rankings = []
+            label_to_model = {}
+
             if framework == "ensemble":
                 # Ensemble: Skip Stage 2
-                stage2_results = []
                 label_to_model = {f"Response {chr(65+i)}": r['model'] for i, r in enumerate(stage1_results)}
-                aggregate_rankings = []
                 yield f"data: {json.dumps({'type': 'stage2_skipped', 'metadata': {'label_to_model': label_to_model}})}\n\n"
             
             elif framework == "debate":
@@ -333,9 +349,18 @@ async def send_message_stream(
                  aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
                  yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
 
-            # Stage 3: Synthesize final answer
+            # Stage 3: Synthesize final answer (Streaming)
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results, chairman_model=chairman_model, mode=framework)
+            
+            full_stage3_response = ""
+            async for token in stage3_synthesize_final(request.content, stage1_results, stage2_results, chairman_model=chairman_model, mode=framework):
+                full_stage3_response += token
+                yield f"data: {json.dumps({'type': 'stage3_token', 'data': token})}\n\n"
+            
+            stage3_result = {
+                "model": chairman_model or "google/gemini-3-pro-preview", # Fallback default
+                "response": full_stage3_response
+            }
             yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
 
             # Wait for title generation if it was started

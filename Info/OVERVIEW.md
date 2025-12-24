@@ -65,7 +65,7 @@ It is a 3-stage deliberation system where multiple LLMs collaboratively answer u
 
 ### Council Modes
 
-1. **Standard**: Independent answers -> Peer Ranking -> Synthesis.
+1. **Standard Council**: Independent answers -> Peer Ranking -> Synthesis.
 2. **Chain of Debate**: Answers -> Critique logical flaws -> Synthesis.
 3. **Six Thinking Hats**: Assigned perspectives (Facts, Feelings, Risks, etc.) -> Synthesis.
 4. **Ensemble**: Parallel answers -> Fast synthesis (skips review).

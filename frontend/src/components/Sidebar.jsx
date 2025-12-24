@@ -50,6 +50,7 @@ const Sidebar = ({ conversations, currentConversationId, onSelectConversation, o
 
   const handleNewChat = () => {
     // Pass selected models to parent
+    console.log("Sidebar: handleNewChat triggered", { selectedFramework, councilModels, chairmanModel });
     onNewConversation(selectedFramework, councilModels, chairmanModel);
   };
 
@@ -94,7 +95,30 @@ const Sidebar = ({ conversations, currentConversationId, onSelectConversation, o
         </button>
 
         <div className="framework-select-container">
-          <label>Council Mode</label>
+          <div className="label-with-info">
+            <label>Council Mode</label>
+            <div className="info-icon-wrapper">
+              <span className="info-icon">ℹ️</span>
+              <div className="mode-tooltip">
+                <div className="tooltip-item">
+                  <strong>Standard Council</strong>
+                  <p>Models answer individually, rank each other, and a Chairman synthesizes the best answer.</p>
+                </div>
+                <div className="tooltip-item">
+                  <strong>Chain of Debate</strong>
+                  <p>Models answer, then critique each other's arguments to find logical flaws before synthesis.</p>
+                </div>
+                <div className="tooltip-item">
+                  <strong>Six Thinking Hats</strong>
+                  <p>Models are assigned specific cognitive perspectives (Facts, Feelings, Risks, Benefits, Creativity, Process) to ensure holistic coverage.</p>
+                </div>
+                <div className="tooltip-item">
+                  <strong>Ensemble (Fast)</strong>
+                  <p>Parallel execution for quick consensus without the peer-review stage.</p>
+                </div>
+              </div>
+            </div>
+          </div>
           <select
             value={selectedFramework}
             onChange={(e) => setSelectedFramework(e.target.value)}

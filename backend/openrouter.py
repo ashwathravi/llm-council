@@ -107,3 +107,57 @@ async def query_models_parallel(
 
     # Map models to their responses
     return {model: response for model, response in zip(models, responses)}
+
+
+async def query_model_stream(
+    model: str,
+    messages: List[Dict[str, str]],
+    timeout: float = 120.0
+):
+    """
+    Query a single model with streaming.
+    Yields content chunks (strings).
+    """
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://llm-council.local", # Recommended by OpenRouter
+    }
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": True
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream(
+                "POST",
+                OPENROUTER_API_URL,
+                headers=headers,
+                json=payload
+            ) as response:
+                response.raise_for_status()
+                
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        data_str = line[6:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            import json
+                            data = json.loads(data_str)
+                            delta = data['choices'][0]['delta']
+                            content = delta.get('content')
+                            if content:
+                                yield content
+                        except Exception:
+                            continue
+                            
+    except Exception as e:
+        print(f"Error querying model stream {model}: {e}")
+        # Yield error message as content so UI sees something went wrong, 
+        # or handle differently? unique error chunk?
+        # For now, let's just log it. The generator will stop.
+        pass

@@ -1,36 +1,34 @@
 """3-stage LLM Council orchestration."""
 
 from typing import List, Dict, Any, Tuple
-from .openrouter import query_models_parallel, query_model
+from .openrouter import query_models_parallel, query_model, query_model_stream
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
 
 
-async def stage1_collect_responses(messages: List[Dict[str, str]], council_models: List[str] = None) -> List[Dict[str, Any]]:
+async def stage1_collect_responses(messages: List[Dict[str, str]], council_models: List[str] = None):
     """
     Stage 1: Collect individual responses from all council models.
-
-    Args:
-        messages: List of message dicts (full history)
-        council_models: Optional list of models to use. Defaults to config COUNCIL_MODELS.
-
-    Returns:
-        List of dicts with 'model' and 'response' keys
+    Yields dicts with 'model' and 'response' keys as they complete.
     """
     active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
-    
-    # Query all models in parallel using full history
-    responses = await query_models_parallel(active_models, messages)
+    import asyncio
 
-    # Format results
-    stage1_results = []
-    for model, response in responses.items():
-        if response is not None:  # Only include successful responses
-            stage1_results.append({
+    # Wrapper to attach model name to the task result
+    async def query_with_name(model_name, msgs):
+        response = await query_model(model_name, msgs)
+        return model_name, response
+
+    # Create tasks
+    tasks = [query_with_name(model, messages) for model in active_models]
+
+    # Yield results as they complete
+    for completed_task in asyncio.as_completed(tasks):
+        model, response = await completed_task
+        if response:
+            yield {
                 "model": model,
                 "response": response.get('content', '')
-            })
-
-    return stage1_results
+            }
 
 
 async def stage2_collect_rankings(
@@ -116,68 +114,6 @@ Now provide your evaluation and ranking:"""
             })
 
     return stage2_results, label_to_model
-
-
-async def stage3_synthesize_final(
-    user_query: str,
-    stage1_results: List[Dict[str, Any]],
-    stage2_results: List[Dict[str, Any]]
-) -> Dict[str, Any]:
-    """
-    Stage 3: Chairman synthesizes final response.
-
-    Args:
-        user_query: The original user query
-        stage1_results: Individual model responses from Stage 1
-        stage2_results: Rankings from Stage 2
-
-    Returns:
-        Dict with 'model' and 'response' keys
-    """
-    # Build comprehensive context for chairman
-    stage1_text = "\n\n".join([
-        f"Model: {result['model']}\nResponse: {result['response']}"
-        for result in stage1_results
-    ])
-
-    stage2_text = "\n\n".join([
-        f"Model: {result['model']}\nRanking: {result['ranking']}"
-        for result in stage2_results
-    ])
-
-    chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
-
-Original Question: {user_query}
-
-STAGE 1 - Individual Responses:
-{stage1_text}
-
-STAGE 2 - Peer Rankings:
-{stage2_text}
-
-Your task as Chairman is to synthesize all of this information into a single, comprehensive, accurate answer to the user's original question. Consider:
-- The individual responses and their insights
-- The peer rankings and what they reveal about response quality
-- Any patterns of agreement or disagreement
-
-Provide a clear, well-reasoned final answer that represents the council's collective wisdom:"""
-
-    messages = [{"role": "user", "content": chairman_prompt}]
-
-    # Query the chairman model
-    response = await query_model(CHAIRMAN_MODEL, messages)
-
-    if response is None:
-        # Fallback if chairman fails
-        return {
-            "model": CHAIRMAN_MODEL,
-            "response": "Error: Unable to generate final synthesis."
-        }
-
-    return {
-        "model": CHAIRMAN_MODEL,
-        "response": response.get('content', '')
-    }
 
 
 def parse_ranking_from_text(ranking_text: str) -> List[str]:
@@ -587,8 +523,11 @@ async def stage3_synthesize_final(
     stage2_results: List[Dict[str, Any]],
     chairman_model: str = None,
     mode: str = "standard"
-) -> Dict[str, Any]:
-    """Stage 3: Synthesis with mode-specific prompts."""
+):
+    """
+    Stage 3: Chairman synthesizes final response (streaming).
+    Yields content chunks.
+    """
     
     # Use provided chairman model or fallback
     active_chairman_model = chairman_model or CHAIRMAN_MODEL
@@ -632,12 +571,7 @@ Your task: {instruction}
 Provide a clear, well-reasoned final answer:"""
 
     messages = [{"role": "user", "content": chairman_prompt}]
-    response = await query_model(active_chairman_model, messages)
 
-    if response is None:
-        return {"model": active_chairman_model, "response": "Error: Unable to generate final synthesis."}
-
-    return {
-        "model": active_chairman_model,
-        "response": response.get('content', '')
-    }
+    # Stream the response
+    async for chunk in query_model_stream(active_chairman_model, messages):
+        yield chunk

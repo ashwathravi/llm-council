@@ -53,8 +53,9 @@ function App() {
   };
 
   const handleNewConversation = async (framework, councilModels, chairmanModel) => {
+    console.log("App: handleNewConversation received", { framework, councilModels, chairmanModel });
+    setIsLoading(true);
     try {
-      setIsLoading(true);
       const data = await api.createConversation(framework, councilModels, chairmanModel);
       setConversations([data, ...conversations]);
       setCurrentConversationId(data.id);
@@ -112,6 +113,19 @@ function App() {
               const messages = [...prev.messages];
               const lastMsg = messages[messages.length - 1];
               lastMsg.loading.stage1 = true;
+              lastMsg.stage1 = []; // Initialize empty array
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage1_update':
+            // Append single model result
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              // Ensure stage1 is an array
+              if (!Array.isArray(lastMsg.stage1)) lastMsg.stage1 = [];
+              lastMsg.stage1.push(event.data);
               return { ...prev, messages };
             });
             break;
@@ -120,6 +134,7 @@ function App() {
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
               const lastMsg = messages[messages.length - 1];
+              // Prefer the complete list from server to ensure order/consistency
               lastMsg.stage1 = event.data;
               lastMsg.loading.stage1 = false;
               return { ...prev, messages };
@@ -151,6 +166,23 @@ function App() {
               const messages = [...prev.messages];
               const lastMsg = messages[messages.length - 1];
               lastMsg.loading.stage3 = true;
+              // Initialize with empty response so we can append tokens
+              lastMsg.stage3 = { model: 'chairman', response: '' };
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage3_token':
+            // Append token to response
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              if (lastMsg.stage3 && lastMsg.stage3.response !== undefined) {
+                lastMsg.stage3.response += event.data;
+              } else {
+                // Fallback init
+                lastMsg.stage3 = { model: 'chairman', response: event.data };
+              }
               return { ...prev, messages };
             });
             break;
