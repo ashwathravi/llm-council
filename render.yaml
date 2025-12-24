@@ -19,18 +19,9 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false # User must provide this
       - key: DATABASE_URL
-        fromDatabase:
-          name: llm-council-db
-          property: connectionString
+        sync: false # User must provide this (e.g. Supabase connection string)
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: RENDER
         value: true
     autoDeploy: false
-
-databases:
-  - name: llm-council-db
-    databaseName: council
-    user: council_user
-    plan: free # Use free tier for hobby projects
-    ipAllowList: [] # Allow internal access only by default
