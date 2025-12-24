@@ -72,21 +72,27 @@ cd frontend
 npm run dev
 ```
 
-## ☁️ Deploying to Render (with Database)
+## ☁️ Deploying to Render (Database Mode)
 
-This project includes a `render.yaml` Blueprint for easy deployment with a managed PostgreSQL database.
+The easiest way to deploy with the database is using **Blueprints**.
 
-1. **Push to GitHub**: Ensure this code is in a GitHub repository.
-2. **Create New Blueprint in Render**:
-   - Go to [dashboard.render.com](https://dashboard.render.com/blueprints).
-   - Click **"New Blueprint Instance"**.
-   - Connect your repository.
-3. **Configure**:
-   - Render will detect `render.yaml`.
-   - You will be prompted to provide `OPENROUTER_API_KEY`.
-4. **Deploy**:
-   - Render will create a **Web Service** (the app) and a **PostgreSQL Database**.
-   - The app will automatically detect the `DATABASE_URL` environment variable and switch from file storage to database storage.
+1. **Push to GitHub**: Make sure your latest code (including `render.yaml`) is pushed to your GitHub repository.
+2. **Open Render Dashboard**: Go to [dashboard.render.com](https://dashboard.render.com/).
+3. **Create Blueprint**:
+    - Click the **New +** button in the top right.
+    - Select **Blueprint Instance**.
+4. **Connect Repo**:
+    - Find your `llm-council` repo in the list and click **Connect**.
+5. **Configure**:
+    - Render will read the `render.yaml` file.
+    - It will show a formatted list of resources it will create (Web Service + Database).
+    - **Env Vars**: You will be prompted to enter your `OPENROUTER_API_KEY`. Paste it in.
+6. **Deploy**:
+    - Click **Apply**.
+    - Render will spin up the PostgreSQL database first, then the Web Service.
+    - It automatically injects the `DATABASE_URL` from the new DB into your Web Service.
+7. **Done**:
+    - Once the build finishes, your app will be live and automatically using the database. (The "DB" badge in the sidebar will be active).
 
 ## 🛠 Tech Stack
 
