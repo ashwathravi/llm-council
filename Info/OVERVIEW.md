@@ -91,7 +91,9 @@ It is a 3-stage deliberation system where multiple LLMs collaboratively answer u
 ## Key Design Decisions
 
 ### Stage 2 Prompt Format
+
 The Stage 2 prompt is very specific to ensure parseable output:
+
 ```
 1. Evaluate each response individually first
 2. Provide "FINAL RANKING:" header
@@ -102,6 +104,7 @@ The Stage 2 prompt is very specific to ensure parseable output:
 This strict format allows reliable parsing while still getting thoughtful evaluations.
 
 ### De-anonymization Strategy
+
 - Models receive: "Response A", "Response B", etc.
 - Backend creates mapping: `{"Response A": "openai/gpt-5.1", ...}`
 - Frontend displays model names in **bold** for readability
@@ -109,21 +112,24 @@ This strict format allows reliable parsing while still getting thoughtful evalua
 - This prevents bias while maintaining transparency
 
 ### Error Handling Philosophy
+
 - Continue with successful responses if some models fail (graceful degradation)
 - Never fail the entire request due to single model failure
 - Log errors but don't expose to user unless all models fail
 
 ### UI/UX Transparency
+
 - All raw outputs are inspectable via tabs
 - Parsed rankings shown below raw text for validation
 - Users can verify system's interpretation of model outputs
 - This builds trust and allows debugging of edge cases
 
+### Async/Parallel Philosophy
+
 - The entire flow is async/parallel where possible to minimize latency.
 
 ## Future Enhancement Ideas
 
-- Configurable council/chairman via UI instead of config file
 - Streaming responses instead of batch loading
 - Export conversations to markdown/PDF
 - Model performance analytics over time
