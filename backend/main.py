@@ -115,6 +115,32 @@ async def list_conversations(user_id: str = Depends(auth.get_current_user_id)):
     return await storage.list_conversations(user_id)
 
 
+@app.delete("/api/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str, user_id: str = Depends(auth.get_current_user_id)):
+    """Delete a conversation."""
+    try:
+        await storage.delete_conversation(conversation_id, user_id)
+        return {"status": "success"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        print(f"Error deleting conversation: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.delete("/api/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str, user_id: str = Depends(auth.get_current_user_id)):
+    """Delete a conversation."""
+    try:
+        await storage.delete_conversation(conversation_id, user_id)
+        return {"status": "success"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        print(f"Error deleting conversation: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @app.get("/api/models")
 async def list_models(user_id: str = Depends(auth.get_current_user_id)):
     """Fetch available models from OpenRouter."""
@@ -196,8 +222,21 @@ async def send_message(
     council_models = conversation.get("council_models", [])
     chairman_model = conversation.get("chairman_model")
 
+    # Build conversation history
+    history = []
+    for msg in conversation["messages"]:
+        if msg["role"] == "user":
+            history.append({"role": "user", "content": msg["content"]})
+        elif msg["role"] == "assistant":
+            # Extract final response from stage 3
+            if "stage3" in msg and msg["stage3"] and "response" in msg["stage3"]:
+                history.append({"role": "assistant", "content": msg["stage3"]["response"]})
+    
+    # Append current user message
+    history.append({"role": "user", "content": request.content})
+
     stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
-        request.content,
+        history,
         framework=framework,
         council_models=council_models,
         chairman_model=chairman_model
@@ -252,13 +291,25 @@ async def send_message_stream(
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
+            # Build conversation history
+            history = []
+            for msg in conversation["messages"]:
+                if msg["role"] == "user":
+                    history.append({"role": "user", "content": msg["content"]})
+                elif msg["role"] == "assistant":
+                    if "stage3" in msg and msg["stage3"] and "response" in msg["stage3"]:
+                        history.append({"role": "assistant", "content": msg["stage3"]["response"]})
+            
+            # Append current user message
+            history.append({"role": "user", "content": request.content})
+
             # Stage 1: Collect responses
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
             
             if framework == "six_hats":
-                stage1_results = await stage1_collect_responses_six_hats(request.content, council_models)
+                stage1_results = await stage1_collect_responses_six_hats(history, council_models)
             else:
-                stage1_results = await stage1_collect_responses(request.content, council_models)
+                stage1_results = await stage1_collect_responses(history, council_models)
                 
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
@@ -289,7 +340,6 @@ async def send_message_stream(
 
             # Wait for title generation if it was started
             if title_task:
-             if title_task:
                  title = await title_task
                  await storage.update_conversation_title(conversation_id, user_id, title)
                  yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
@@ -307,8 +357,10 @@ async def send_message_stream(
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
 
         except Exception as e:
-            # Send error event
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            import traceback
+            traceback.print_exc()
+            print(f"Streaming error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -318,6 +370,7 @@ async def send_message_stream(
             "Connection": "keep-alive",
         }
     )
+
 
 
 # ... existing code ...

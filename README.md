@@ -2,33 +2,36 @@
 
 ![llmcouncil](header.jpg)
 
-The idea of this repo is that instead of asking a question to your favorite LLM provider (e.g. OpenAI GPT 5.1, Google Gemini 3.0 Pro, Anthropic Claude Sonnet 4.5, xAI Grok 4, eg.c), you can group them into your "LLM Council". This repo is a simple, local web app that essentially looks like ChatGPT except it uses OpenRouter to send your query to multiple LLMs, it then asks them to review and rank each other's work, and finally a Chairman LLM produces the final response.
+**LLM Council** is a "Chain of Thought" and "MoA" (Mixture of Agents) orchestration tool. Instead of relying on a single LLM, you form a "Council" of different models (Gemini, GPT, Claude, Grok, etc.) to deliberate on your queries. They review each other's work, debate, providing a synthesized, highly accurate final response.
 
-In a bit more detail, here is what happens when you submit a query:
+## ✨ Features
+
+- **Multiple Council Modes**:
+  - **Standard Council**: Models answer individually, rank each other, and a Chairman synthesizes the best answer.
+  - **Chain of Debate**: Models answer, then critique each other's arguments to find logical flaws before synthesis.
+  - **Six Thinking Hats**: Models are assigned specific cognitive perspectives (Facts, Feelings, Risks, Benefits, Creativity, Process) to ensure holistic coverage.
+  - **Ensemble (Fast)**: Parallel execution for quick consensus without the peer-review stage.
+- **Dynamic Model Selection**: Choose your specific council members and chairman from all available OpenRouter models.
+- **Material Design 3 UI**: A beautiful, modern interface with dark/light mode support (system), sticky headers, and responsive layout.
+- **Dual Storage**: Supports both local JSON file storage (default) and PostgreSQL database (production).
+
+--**Standard Council workings**
 
 1. **Stage 1: First opinions**. The user query is given to all LLMs individually, and the responses are collected. The individual responses are shown in a "tab view", so that the user can inspect them all one by one.
 2. **Stage 2: Review**. Each individual LLM is given the responses of the other LLMs. Under the hood, the LLM identities are anonymized so that the LLM can't play favorites when judging their outputs. The LLM is asked to rank them in accuracy and insight.
 3. **Stage 3: Final response**. The designated Chairman of the LLM Council takes all of the model's responses and compiles them into a single final answer that is presented to the user.
 
-## Vibe Code Alert
-
-This project was 99% vibe coded as a fun Saturday hack because I wanted to explore and evaluate a number of LLMs side by side in the process of [reading books together with LLMs](https://x.com/karpathy/status/1990577951671509438). It's nice and useful to see multiple responses side by side, and also the cross-opinions of all LLMs on each other's outputs. I'm not going to support it in any way, it's provided here as is for other people's inspiration and I don't intend to improve it. Code is ephemeral now and libraries are over, ask your LLM to change it in whatever way you like.
-
-## Setup
+## 🚀 Setup
 
 ### 1. Install Dependencies
 
-The project uses [uv](https://docs.astral.sh/uv/) for project management.
-
-**Backend:**
+The project uses [uv](https://docs.astral.sh/uv/) for Python management.
 
 ```bash
+# Backend
 uv sync
-```
 
-**Frontend:**
-
-```bash
+# Frontend
 cd frontend
 npm install
 cd ..
@@ -42,55 +45,52 @@ Create a `.env` file in the project root:
 OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-Get your API key at [openrouter.ai](https://openrouter.ai/). Make sure to purchase the credits you need, or sign up for automatic top up.
+Get your API key at [openrouter.ai](https://openrouter.ai/).
 
-### 3. Configure Models (Optional)
+## 🏃‍♂️ Running Locally
 
-Edit `backend/config.py` to customize the council:
-
-```python
-COUNCIL_MODELS = [
-    "nvidia/nemotron-3-nano-30b-a3b:free",
-    "xiaomi/mimo-v2-flash:free",
-    "mistralai/devstral-2512:free",
-    "nex-agi/deepseek-v3.1-nex-n1:free",
-    "anthropic/claude-opus-4.5",
-    "x-ai/grok-4.1-fast",
-    "openai/gpt-5.2",
-    "google/gemini-3-pro-preview"
-]
-
-CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
-```
-
-## Running the Application
-
-### Option 1: Use the start script
+### All-in-one Script
 
 ```bash
 ./start.sh
 ```
 
-### Option 2: Run manually
+Opens the app at `http://localhost:5173`.
 
-Terminal 1 (Backend):
+### Manual Start
+
+**Backend:**
 
 ```bash
 uv run python -m backend.main
 ```
 
-Terminal 2 (Frontend):
+**Frontend:**
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-Then open <http://localhost:5173> in your browser.
+## ☁️ Deploying to Render (with Database)
 
-## Tech Stack
+This project includes a `render.yaml` Blueprint for easy deployment with a managed PostgreSQL database.
 
-- **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
-- **Frontend:** React + Vite, react-markdown for rendering
-- **Storage:** JSON files in `data/conversations/`
-- **Package Management:** uv for Python, npm for JavaScript
+1. **Push to GitHub**: Ensure this code is in a GitHub repository.
+2. **Create New Blueprint in Render**:
+   - Go to [dashboard.render.com](https://dashboard.render.com/blueprints).
+   - Click **"New Blueprint Instance"**.
+   - Connect your repository.
+3. **Configure**:
+   - Render will detect `render.yaml`.
+   - You will be prompted to provide `OPENROUTER_API_KEY`.
+4. **Deploy**:
+   - Render will create a **Web Service** (the app) and a **PostgreSQL Database**.
+   - The app will automatically detect the `DATABASE_URL` environment variable and switch from file storage to database storage.
+
+## 🛠 Tech Stack
+
+- **Backend**: FastAPI, Async/Await, SQLAlchemy (Async), OpenAI (Client) / OpenRouter
+- **Frontend**: React, Vite, Material Design 3 (Custom CSS)
+- **Database**: PostgreSQL (Production) / JSON Files (Local/Dev)
+- **Design**: "Vibe Coded" aesthetics with focused UX.

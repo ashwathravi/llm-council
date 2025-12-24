@@ -69,6 +69,20 @@ export const api = {
   },
 
   /**
+   * Delete a conversation.
+   */
+  async deleteConversation(conversationId) {
+    const response = await fetch(`${API_BASE}/api/conversations/${conversationId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to delete conversation");
+    }
+    return response.json();
+  },
+
+  /**
    * Create a new conversation.
    */
   async createConversation(framework = 'standard', councilModels = [], chairmanModel = null) {

@@ -1,7 +1,9 @@
+@import './design_tokens.css';
+
 :root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+  font-family: var(--md-sys-typescale-body-large-font);
+  line-height: var(--md-sys-typescale-body-large-line-height);
+  font-weight: var(--md-sys-typescale-body-large-weight);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -19,13 +21,15 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #f5f5f5;
+  background: var(--md-sys-color-background);
+  color: var(--md-sys-color-on-background);
 }
 
 #root {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  background: var(--md-sys-color-background);
 }
 
 /* Global markdown styling */

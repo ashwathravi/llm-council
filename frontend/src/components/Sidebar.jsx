@@ -11,6 +11,11 @@ const Sidebar = ({ conversations, currentConversationId, onSelectConversation, o
   const [loadingModels, setLoadingModels] = useState(false);
   const [status, setStatus] = useState(null);
   const [statusError, setStatusError] = useState(null);
+  const [showAllHistory, setShowAllHistory] = useState(false);
+
+  // Filter conversations
+  const recentConversations = conversations.slice(0, 5);
+  const olderConversations = conversations.slice(5);
 
   useEffect(() => {
     loadModels();
@@ -48,6 +53,24 @@ const Sidebar = ({ conversations, currentConversationId, onSelectConversation, o
     onNewConversation(selectedFramework, councilModels, chairmanModel);
   };
 
+  const handleDelete = async (e, id) => {
+    e.stopPropagation(); // Prevent selecting the chat
+    if (!confirm("Are you sure you want to delete this conversation?")) return;
+
+    try {
+      await api.deleteConversation(id);
+      // We need to trigger a refresh in the parent. 
+      // ideally parent should pass a refresh callback or we reload
+      // For now, let's reload the page or assume parent updates?
+      // Actually, standard pattern is parent passes 'onDelete' or we reload.
+      // Since we don't have 'onDelete' prop yet, let's ask user to refresh or reload window.
+      window.location.reload();
+    } catch (err) {
+      console.error("Failed to delete", err);
+      alert("Failed to delete conversation");
+    }
+  };
+
   return (
     <div className="sidebar">
       <div className="sidebar-header">
@@ -65,6 +88,10 @@ const Sidebar = ({ conversations, currentConversationId, onSelectConversation, o
             </div>
           )}
         </div>
+
+        <button className="new-conversation-btn" onClick={handleNewChat}>
+          <span>+</span> New Conversation
+        </button>
 
         <div className="framework-select-container">
           <label>Council Mode</label>
@@ -99,27 +126,73 @@ const Sidebar = ({ conversations, currentConversationId, onSelectConversation, o
             maxSelected={5}
           />
         </div>
-
-        <button className="new-chat-btn" onClick={handleNewChat}>
-          + New Conversation
-        </button>
       </div>
 
       <div className="conversations-list">
-        {conversations.map((conv) => (
+        {conversations.length > 0 && <div className="list-section-header">Recent</div>}
+        {recentConversations.map((conv) => (
           <div
             key={conv.id}
             className={`conversation-item ${conv.id === currentConversationId ? 'active' : ''
               }`}
             onClick={() => onSelectConversation(conv.id)}
           >
-            <div className="conversation-title">{conv.title}</div>
-            <div className="conversation-meta">
-              {new Date(conv.created_at).toLocaleDateString()}
-              {conv.framework && ` • ${conv.framework}`}
+            <div className="conversation-content-wrapper">
+              <div className="conversation-title">{conv.title}</div>
+              <div className="conversation-meta">
+                {new Date(conv.created_at).toLocaleDateString()}
+                {conv.framework && ` • ${conv.framework}`}
+              </div>
             </div>
+            <button
+              className="delete-btn"
+              onClick={(e) => handleDelete(e, conv.id)}
+              title="Delete conversation"
+            >
+              ×
+            </button>
           </div>
         ))}
+
+        {olderConversations.length > 0 && (
+          <>
+            <button
+              className="toggle-history-btn"
+              onClick={() => setShowAllHistory(!showAllHistory)}
+            >
+              {showAllHistory ? "Hide Older Conversations" : `Show ${olderConversations.length} Older Conversations`}
+            </button>
+
+            {showAllHistory && (
+              <>
+                <div className="list-section-header">History</div>
+                {olderConversations.map((conv) => (
+                  <div
+                    key={conv.id}
+                    className={`conversation-item ${conv.id === currentConversationId ? 'active' : ''
+                      }`}
+                    onClick={() => onSelectConversation(conv.id)}
+                  >
+                    <div className="conversation-content-wrapper">
+                      <div className="conversation-title">{conv.title}</div>
+                      <div className="conversation-meta">
+                        {new Date(conv.created_at).toLocaleDateString()}
+                        {conv.framework && ` • ${conv.framework}`}
+                      </div>
+                    </div>
+                    <button
+                      className="delete-btn"
+                      onClick={(e) => handleDelete(e, conv.id)}
+                      title="Delete conversation"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+          </>
+        )}
 
         {conversations.length === 0 && (
           <div className="no-conversations">

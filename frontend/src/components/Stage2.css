@@ -1,10 +1,11 @@
 .stage2 {
-  background: #fafafa;
+  background: var(--md-sys-color-surface-container-high);
+  /* Inherits .stage styles but we override some */
 }
 
 .stage2 h4 {
-  margin: 20px 0 8px 0;
-  color: #333;
+  margin: 20px 0 12px 0;
+  color: var(--md-sys-color-on-surface);
   font-size: 14px;
   font-weight: 600;
 }
@@ -14,23 +15,23 @@
 }
 
 .stage-description {
-  margin: 0 0 12px 0;
-  color: #666;
-  font-size: 13px;
+  margin: 0 0 16px 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 14px;
   line-height: 1.5;
 }
 
 .aggregate-rankings {
-  background: #f0f7ff;
-  padding: 16px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  border: 2px solid #d0e7ff;
+  background: var(--md-sys-color-surface-container-low);
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .aggregate-rankings h4 {
   margin: 0 0 12px 0;
-  color: #2a7ae2;
+  color: var(--md-sys-color-primary);
   font-size: 15px;
 }
 
@@ -43,34 +44,37 @@
 .aggregate-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px;
-  background: #ffffff;
-  border-radius: 6px;
-  border: 1px solid #d0e7ff;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--md-sys-color-surface);
+  border-radius: 8px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  box-shadow: var(--md-sys-elevation-level-1);
 }
 
 .rank-position {
-  color: #2a7ae2;
+  color: var(--md-sys-color-primary);
   font-weight: 700;
-  font-size: 16px;
-  min-width: 35px;
+  font-size: 18px;
+  min-width: 30px;
 }
 
 .rank-model {
   flex: 1;
-  color: #333;
+  color: var(--md-sys-color-on-surface);
   font-family: monospace;
   font-size: 14px;
   font-weight: 500;
 }
 
 .rank-score {
-  color: #666;
+  color: var(--md-sys-color-secondary);
   font-size: 13px;
   font-family: monospace;
+  font-weight: 600;
 }
 
+/* Reusing tab logic from Stage1 but scoped if needed */
 .stage2 .tabs {
   display: flex;
   gap: 8px;
@@ -80,74 +84,73 @@
 
 .stage2 .tab {
   padding: 8px 16px;
-  background: #ffffff;
-  border: 1px solid #d0d0d0;
-  border-radius: 6px 6px 0 0;
-  color: #666;
+  background: transparent;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 8px;
+  color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s;
+  font-weight: 500;
 }
 
 .stage2 .tab:hover {
-  background: #f0f0f0;
-  color: #333;
-  border-color: #4a90e2;
+  background: var(--md-sys-color-surface-container-high);
 }
 
 .stage2 .tab.active {
-  background: #ffffff;
-  color: #4a90e2;
-  border-color: #4a90e2;
-  border-bottom-color: #ffffff;
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  border-color: transparent;
   font-weight: 600;
 }
 
 .stage2 .tab-content {
-  background: #ffffff;
-  padding: 16px;
-  border-radius: 6px;
-  border: 1px solid #e0e0e0;
+  background: var(--md-sys-color-surface);
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
   margin-bottom: 20px;
 }
 
 .ranking-model {
-  color: #888;
+  color: var(--md-sys-color-primary);
   font-size: 12px;
   font-family: monospace;
   margin-bottom: 12px;
+  font-weight: 600;
 }
 
 .ranking-content {
-  color: #333;
+  color: var(--md-sys-color-on-surface);
   line-height: 1.6;
   font-size: 14px;
 }
 
 .parsed-ranking {
-  margin-top: 16px;
+  margin-top: 20px;
   padding-top: 16px;
-  border-top: 2px solid #e0e0e0;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .parsed-ranking strong {
-  color: #2a7ae2;
+  color: var(--md-sys-color-secondary);
   font-size: 13px;
 }
 
 .parsed-ranking ol {
-  margin: 8px 0 0 0;
+  margin: 12px 0 0 0;
   padding-left: 24px;
-  color: #333;
+  color: var(--md-sys-color-on-surface);
 }
 
 .parsed-ranking li {
-  margin: 4px 0;
+  margin: 6px 0;
   font-family: monospace;
   font-size: 13px;
 }
 
 .rank-count {
-  color: #999;
+  color: var(--md-sys-color-secondary);
   font-size: 12px;
 }

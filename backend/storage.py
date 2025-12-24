@@ -84,6 +84,16 @@ async def db_update_title(conversation_id: str, user_id: str, title: str):
         conv.title = title
         await session.commit()
 
+async def db_delete_conversation(conversation_id: str, user_id: str):
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(ConversationModel).where(ConversationModel.id == conversation_id))
+        conv = result.scalar_one_or_none()
+        if not conv or conv.user_id != user_id:
+            raise ValueError("Unauthorized or not found")
+        
+        await session.delete(conv)
+        await session.commit()
+
 def _model_to_dict(model: ConversationModel) -> Dict[str, Any]:
     return {
         "id": model.id,
@@ -134,6 +144,19 @@ def file_save_conversation(conversation: Dict[str, Any]):
     ensure_data_dir()
     with open(get_conversation_path(conversation['id']), 'w') as f:
         json.dump(conversation, f, indent=2)
+
+def file_delete_conversation(conversation_id: str, user_id: str):
+    path = get_conversation_path(conversation_id)
+    if not os.path.exists(path):
+        raise ValueError("Not found")
+    
+    # Check ownership first
+    with open(path, 'r') as f:
+        data = json.load(f)
+        if data.get("user_id") != user_id:
+             raise ValueError("Unauthorized")
+    
+    os.remove(path)
 
 def file_list_conversations(user_id: str) -> List[Dict[str, Any]]:
     ensure_data_dir()
@@ -215,3 +238,9 @@ async def update_conversation_title(conversation_id: str, user_id: str, title: s
         if not conv: raise ValueError("Not found")
         conv["title"] = title
         file_save_conversation(conv)
+
+async def delete_conversation(conversation_id: str, user_id: str):
+    if DATABASE_URL:
+        await db_delete_conversation(conversation_id, user_id)
+    else:
+        file_delete_conversation(conversation_id, user_id)

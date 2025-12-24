@@ -6,27 +6,27 @@
 .model-select-container label {
     display: block;
     margin-bottom: 5px;
-    font-size: 14px;
+    font-size: var(--md-sys-typescale-label-large-size);
     font-weight: 500;
-    color: #555;
+    color: var(--md-sys-color-on-surface-variant);
     text-align: left;
 }
 
 .model-select-trigger {
-    padding: 8px 12px;
-    border: 1px solid #ddd;
+    padding: 10px 12px;
+    border: 1px solid var(--md-sys-color-outline);
     border-radius: 4px;
-    background: #fff;
+    background: transparent;
     cursor: pointer;
     font-size: 14px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    color: #333;
+    color: var(--md-sys-color-on-surface);
 }
 
 .model-select-trigger:hover {
-    border-color: #bbb;
+    border-color: var(--md-sys-color-on-surface);
 }
 
 .selected-tags {
@@ -37,12 +37,13 @@
 }
 
 .tag {
-    background: #eef2ff;
-    color: #4f46e5;
-    padding: 2px 6px;
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    padding: 2px 8px;
     border-radius: 4px;
-    font-size: 11px;
-    border: 1px solid #c7d2fe;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
 }
 
 .model-select-dropdown {
@@ -50,21 +51,23 @@
     top: 100%;
     left: 0;
     width: 300px;
-    background: #fff;
-    border: 1px solid #ddd;
+    background: var(--md-sys-color-surface-container);
+    border: 1px solid var(--md-sys-color-outline-variant);
     border-radius: 4px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--md-sys-elevation-level-2);
     z-index: 1000;
     margin-top: 5px;
 }
 
 .model-search {
     width: 100%;
-    padding: 8px;
+    padding: 12px;
     border: none;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
     outline: none;
     font-size: 14px;
+    background: transparent;
+    color: var(--md-sys-color-on-surface);
 }
 
 .model-options {
@@ -73,32 +76,32 @@
 }
 
 .model-option {
-    padding: 8px 12px;
+    padding: 10px 12px;
     cursor: pointer;
     display: flex;
     justify-content: space-between;
-    font-size: 13px;
-    color: #333;
+    font-size: 14px;
+    color: var(--md-sys-color-on-surface);
     text-align: left;
 }
 
 .model-option:hover {
-    background-color: #f3f4f6;
+    background-color: var(--md-sys-color-surface-container-high);
 }
 
 .model-option.selected {
-    background-color: #eef2ff;
-    color: #4f46e5;
+    background-color: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
     font-weight: 500;
 }
 
 .check {
-    color: #4f46e5;
+    color: var(--md-sys-color-primary);
 }
 
 .no-options {
     padding: 12px;
-    color: #999;
+    color: var(--md-sys-color-on-surface-variant);
     font-style: italic;
     font-size: 13px;
 }
@@ -110,27 +113,27 @@
     top: 0;
     margin-left: 10px;
     width: 250px;
-    background: #1f2937;
-    color: #fff;
-    padding: 12px;
-    border-radius: 6px;
+    background: var(--md-sys-color-surface-container-highest);
+    color: var(--md-sys-color-on-surface);
+    padding: 16px;
+    border-radius: 8px;
     font-size: 12px;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--md-sys-elevation-level-3);
     z-index: 1100;
     pointer-events: none;
-    /* Let clicks pass through */
     text-align: left;
 }
 
 .model-tooltip h3 {
-    margin: 0 0 5px 0;
+    margin: 0 0 8px 0;
     font-size: 14px;
-    color: #fff;
+    color: var(--md-sys-color-on-surface);
+    font-weight: 600;
 }
 
 .model-tooltip .model-description {
-    margin: 0 0 10px 0;
-    color: #d1d5db;
+    margin: 0 0 12px 0;
+    color: var(--md-sys-color-on-surface-variant);
     line-height: 1.4;
     display: -webkit-box;
     -webkit-line-clamp: 3;
@@ -140,15 +143,17 @@
 }
 
 .model-meta {
-    border-top: 1px solid #374151;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
     padding-top: 8px;
     display: flex;
     flex-direction: column;
     gap: 4px;
+    color: var(--md-sys-color-on-surface-variant);
 }
 
 .price-info {
     margin-top: 4px;
     font-size: 11px;
-    color: #9ca3af;
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.8;
 }

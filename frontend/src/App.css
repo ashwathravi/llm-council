@@ -7,30 +7,36 @@
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  background: #ffffff;
-  color: #333;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  background: var(--md-sys-color-background);
+  color: var(--md-sys-color-on-background);
 }
 
 .main-content {
   flex: 1;
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  /* Full height */
+  overflow: hidden;
+  /* Prevent body scroll */
 }
 
 .user-header {
+  flex-shrink: 0;
+  /* Don't shrink */
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  padding: 12px 24px;
-  background: #fff;
-  border-bottom: 1px solid #e0e0e0;
+  padding: 0 24px;
+  background: var(--md-sys-color-surface);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
   gap: 16px;
-  font-size: 14px;
-  color: #555;
-  height: 60px;
+  font-size: var(--md-sys-typescale-label-large-size);
+  color: var(--md-sys-color-on-surface-variant);
+  height: 64px;
+  /* Standard MD3 header height */
+  z-index: 10;
+  /* Ensure it stays above content if needed */
 }
 
 .logout-btn {

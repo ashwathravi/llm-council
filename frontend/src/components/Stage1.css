@@ -1,15 +1,16 @@
 .stage {
   margin: 24px 0;
-  padding: 20px;
-  background: #fafafa;
-  border-radius: 8px;
-  border: 1px solid #e0e0e0;
+  padding: 24px;
+  background: var(--md-sys-color-surface-container);
+  border-radius: 16px;
+  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .stage-title {
   margin: 0 0 16px 0;
-  color: #333;
-  font-size: 16px;
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--md-sys-typescale-title-medium-font);
+  font-size: var(--md-sys-typescale-title-medium-size);
   font-weight: 600;
 }
 
@@ -22,44 +23,45 @@
 
 .tab {
   padding: 8px 16px;
-  background: #ffffff;
-  border: 1px solid #d0d0d0;
-  border-radius: 6px 6px 0 0;
-  color: #666;
+  background: transparent;
+  /* MD3 tabs are usually text or pill */
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 8px;
+  color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s;
+  font-weight: 500;
 }
 
 .tab:hover {
-  background: #f0f0f0;
-  color: #333;
-  border-color: #4a90e2;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
 }
 
 .tab.active {
-  background: #ffffff;
-  color: #4a90e2;
-  border-color: #4a90e2;
-  border-bottom-color: #ffffff;
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  border-color: transparent;
   font-weight: 600;
 }
 
 .tab-content {
-  background: #ffffff;
-  padding: 16px;
-  border-radius: 6px;
-  border: 1px solid #e0e0e0;
+  background: var(--md-sys-color-surface);
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .model-name {
-  color: #888;
+  color: var(--md-sys-color-primary);
   font-size: 12px;
   margin-bottom: 12px;
   font-family: monospace;
+  font-weight: 600;
 }
 
 .response-text {
-  color: #333;
+  color: var(--md-sys-color-on-surface);
   line-height: 1.6;
 }

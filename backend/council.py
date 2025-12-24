@@ -5,21 +5,20 @@ from .openrouter import query_models_parallel, query_model
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
 
 
-async def stage1_collect_responses(user_query: str, council_models: List[str] = None) -> List[Dict[str, Any]]:
+async def stage1_collect_responses(messages: List[Dict[str, str]], council_models: List[str] = None) -> List[Dict[str, Any]]:
     """
     Stage 1: Collect individual responses from all council models.
 
     Args:
-        user_query: The user's question
+        messages: List of message dicts (full history)
         council_models: Optional list of models to use. Defaults to config COUNCIL_MODELS.
 
     Returns:
         List of dicts with 'model' and 'response' keys
     """
     active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
-    messages = [{"role": "user", "content": user_query}]
-
-    # Query all models in parallel
+    
+    # Query all models in parallel using full history
     responses = await query_models_parallel(active_models, messages)
 
     # Format results
@@ -300,27 +299,31 @@ Title:"""
     return title
 
 
-async def run_full_council(prompt: str, framework: str = "standard", council_models: list = None, chairman_model: str = None):
+async def run_full_council(messages: List[Dict[str, str]], framework: str = "standard", council_models: list = None, chairman_model: str = None):
     """
     Orchestrates the selected council process.
     """
+    # Extract latest user query for Stage 2/3 context
+    # Assuming the last message is from the user
+    latest_query = messages[-1]['content'] if messages and messages[-1]['role'] == 'user' else "Unknown Query"
+
     # Use provided models or fallback to config defaults
     active_council_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
     active_chairman_model = chairman_model if chairman_model else CHAIRMAN_MODEL
 
     # Stage 1: Collect responses
-    # We need to pass the models to stage 1 functions
+    # We need to pass the full messages to stage 1 functions
     if framework == "six_hats":
-        stage1_results = await stage1_collect_responses_six_hats(prompt, active_council_models)
+        stage1_results = await stage1_collect_responses_six_hats(messages, active_council_models)
     else:
-        stage1_results = await stage1_collect_responses(prompt, active_council_models)
+        stage1_results = await stage1_collect_responses(messages, active_council_models)
     
     if not stage1_results:
         return _return_error()
 
     # Stage 2: Rank or Critique
     if framework == "debate":
-        stage2_results, label_to_model = await stage2_collect_critiques(prompt, stage1_results, active_council_models)
+        stage2_results, label_to_model = await stage2_collect_critiques(latest_query, stage1_results, active_council_models)
     elif framework == "ensemble":
          # Ensemble doesn't use Stage 2 for logic, but we need to return something
          stage2_results = []
@@ -332,7 +335,7 @@ async def run_full_council(prompt: str, framework: str = "standard", council_mod
          }
     else:
         # Standard and Six Hats use ranking
-        stage2_results, label_to_model = await stage2_collect_rankings(prompt, stage1_results, active_council_models, active_chairman_model)
+        stage2_results, label_to_model = await stage2_collect_rankings(latest_query, stage1_results, active_council_models, active_chairman_model)
 
     # Calculate aggregate rankings if applicable
     aggregate_rankings = []
@@ -341,7 +344,7 @@ async def run_full_council(prompt: str, framework: str = "standard", council_mod
 
     # Stage 3: Synthesize
     stage3_result = await stage3_synthesize_final(
-        prompt, 
+        latest_query, 
         stage1_results, 
         stage2_results, 
         active_chairman_model, # Pass chairman model
@@ -491,7 +494,7 @@ def _return_error():
     }, {}
 
 
-async def stage1_collect_responses_six_hats(user_query: str, council_models: List[str] = None) -> List[Dict[str, Any]]:
+async def stage1_collect_responses_six_hats(messages: List[Dict[str, str]], council_models: List[str] = None) -> List[Dict[str, Any]]:
     """Stage 1 for Six Hats: Assign prompts to models."""
     active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
     hats = [
@@ -508,22 +511,18 @@ async def stage1_collect_responses_six_hats(user_query: str, council_models: Lis
     model_tasks = []
     assigned_hats = []
     
-    model_tasks = []
-    assigned_hats = []
-    
     for i, model in enumerate(active_models):
         hat_name, hat_prompt = hats[i % len(hats)]
         
         system_prompt = f"You are wearing the {hat_name}. {hat_prompt}"
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_query}
-        ]
+        
+        # Prepend system prompt to the FULL history
+        current_messages = [{"role": "system", "content": system_prompt}] + messages
         
         # We need to query models individually since they have different prompts
         # But we can still run them in parallel if we restructure query_models_parallel
         # For now, let's use a gathered list of coroutines
-        model_tasks.append(query_model(model, messages))
+        model_tasks.append(query_model(model, current_messages))
         assigned_hats.append(hat_name)
 
     import asyncio
