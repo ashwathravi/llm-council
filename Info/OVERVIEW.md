@@ -133,3 +133,8 @@ This strict format allows reliable parsing while still getting thoughtful evalua
 - Model performance analytics over time
 - Custom ranking criteria (not just accuracy/insight)
 - Support for reasoning models (o1, etc.) with special handling
+- Support for multi-modal capabilities  (need to make sure the models select support it)
+- Embedding models for RAG, classification, search, clustering, etc.
+- Support for tool calling (need to make sure the models select support it)
+- Calls to "openai/gpt-5.2-pro" not working
+- Automatica sanitization before sending to LLMs (and de-sanitize after receiving using Gemini models)
