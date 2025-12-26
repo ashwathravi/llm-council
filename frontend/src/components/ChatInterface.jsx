@@ -65,8 +65,31 @@ export default function ChatInterface({
           <span className="model-info">{conversation.framework}</span>
         </div>
         <div className="header-actions">
-          <button className="export-btn" onClick={() => handleExport('md')}>Export MD</button>
-          <button className="export-btn" onClick={() => handleExport('pdf')}>Export PDF</button>
+          <button
+            className="export-btn icon-btn"
+            onClick={() => handleExport('md')}
+            title="Export to Markdown"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <path d="M12 18v-6"></path>
+              <path d="M9 15l3 3 3-3"></path>
+            </svg>
+          </button>
+          <button
+            className="export-btn icon-btn"
+            onClick={() => handleExport('pdf')}
+            title="Export to PDF"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+               <polyline points="14 2 14 8 20 8"></polyline>
+               <path d="M16 13H8"></path>
+               <path d="M16 17H8"></path>
+               <path d="M10 9H8"></path>
+            </svg>
+          </button>
         </div>
       </div>
 

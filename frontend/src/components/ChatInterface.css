@@ -35,18 +35,24 @@
 }
 
 .export-btn {
-  padding: 6px 12px;
-  border-radius: 16px;
-  border: 1px solid var(--md-sys-color-outline);
+  padding: 6px;
+  border-radius: 50%;
+  border: none;
   background: transparent;
-  color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-surface-variant);
   font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
 }
 
 .export-btn:hover {
   background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
 }
 
 /* Responsive adjustment */
