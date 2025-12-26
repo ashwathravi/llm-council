@@ -46,6 +46,15 @@ export default function ChatInterface({
     }
   };
 
+  const handleCopyLink = () => {
+    const url = window.location.href;
+    navigator.clipboard.writeText(url).then(() => {
+        alert("Link copied to clipboard!");
+    }).catch(err => {
+        console.error('Failed to copy link:', err);
+    });
+  };
+
   if (!conversation) {
     return (
       <div className="chat-interface">
@@ -88,6 +97,16 @@ export default function ChatInterface({
                <path d="M16 13H8"></path>
                <path d="M16 17H8"></path>
                <path d="M10 9H8"></path>
+            </svg>
+          </button>
+          <button
+            className="export-btn icon-btn"
+            onClick={handleCopyLink}
+            title="Copy Link to Chat"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+               <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
             </svg>
           </button>
         </div>
