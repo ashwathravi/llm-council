@@ -55,6 +55,13 @@
   color: var(--md-sys-color-on-secondary-container);
 }
 
+/* Success state for copy button */
+.export-btn.success {
+  color: #2e7d32; /* Green 800 */
+  background: #e8f5e9; /* Green 50 */
+  border-color: #c8e6c9; /* Green 100 */
+}
+
 /* Responsive adjustment */
 @media (max-width: 1200px) {
   .chat-header {
