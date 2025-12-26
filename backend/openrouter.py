@@ -3,13 +3,42 @@ import httpx
 from typing import List, Dict, Any, Optional
 from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
 
+DEFAULT_REFERER = "https://llm-council.local"
+
+
+def _extract_error_message(response: httpx.Response) -> str:
+    try:
+        data = response.json()
+    except ValueError:
+        return response.text or "Unknown error"
+
+    if isinstance(data, dict):
+        error = data.get("error")
+        if isinstance(error, dict):
+            return error.get("message") or error.get("error") or str(error)
+        if isinstance(error, str):
+            return error
+        if "message" in data:
+            return str(data["message"])
+
+    return response.text or "Unknown error"
+
 async def fetch_models() -> List[Dict[str, Any]]:
     """
     Fetch available models from OpenRouter.
     """
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY is not configured.")
     try:
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "HTTP-Referer": DEFAULT_REFERER,
+        }
         async with httpx.AsyncClient() as client:
-            response = await client.get("https://openrouter.ai/api/v1/models")
+            response = await client.get(
+                "https://openrouter.ai/api/v1/models",
+                headers=headers,
+            )
             response.raise_for_status()
             data = response.json().get("data", [])
             
@@ -31,6 +60,11 @@ async def fetch_models() -> List[Dict[str, Any]]:
             models.sort(key=lambda x: x["name"])
             return models
             
+    except httpx.HTTPStatusError as e:
+        message = _extract_error_message(e.response)
+        raise RuntimeError(
+            f"OpenRouter error {e.response.status_code}: {message}"
+        ) from e
     except Exception as e:
         print(f"Error fetching models: {e}")
         raise e
@@ -51,9 +85,18 @@ async def query_model(
     Returns:
         Response dict with 'content' and optional 'reasoning_details', or None if failed
     """
+    if not OPENROUTER_API_KEY:
+        return {
+            "content": None,
+            "reasoning_details": None,
+            "error": "OPENROUTER_API_KEY is not configured.",
+            "status_code": None,
+        }
+
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
+        "HTTP-Referer": DEFAULT_REFERER,
     }
 
     payload = {
@@ -74,13 +117,30 @@ async def query_model(
             message = data['choices'][0]['message']
 
             return {
-                'content': message.get('content'),
-                'reasoning_details': message.get('reasoning_details')
+                "content": message.get("content"),
+                "reasoning_details": message.get("reasoning_details"),
+                "error": None,
+                "status_code": None,
             }
 
+    except httpx.HTTPStatusError as e:
+        message = _extract_error_message(e.response)
+        error_message = f"{e.response.status_code}: {message}"
+        print(f"Error querying model {model}: {error_message}")
+        return {
+            "content": None,
+            "reasoning_details": None,
+            "error": error_message,
+            "status_code": e.response.status_code,
+        }
     except Exception as e:
         print(f"Error querying model {model}: {e}")
-        return None
+        return {
+            "content": None,
+            "reasoning_details": None,
+            "error": str(e),
+            "status_code": None,
+        }
 
 
 async def query_models_parallel(
@@ -118,10 +178,14 @@ async def query_model_stream(
     Query a single model with streaming.
     Yields content chunks (strings).
     """
+    if not OPENROUTER_API_KEY:
+        print("Error querying model stream: OPENROUTER_API_KEY is not configured.")
+        return
+
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://llm-council.local", # Recommended by OpenRouter
+        "HTTP-Referer": DEFAULT_REFERER, # Recommended by OpenRouter
     }
 
     payload = {

@@ -50,7 +50,15 @@ export const api = {
       headers: getAuthHeaders()
     });
     if (!response.ok) {
-      throw new Error('Failed to fetch models');
+      let detail = 'Failed to fetch models';
+      try {
+        const data = await response.json();
+        detail = data.detail || data.error || detail;
+      } catch (error) {
+        const text = await response.text();
+        if (text) detail = text;
+      }
+      throw new Error(detail);
     }
     return response.json();
   },

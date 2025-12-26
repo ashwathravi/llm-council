@@ -24,7 +24,12 @@ async def stage1_collect_responses(messages: List[Dict[str, str]], council_model
     # Yield results as they complete
     for completed_task in asyncio.as_completed(tasks):
         model, response = await completed_task
-        if response:
+        if response and response.get("error"):
+            yield {
+                "model": model,
+                "error": response.get("error")
+            }
+        elif response:
             yield {
                 "model": model,
                 "response": response.get('content', '')
@@ -104,7 +109,7 @@ Now provide your evaluation and ranking:"""
     # Format results
     stage2_results = []
     for model, response in responses.items():
-        if response is not None:
+        if response is not None and not response.get("error"):
             full_text = response.get('content', '')
             parsed = parse_ranking_from_text(full_text)
             stage2_results.append({
@@ -219,7 +224,7 @@ Title:"""
     # Use xiaomi/mimo-v2-flash:free for title generation
     response = await query_model("xiaomi/mimo-v2-flash:free", messages, timeout=30.0)
 
-    if response is None:
+    if response is None or response.get("error"):
         # Fallback to a generic title
         return "New Conversation"
 
@@ -249,13 +254,23 @@ async def run_full_council(messages: List[Dict[str, str]], framework: str = "sta
 
     # Stage 1: Collect responses
     # We need to pass the full messages to stage 1 functions
+    stage1_errors = []
     if framework == "six_hats":
-        stage1_results = await stage1_collect_responses_six_hats(messages, active_council_models)
+        stage1_results, stage1_errors = await stage1_collect_responses_six_hats(messages, active_council_models)
     else:
-        stage1_results = await stage1_collect_responses(messages, active_council_models)
-    
+        stage1_results = []
+        async for result in stage1_collect_responses(messages, active_council_models):
+            if result.get("error"):
+                stage1_errors.append(result)
+            else:
+                stage1_results.append(result)
+
     if not stage1_results:
-        return _return_error()
+        stage3_result = {
+            "model": "error",
+            "response": "All models failed to respond. Please try again."
+        }
+        return [], [], stage3_result, {"stage1_errors": stage1_errors}
 
     # Stage 2: Rank or Critique
     if framework == "debate":
@@ -292,7 +307,8 @@ async def run_full_council(messages: List[Dict[str, str]], framework: str = "sta
         "council_models": [r['model'] for r in stage1_results], # Actual models that responded
         "chairman_model": active_chairman_model,
         "label_to_model": label_to_model,
-        "aggregate_rankings": aggregate_rankings
+        "aggregate_rankings": aggregate_rankings,
+        "stage1_errors": stage1_errors,
     }
 
     return stage1_results, stage2_results, stage3_result, metadata
@@ -362,7 +378,7 @@ async def run_debate_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
 async def run_six_hats_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
     """Six Thinking Hats: Assigned perspectives."""
     # Stage 1: Collect responses with Hats
-    stage1_results = await stage1_collect_responses_six_hats(user_query)
+    stage1_results, _ = await stage1_collect_responses_six_hats(user_query)
     
     if not stage1_results:
         return _return_error()
@@ -430,7 +446,10 @@ def _return_error():
     }, {}
 
 
-async def stage1_collect_responses_six_hats(messages: List[Dict[str, str]], council_models: List[str] = None) -> List[Dict[str, Any]]:
+async def stage1_collect_responses_six_hats(
+    messages: List[Dict[str, str]],
+    council_models: List[str] = None
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Stage 1 for Six Hats: Assign prompts to models."""
     active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
     hats = [
@@ -465,16 +484,24 @@ async def stage1_collect_responses_six_hats(messages: List[Dict[str, str]], coun
     responses = await asyncio.gather(*model_tasks)
     
     results = []
+    errors = []
     for i, response in enumerate(responses):
         if response:
             model = active_models[i]
             hat = assigned_hats[i]
-            results.append({
-                "model": f"{model} ({hat})",
-                "response": response.get('content', '')
-            })
-            
-    return results
+            model_label = f"{model} ({hat})"
+            if response.get("error"):
+                errors.append({
+                    "model": model_label,
+                    "error": response.get("error")
+                })
+            else:
+                results.append({
+                    "model": model_label,
+                    "response": response.get('content', '')
+                })
+
+    return results, errors
 
 
 async def stage2_collect_critiques(user_query: str, stage1_results: List[Dict[str, Any]], council_models: List[str] = None) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
@@ -507,7 +534,7 @@ Provide your critique for each response."""
     
     results = []
     for model, response in responses.items():
-        if response:
+        if response and not response.get("error"):
             results.append({
                 "model": model,
                 "ranking": response.get('content', ''), # Reuse 'ranking' field for specific critique text
