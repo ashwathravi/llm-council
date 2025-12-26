@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import './Sidebar.css';
 import { api } from '../api';
 import ModelSelect from './ModelSelect';
 
-const Sidebar = ({ conversations, currentConversationId, onSelectConversation, onNewConversation }) => {
+const Sidebar = memo(({ conversations, currentConversationId, onSelectConversation, onNewConversation }) => {
   const [selectedFramework, setSelectedFramework] = useState('standard');
   const [models, setModels] = useState([]);
   const [chairmanModel, setChairmanModel] = useState('');
@@ -236,6 +236,6 @@ const Sidebar = ({ conversations, currentConversationId, onSelectConversation, o
       </div>
     </div>
   );
-};
+});
 
 export default Sidebar;
