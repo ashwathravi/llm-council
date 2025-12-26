@@ -16,7 +16,14 @@ function App() {
   // Load conversations on mount or when user changes
   useEffect(() => {
     if (user) {
-      loadConversations();
+      loadConversations().then(() => {
+         // Check for URL query param for conversation ID
+         const params = new URLSearchParams(window.location.search);
+         const convId = params.get('c');
+         if (convId) {
+             setCurrentConversationId(convId);
+         }
+      });
     } else {
       setConversations([]);
       setCurrentConversationId(null);
@@ -24,10 +31,28 @@ function App() {
     }
   }, [user]);
 
+  // Handle browser back/forward buttons
+  useEffect(() => {
+      const handlePopState = () => {
+          const params = new URLSearchParams(window.location.search);
+          const convId = params.get('c');
+          if (convId) {
+              setCurrentConversationId(convId);
+          } else {
+              setCurrentConversationId(null);
+          }
+      };
+
+      window.addEventListener('popstate', handlePopState);
+      return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   // Load conversation details when selected
   useEffect(() => {
     if (currentConversationId && user) {
       loadConversation(currentConversationId);
+    } else {
+      setCurrentConversation(null);
     }
   }, [currentConversationId, user]);
 
@@ -71,6 +96,8 @@ function App() {
 
   const handleSelectConversation = (id) => {
     setCurrentConversationId(id);
+    const newUrl = id ? `?c=${id}` : window.location.pathname;
+    window.history.pushState({ path: newUrl }, '', newUrl);
   };
 
   const handleSendMessage = async (content) => {

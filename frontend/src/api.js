@@ -191,4 +191,32 @@ export const api = {
       }
     }
   },
+
+  /**
+   * Export conversation to file.
+   * Triggers a browser download.
+   */
+  async exportConversation(conversationId, format = 'md') {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/export?format=${format}`,
+      { headers: getAuthHeaders() }
+    );
+    if (!response.ok) {
+      throw new Error('Failed to export conversation');
+    }
+
+    // Create blob and download link
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    // Filename is usually in Content-Disposition header, but we can guess or let browser handle it
+    // Or we can try to extract it from headers if needed.
+    // For simplicity, we just trigger click.
+    a.download = `conversation_${conversationId}.${format === 'md' ? 'md' : 'pdf'}`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
 };
