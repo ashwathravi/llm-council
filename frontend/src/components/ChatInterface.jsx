@@ -37,6 +37,15 @@ export default function ChatInterface({
     }
   };
 
+  const handleExport = async (format) => {
+    try {
+      await import('../api').then(m => m.api.exportConversation(conversation.id, format));
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Failed to export conversation');
+    }
+  };
+
   if (!conversation) {
     return (
       <div className="chat-interface">
@@ -50,6 +59,17 @@ export default function ChatInterface({
 
   return (
     <div className="chat-interface">
+      <div className="chat-header">
+        <div className="header-info">
+          <h3>{conversation.title || 'New Conversation'}</h3>
+          <span className="model-info">{conversation.framework}</span>
+        </div>
+        <div className="header-actions">
+          <button className="export-btn" onClick={() => handleExport('md')}>Export MD</button>
+          <button className="export-btn" onClick={() => handleExport('pdf')}>Export PDF</button>
+        </div>
+      </div>
+
       <div className="messages-container">
         {conversation.messages.length === 0 ? (
           <div className="empty-state">

@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 from sqlalchemy.future import select
 from sqlalchemy import update
+from sqlalchemy.orm.attributes import flag_modified
 from .config import DATA_DIR, DATABASE_URL, APP_ORIGIN
 from .database import AsyncSessionLocal, ConversationModel, init_db
 
@@ -69,8 +70,8 @@ async def db_add_message(conversation_id: str, user_id: str, message: Dict[str, 
         current_msgs.append(message)
         conv.messages = current_msgs
         
-        # Also update title if it's the first user message? 
-        # Title update is separate usually.
+        # Explicitly flag as modified to ensure persistence
+        flag_modified(conv, "messages")
         
         await session.commit()
 

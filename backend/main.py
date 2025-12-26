@@ -21,6 +21,7 @@ from .council import (
     stage2_collect_rankings, stage2_collect_critiques,
     stage3_synthesize_final, calculate_aggregate_rankings
 )
+from . import export
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -107,6 +108,34 @@ async def login(request: auth.GoogleLoginRequest):
         }
     }
 
+
+@app.get("/api/conversations/{conversation_id}/export")
+async def export_conversation(
+    conversation_id: str,
+    format: str = "md",
+    user_id: str = Depends(auth.get_current_user_id)
+):
+    """Export a conversation to Markdown or PDF."""
+    conversation = await storage.get_conversation(conversation_id, user_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    if format == "md":
+        content = export.export_to_markdown(conversation)
+        return StreamingResponse(
+            io.StringIO(content),
+            media_type="text/markdown",
+            headers={"Content-Disposition": f"attachment; filename=conversation_{conversation_id}.md"}
+        )
+    elif format == "pdf":
+        content_bytes = export.export_to_pdf(conversation)
+        return StreamingResponse(
+            io.BytesIO(content_bytes),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=conversation_{conversation_id}.pdf"}
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Invalid format. Use 'md' or 'pdf'.")
 
 
 @app.get("/api/conversations", response_model=List[ConversationMetadata])

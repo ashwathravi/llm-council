@@ -9,6 +9,59 @@
   background: var(--md-sys-color-background);
 }
 
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20%;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface);
+}
+
+.header-info h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--md-sys-color-on-surface);
+}
+
+.model-info {
+  font-size: 0.8rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.export-btn {
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--md-sys-color-outline);
+  background: transparent;
+  color: var(--md-sys-color-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.export-btn:hover {
+  background: var(--md-sys-color-secondary-container);
+}
+
+/* Responsive adjustment */
+@media (max-width: 1200px) {
+  .chat-header {
+    padding: 16px 10%;
+  }
+}
+
+@media (max-width: 800px) {
+  .chat-header {
+    padding: 16px;
+  }
+}
+
 .messages-container {
   flex: 1;
   overflow-y: auto;
