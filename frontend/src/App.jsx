@@ -119,6 +119,7 @@ function App() {
         stage2: null,
         stage3: null,
         metadata: null,
+        errors: [],
         loading: {
           stage1: false,
           stage2: false,
@@ -153,6 +154,16 @@ function App() {
               // Ensure stage1 is an array
               if (!Array.isArray(lastMsg.stage1)) lastMsg.stage1 = [];
               lastMsg.stage1.push(event.data);
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage1_error':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              if (!Array.isArray(lastMsg.errors)) lastMsg.errors = [];
+              lastMsg.errors.push(event.data);
               return { ...prev, messages };
             });
             break;
@@ -236,7 +247,22 @@ function App() {
             break;
 
           case 'error':
-            console.error('Stream error:', event.message);
+            console.error('Stream error:', event.error);
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              if (!Array.isArray(lastMsg.errors)) lastMsg.errors = [];
+              lastMsg.errors.push({
+                model: 'system',
+                error: event.error || 'Unknown error',
+              });
+              if (lastMsg.loading) {
+                lastMsg.loading.stage1 = false;
+                lastMsg.loading.stage2 = false;
+                lastMsg.loading.stage3 = false;
+              }
+              return { ...prev, messages };
+            });
             setIsLoading(false);
             break;
 

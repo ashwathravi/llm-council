@@ -134,6 +134,19 @@ export default function ChatInterface({
                 <div className="assistant-message">
                   <div className="message-label">LLM Council</div>
 
+                  {msg.errors && msg.errors.length > 0 && (
+                    <div className="stage-error-panel">
+                      <div className="stage-error-title">Model errors</div>
+                      <ul className="stage-error-list">
+                        {msg.errors.map((error, errorIndex) => (
+                          <li key={errorIndex}>
+                            <strong>{error.model}:</strong> {error.error}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   {/* Stage 1 */}
                   {msg.loading?.stage1 && (
                     <div className="stage-loading">

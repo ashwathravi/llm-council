@@ -29,6 +29,16 @@
     border-color: var(--md-sys-color-on-surface);
 }
 
+.model-select-trigger.disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+    border-color: var(--md-sys-color-outline-variant);
+}
+
+.model-select-trigger.disabled:hover {
+    border-color: var(--md-sys-color-outline-variant);
+}
+
 .selected-tags {
     display: flex;
     flex-wrap: wrap;

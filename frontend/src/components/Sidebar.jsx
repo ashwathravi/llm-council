@@ -9,6 +9,7 @@ const Sidebar = ({ conversations, currentConversationId, onSelectConversation, o
   const [chairmanModel, setChairmanModel] = useState('');
   const [councilModels, setCouncilModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsError, setModelsError] = useState(null);
   const [status, setStatus] = useState(null);
   const [statusError, setStatusError] = useState(null);
   const [showAllHistory, setShowAllHistory] = useState(false);
@@ -36,6 +37,7 @@ const Sidebar = ({ conversations, currentConversationId, onSelectConversation, o
   const loadModels = async () => {
     setLoadingModels(true);
     try {
+      setModelsError(null);
       const data = await api.getModels();
       setModels(data);
       // Set defaults? Or leave empty to use backend defaults
@@ -43,6 +45,7 @@ const Sidebar = ({ conversations, currentConversationId, onSelectConversation, o
       // Let's leave empty and let user know "Default" is used if empty
     } catch (error) {
       console.error("Failed to load models", error);
+      setModelsError(error.message || "Failed to load models");
     } finally {
       setLoadingModels(false);
     }
@@ -139,6 +142,7 @@ const Sidebar = ({ conversations, currentConversationId, onSelectConversation, o
             value={chairmanModel}
             onChange={setChairmanModel}
             multi={false}
+            disabled={loadingModels || !!modelsError}
           />
 
           <ModelSelect
@@ -148,7 +152,13 @@ const Sidebar = ({ conversations, currentConversationId, onSelectConversation, o
             onChange={setCouncilModels}
             multi={true}
             maxSelected={5}
+            disabled={loadingModels || !!modelsError}
           />
+          {modelsError && (
+            <div className="model-error">
+              {modelsError}
+            </div>
+          )}
         </div>
       </div>
 

@@ -178,7 +178,7 @@ async def list_models(user_id: str = Depends(auth.get_current_user_id)):
         return models
     except Exception as e:
         print(f"Error fetching models: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch models")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/status")
 async def get_status():
@@ -336,6 +336,7 @@ async def send_message_stream(
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
             
             stage1_results = []
+            stage1_errors = []
             if framework == "six_hats":
                 # Only six_hats helper was left gathering, we need to refactor it too OR just await it if we didn't touch it.
                 # Assuming I didn't touch six_hats in the previous step (I only touched stage1_collect_responses). 
@@ -343,18 +344,28 @@ async def send_message_stream(
                 # For now, let's keep six_hats as batch if not refactored, or if user wants consistency, I should have refactored it.
                 # The prompt said "stage1_collect_responses". Let's check if I can wrap six_hats easily or if I should just await it.
                 # I'll just await it as before to avoid breaking it, but emit updates in batch.
-                stage1_results = await stage1_collect_responses_six_hats(history, council_models)
+                stage1_results, stage1_errors = await stage1_collect_responses_six_hats(history, council_models)
+                for error in stage1_errors:
+                    yield f"data: {json.dumps({'type': 'stage1_error', 'data': error})}\n\n"
                 # Emit fake updates for consistency? Or just one complete.
                 yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
             else:
                 # Streaming stage 1
                 async for result in stage1_collect_responses(history, council_models):
-                    stage1_results.append(result)
-                    # Send incremental update
-                    yield f"data: {json.dumps({'type': 'stage1_update', 'data': result})}\n\n"
+                    if result.get("error"):
+                        stage1_errors.append(result)
+                        yield f"data: {json.dumps({'type': 'stage1_error', 'data': result})}\n\n"
+                    else:
+                        stage1_results.append(result)
+                        # Send incremental update
+                        yield f"data: {json.dumps({'type': 'stage1_update', 'data': result})}\n\n"
                 
                 # Send complete array at end (optional, but good for consistency)
                 yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+
+            if not stage1_results:
+                yield f"data: {json.dumps({'type': 'error', 'error': 'All selected models failed to respond. Please check your OpenRouter permissions or model availability.'})}\n\n"
+                return
 
             # Stage 2: Collect rankings/critiques (Batch for now)
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"

@@ -7,7 +7,8 @@ const ModelSelect = ({
     onChange,
     label,
     multi = false,
-    maxSelected = 5
+    maxSelected = 5,
+    disabled = false
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState('');
@@ -41,6 +42,12 @@ const ModelSelect = ({
             setHoveredModel(null);
         }
     }, [isOpen]);
+
+    useEffect(() => {
+        if (disabled) {
+            setIsOpen(false);
+        }
+    }, [disabled]);
 
     const filteredOptions = options.filter(option =>
         option.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -88,8 +95,10 @@ const ModelSelect = ({
         <div className="model-select-container" ref={wrapperRef}>
             <label>{label}</label>
             <div
-                className="model-select-trigger"
-                onClick={() => setIsOpen(!isOpen)}
+                className={`model-select-trigger ${disabled ? 'disabled' : ''}`}
+                onClick={() => {
+                    if (!disabled) setIsOpen(!isOpen);
+                }}
             >
                 {getDisplayValue()}
                 <span className="arrow">▼</span>
@@ -113,6 +122,7 @@ const ModelSelect = ({
                         onChange={(e) => setSearch(e.target.value)}
                         onClick={(e) => e.stopPropagation()}
                         autoFocus
+                        disabled={disabled}
                     />
                     <div className="model-options">
                         {filteredOptions.length > 0 ? (
