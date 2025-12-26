@@ -130,8 +130,6 @@ This strict format allows reliable parsing while still getting thoughtful evalua
 
 ## Future Enhancement Ideas
 
-- Streaming responses instead of batch loading
-- Export conversations to markdown/PDF
 - Model performance analytics over time
 - Custom ranking criteria (not just accuracy/insight)
 - Support for reasoning models (o1, etc.) with special handling
