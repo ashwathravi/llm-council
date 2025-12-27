@@ -54,7 +54,7 @@ export const api = {
       try {
         const data = await response.json();
         detail = data.detail || data.error || detail;
-      } catch (error) {
+      } catch {
         const text = await response.text();
         if (text) detail = text;
       }
