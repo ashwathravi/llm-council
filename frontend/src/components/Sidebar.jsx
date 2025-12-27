@@ -3,7 +3,15 @@ import './Sidebar.css';
 import { api } from '../api';
 import ModelSelect from './ModelSelect';
 
-const Sidebar = memo(({ conversations, currentConversationId, onSelectConversation, onNewConversation }) => {
+const Sidebar = memo(({
+  conversations,
+  currentConversationId,
+  onSelectConversation,
+  onNewConversation,
+  isMobile,
+  isOpen,
+  onClose,
+}) => {
   const [selectedFramework, setSelectedFramework] = useState('standard');
   const [models, setModels] = useState([]);
   const [chairmanModel, setChairmanModel] = useState('');
@@ -76,7 +84,7 @@ const Sidebar = memo(({ conversations, currentConversationId, onSelectConversati
   };
 
   return (
-    <div className="sidebar">
+    <div className={`sidebar ${isMobile ? 'mobile' : ''} ${isOpen ? 'open' : ''}`}>
       <div className="sidebar-header">
         <div className="header-title-row">
           <h2>LLM Council</h2>
@@ -90,6 +98,16 @@ const Sidebar = memo(({ conversations, currentConversationId, onSelectConversati
             <div className="status-badge status-file" title="Failed to fetch backend status">
               OFFLINE
             </div>
+          )}
+          {isMobile && (
+            <button
+              type="button"
+              className="sidebar-close-btn"
+              onClick={onClose}
+              aria-label="Close navigation"
+            >
+              ×
+            </button>
           )}
         </div>
 
