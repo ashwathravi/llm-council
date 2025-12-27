@@ -36,10 +36,10 @@ def verify_google_token(token: str) -> Dict[str, Any]:
             token, requests.Request(), GOOGLE_CLIENT_ID
         )
         return id_info
-    except ValueError as e:
+    except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid Google token: {str(e)}",
+            detail="Invalid Google token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
