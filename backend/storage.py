@@ -114,6 +114,11 @@ def ensure_data_dir():
     Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
 
 def get_conversation_path(conversation_id: str) -> str:
+    # Security: Prevent path traversal
+    # conversation_id should be a UUID or simple alphanumeric string
+    base = os.path.basename(conversation_id)
+    if base != conversation_id or ".." in conversation_id:
+        raise ValueError("Invalid conversation ID")
     return os.path.join(DATA_DIR, f"{conversation_id}.json")
 
 def file_create_conversation(conversation_id: str, user_id: str, framework: str, council_models: list, chairman_model: str) -> Dict[str, Any]:
