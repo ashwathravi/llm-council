@@ -21,6 +21,23 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sidebar-close-btn {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: transparent;
+  color: var(--md-sys-color-on-surface);
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.sidebar-close-btn:hover {
+  background: var(--md-sys-color-surface-container-high);
 }
 
 .sidebar-header h2 {
@@ -198,7 +215,7 @@
 }
 
 /* List Styling */
-.conversation-list {
+.conversations-list {
   flex: 1;
   overflow-y: auto;
   padding: 0 12px 12px 12px;
@@ -307,4 +324,25 @@
   background: var(--md-sys-color-error-container);
   color: var(--md-sys-color-on-error-container);
   font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .sidebar.mobile {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: min(85vw, 320px);
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 30;
+    box-shadow: var(--md-sys-elevation-level-3);
+  }
+
+  .sidebar.mobile.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-header {
+    padding: 16px 16px 8px 16px;
+  }
 }

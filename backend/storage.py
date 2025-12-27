@@ -8,7 +8,7 @@ from pathlib import Path
 from sqlalchemy.future import select
 from sqlalchemy import update
 from sqlalchemy.orm.attributes import flag_modified
-from .config import DATA_DIR, DATABASE_URL, APP_ORIGIN
+from .config import DATA_DIR, APP_ORIGIN
 from .database import AsyncSessionLocal, ConversationModel, init_db
 
 # --- Database Storage Helpers ---
@@ -194,25 +194,25 @@ def file_list_conversations(user_id: str) -> List[Dict[str, Any]]:
 # This means we need to refactor `main.py` to `await` storage calls.
 
 async def create_conversation(conversation_id: str, user_id: str, framework: str = "standard", council_models: list = None, chairman_model: str = None):
-    if DATABASE_URL:
+    if os.getenv("DATABASE_URL"):
         return await db_create_conversation(user_id, conversation_id, framework, council_models, chairman_model)
     else:
         return file_create_conversation(conversation_id, user_id, framework, council_models, chairman_model)
 
 async def get_conversation(conversation_id: str, user_id: str):
-    if DATABASE_URL:
+    if os.getenv("DATABASE_URL"):
         return await db_get_conversation(conversation_id, user_id)
     else:
         return file_get_conversation(conversation_id, user_id)
 
 async def list_conversations(user_id: str):
-    if DATABASE_URL:
+    if os.getenv("DATABASE_URL"):
         return await db_list_conversations(user_id)
     else:
         return file_list_conversations(user_id)
 
 async def add_user_message(conversation_id: str, user_id: str, content: str):
-    if DATABASE_URL:
+    if os.getenv("DATABASE_URL"):
         await db_add_message(conversation_id, user_id, {"role": "user", "content": content})
     else:
         # Fallback to file - read, update, save
@@ -228,7 +228,7 @@ async def add_assistant_message(conversation_id: str, user_id: str, stage1, stag
         "stage2": stage2,
         "stage3": stage3
     }
-    if DATABASE_URL:
+    if os.getenv("DATABASE_URL"):
         await db_add_message(conversation_id, user_id, message)
     else:
         conv = file_get_conversation(conversation_id, user_id)
@@ -237,7 +237,7 @@ async def add_assistant_message(conversation_id: str, user_id: str, stage1, stag
         file_save_conversation(conv)
 
 async def update_conversation_title(conversation_id: str, user_id: str, title: str):
-    if DATABASE_URL:
+    if os.getenv("DATABASE_URL"):
         await db_update_title(conversation_id, user_id, title)
     else:
         conv = file_get_conversation(conversation_id, user_id)
@@ -246,7 +246,7 @@ async def update_conversation_title(conversation_id: str, user_id: str, title: s
         file_save_conversation(conv)
 
 async def delete_conversation(conversation_id: str, user_id: str):
-    if DATABASE_URL:
+    if os.getenv("DATABASE_URL"):
         await db_delete_conversation(conversation_id, user_id)
     else:
         file_delete_conversation(conversation_id, user_id)

@@ -15,12 +15,14 @@ const ModelSelect = ({
     const [hoveredModel, setHoveredModel] = useState(null);
     const wrapperRef = useRef(null);
     const tooltipRef = useRef(null);
+    const isDropdownOpen = isOpen && !disabled;
 
     // Close dropdown when clicking outside
     useEffect(() => {
         function handleClickOutside(event) {
             if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
                 setIsOpen(false);
+                setHoveredModel(null);
             }
         }
         document.addEventListener("mousedown", handleClickOutside);
@@ -36,18 +38,10 @@ const ModelSelect = ({
         }
     }, [hoveredModel]);
 
-    // Clear hover when closed
-    useEffect(() => {
-        if (!isOpen) {
-            setHoveredModel(null);
-        }
-    }, [isOpen]);
-
-    useEffect(() => {
-        if (disabled) {
-            setIsOpen(false);
-        }
-    }, [disabled]);
+    const closeDropdown = () => {
+        setIsOpen(false);
+        setHoveredModel(null);
+    };
 
     const filteredOptions = options.filter(option =>
         option.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -65,7 +59,7 @@ const ModelSelect = ({
             }
         } else {
             onChange(option.id);
-            setIsOpen(false);
+            closeDropdown();
         }
     };
 
@@ -97,7 +91,13 @@ const ModelSelect = ({
             <div
                 className={`model-select-trigger ${disabled ? 'disabled' : ''}`}
                 onClick={() => {
-                    if (!disabled) setIsOpen(!isOpen);
+                    if (!disabled) {
+                        if (isOpen) {
+                            closeDropdown();
+                        } else {
+                            setIsOpen(true);
+                        }
+                    }
                 }}
             >
                 {getDisplayValue()}
@@ -112,7 +112,7 @@ const ModelSelect = ({
                 </div>
             )}
 
-            {isOpen && (
+            {isDropdownOpen && (
                 <div className="model-select-dropdown">
                     <input
                         type="text"
@@ -150,7 +150,7 @@ const ModelSelect = ({
             )}
 
             {/* Tooltip / Hover Card */}
-            {hoveredModel && (
+            {isDropdownOpen && hoveredModel && (
                 <div className="model-tooltip" ref={tooltipRef}>
                     <h3>{hoveredModel.name}</h3>
                     <p className="model-description">{hoveredModel.description || "No description available."}</p>
