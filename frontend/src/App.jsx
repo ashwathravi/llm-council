@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import Login from './components/Login';
@@ -77,12 +77,12 @@ function App() {
     }
   };
 
-  const handleNewConversation = async (framework, councilModels, chairmanModel) => {
+  const handleNewConversation = useCallback(async (framework, councilModels, chairmanModel) => {
     console.log("App: handleNewConversation received", { framework, councilModels, chairmanModel });
     setIsLoading(true);
     try {
       const data = await api.createConversation(framework, councilModels, chairmanModel);
-      setConversations([data, ...conversations]);
+      setConversations(prev => [data, ...prev]);
       setCurrentConversationId(data.id);
       // Store framework/models in local state if needed, or just let backend handle it
       // We might want to pass these to sendMessage if backend needs them, but backend stores them in conversation now.
@@ -92,13 +92,13 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const handleSelectConversation = (id) => {
+  const handleSelectConversation = useCallback((id) => {
     setCurrentConversationId(id);
     const newUrl = id ? `?c=${id}` : window.location.pathname;
     window.history.pushState({ path: newUrl }, '', newUrl);
-  };
+  }, []);
 
   const handleSendMessage = async (content) => {
     if (!currentConversationId) return;
