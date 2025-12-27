@@ -13,7 +13,7 @@ import os
 import requests
 from contextlib import asynccontextmanager
 
-from . import storage, auth, openrouter
+from . import storage, auth, openrouter, security
 from .database import init_db
 from .council import (
     run_full_council, generate_conversation_title,
@@ -85,7 +85,7 @@ async def root():
     return {"status": "ok", "service": "LLM Council API"}
 
 
-@app.post("/api/auth/login", response_model=LoginResponse)
+@app.post("/api/auth/login", response_model=LoginResponse, dependencies=[Depends(security.rate_limiter(requests_limit=5, time_window=60))])
 async def login(request: auth.GoogleLoginRequest):
     """
     Verify Google ID token and return session JWT.
