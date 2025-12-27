@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import Login from './components/Login';
 import { api } from './api';
-import { useAuth } from './contexts/AuthContext';
+import { useAuth } from './contexts/authContext';
 import './App.css';
 
 function App() {
@@ -12,24 +12,61 @@ function App() {
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const mobileBreakpoint = 900;
+  const [isMobile, setIsMobile] = useState(window.innerWidth < mobileBreakpoint);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= mobileBreakpoint);
+
+  const loadConversations = useCallback(async () => {
+    try {
+      const convs = await api.listConversations();
+      setConversations(convs);
+    } catch (error) {
+      console.error('Failed to load conversations:', error);
+      if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+        logout();
+      }
+    }
+  }, [logout]);
+
+  const loadConversation = useCallback(async (id) => {
+    try {
+      const conv = await api.getConversation(id);
+      setCurrentConversation(conv);
+    } catch (error) {
+      console.error('Failed to load conversation:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < mobileBreakpoint;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setIsSidebarOpen(true);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Load conversations on mount or when user changes
   useEffect(() => {
     if (user) {
       loadConversations().then(() => {
-         // Check for URL query param for conversation ID
-         const params = new URLSearchParams(window.location.search);
-         const convId = params.get('c');
-         if (convId) {
-             setCurrentConversationId(convId);
-         }
+        // Check for URL query param for conversation ID
+        const params = new URLSearchParams(window.location.search);
+        const convId = params.get('c');
+        if (convId) {
+          setCurrentConversationId(convId);
+        }
       });
     } else {
       setConversations([]);
       setCurrentConversationId(null);
       setCurrentConversation(null);
     }
-  }, [user]);
+  }, [loadConversations, user]);
 
   // Handle browser back/forward buttons
   useEffect(() => {
@@ -54,28 +91,7 @@ function App() {
     } else {
       setCurrentConversation(null);
     }
-  }, [currentConversationId, user]);
-
-  const loadConversations = async () => {
-    try {
-      const convs = await api.listConversations();
-      setConversations(convs);
-    } catch (error) {
-      console.error('Failed to load conversations:', error);
-      if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-        logout();
-      }
-    }
-  };
-
-  const loadConversation = async (id) => {
-    try {
-      const conv = await api.getConversation(id);
-      setCurrentConversation(conv);
-    } catch (error) {
-      console.error('Failed to load conversation:', error);
-    }
-  };
+  }, [currentConversationId, loadConversation, user]);
 
   const handleNewConversation = useCallback(async (framework, councilModels, chairmanModel) => {
     console.log("App: handleNewConversation received", { framework, councilModels, chairmanModel });
@@ -98,7 +114,10 @@ function App() {
     setCurrentConversationId(id);
     const newUrl = id ? `?c=${id}` : window.location.pathname;
     window.history.pushState({ path: newUrl }, '', newUrl);
-  }, []);
+    if (isMobile) {
+      setIsSidebarOpen(false);
+    }
+  }, [isMobile]);
 
   const handleSendMessage = async (content) => {
     if (!currentConversationId) return;
@@ -297,7 +316,18 @@ function App() {
 
   return (
     <div className="app">
+      {isMobile && isSidebarOpen && (
+        <button
+          type="button"
+          className="sidebar-overlay"
+          onClick={() => setIsSidebarOpen(false)}
+          aria-label="Close navigation"
+        />
+      )}
       <Sidebar
+        isMobile={isMobile}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
         conversations={conversations}
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
@@ -305,6 +335,14 @@ function App() {
       />
       <div className="main-content">
         <div className="user-header">
+          <button
+            type="button"
+            className="menu-btn"
+            onClick={() => setIsSidebarOpen(true)}
+            aria-label="Open navigation"
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
           <span>{user.name}</span>
           <button onClick={logout} className="logout-btn">Logout</button>
         </div>

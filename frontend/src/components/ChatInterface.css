@@ -73,6 +73,28 @@
   .chat-header {
     padding: 16px;
   }
+
+  .header-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 600px) {
+  .chat-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .export-btn {
+    width: 36px;
+    height: 36px;
+  }
 }
 
 .messages-container {
