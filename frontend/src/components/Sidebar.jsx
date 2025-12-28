@@ -187,19 +187,23 @@ const Sidebar = memo(({
             key={conv.id}
             className={`conversation-item ${conv.id === currentConversationId ? 'active' : ''
               }`}
-            onClick={() => onSelectConversation(conv.id)}
           >
-            <div className="conversation-content-wrapper">
+            <button
+              className="conversation-select-btn"
+              onClick={() => onSelectConversation(conv.id)}
+              aria-current={conv.id === currentConversationId ? 'page' : undefined}
+            >
               <div className="conversation-title">{conv.title}</div>
               <div className="conversation-meta">
                 {new Date(conv.created_at).toLocaleDateString()}
                 {conv.framework && ` • ${conv.framework}`}
               </div>
-            </div>
+            </button>
             <button
               className="delete-btn"
               onClick={(e) => handleDelete(e, conv.id)}
               title="Delete conversation"
+              aria-label="Delete conversation"
             >
               ×
             </button>
@@ -223,19 +227,23 @@ const Sidebar = memo(({
                     key={conv.id}
                     className={`conversation-item ${conv.id === currentConversationId ? 'active' : ''
                       }`}
-                    onClick={() => onSelectConversation(conv.id)}
                   >
-                    <div className="conversation-content-wrapper">
+                    <button
+                      className="conversation-select-btn"
+                      onClick={() => onSelectConversation(conv.id)}
+                      aria-current={conv.id === currentConversationId ? 'page' : undefined}
+                    >
                       <div className="conversation-title">{conv.title}</div>
                       <div className="conversation-meta">
                         {new Date(conv.created_at).toLocaleDateString()}
                         {conv.framework && ` • ${conv.framework}`}
                       </div>
-                    </div>
+                    </button>
                     <button
                       className="delete-btn"
                       onClick={(e) => handleDelete(e, conv.id)}
                       title="Delete conversation"
+                      aria-label="Delete conversation"
                     >
                       ×
                     </button>
