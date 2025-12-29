@@ -13,6 +13,7 @@ export default function ChatInterface({
   const [input, setInput] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
   const messagesEndRef = useRef(null);
+  const textareaRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -21,6 +22,13 @@ export default function ChatInterface({
   useEffect(() => {
     scrollToBottom();
   }, [conversation]);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [input]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -217,20 +225,26 @@ export default function ChatInterface({
 
       <form className="input-form" onSubmit={handleSubmit}>
         <textarea
+          ref={textareaRef}
           className="message-input"
           placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={isLoading}
-          rows={3}
+          rows={1}
         />
         <button
           type="submit"
           className="send-button"
           disabled={!input.trim() || isLoading}
+          aria-label="Send message"
+          title="Send message (Enter)"
         >
-          Send
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
         </button>
       </form>
     </div>
