@@ -10,6 +10,7 @@ import uuid
 import json
 import asyncio
 import os
+import io
 import requests
 from contextlib import asynccontextmanager
 

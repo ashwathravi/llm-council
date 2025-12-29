@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import Login from './components/Login';
 import { api } from './api';
-import { useAuth } from './contexts/authContext';
+import { useAuth } from './contexts/AuthContext';
 import './App.css';
 
 function App() {
@@ -70,18 +70,18 @@ function App() {
 
   // Handle browser back/forward buttons
   useEffect(() => {
-      const handlePopState = () => {
-          const params = new URLSearchParams(window.location.search);
-          const convId = params.get('c');
-          if (convId) {
-              setCurrentConversationId(convId);
-          } else {
-              setCurrentConversationId(null);
-          }
-      };
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const convId = params.get('c');
+      if (convId) {
+        setCurrentConversationId(convId);
+      } else {
+        setCurrentConversationId(null);
+      }
+    };
 
-      window.addEventListener('popstate', handlePopState);
-      return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   // Load conversation details when selected

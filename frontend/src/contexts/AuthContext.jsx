@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, createContext, useContext } from 'react';
 import { googleLogout } from '@react-oauth/google';
-import { AuthContext } from './authContext';
+
+export const AuthContext = createContext(null);
+
+export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
     const [token, setToken] = useState(() => localStorage.getItem('auth_token'));
