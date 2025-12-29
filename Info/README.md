@@ -4,6 +4,8 @@
 
 **LLM Council** is a "Chain of Thought" and "MoA" (Mixture of Agents) orchestration tool. Instead of relying on a single LLM, you form a "Council" of different models (Gemini, GPT, Claude, Grok, etc.) to deliberate on your queries. They review each other's work, debate, providing a synthesized, highly accurate final response.
 
+📘 **Wiki**: [deepwiki.com/ashwathravi/llm-council](https://deepwiki.com/ashwathravi/llm-council)
+
 ## ✨ Features
 
 - **Multiple Council Modes**:
