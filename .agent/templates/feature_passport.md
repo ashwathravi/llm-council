@@ -3,98 +3,89 @@
 | Metadata | Value |
 | :--- | :--- |
 | **Feature Name** | [Enter Feature Name] |
-| **Status** | `DRAFT` (Move to `PLANNING` when ready) |
+| **Status** | `DRAFT` -> `PLANNING` -> `APPROVED` -> `IN_PROGRESS` -> `REVIEW` -> `DONE` |
 | **Priority** | P2 |
-| **Assignee** | Unassigned |
+| **Assignee** | Agent |
 
 ---
 
-## 🚀 1. Idea & Context (User Input)
+## 🧠 Phase 1: Deep Planning (Human & Planner Agent)
+
+### 1.1 Idea & Context (User Input)
 
 *Describe the feature here. Attach images from `.agent/assets` if needed.*
 
-### Requirements
+### 1.2 Requirements & Corner Cases (User Input)
 
 - [ ] Requirement 1
 - [ ] Requirement 2
+- *Corner Case*: What happens if...?
 
-### Design References
+### 1.3 Clarification Log (Iterative)
 
-- Link to Figma/Stitch or `.agent/assets/design_mockup.png`
+*(Agent asks questions here, User answers)*
 
----
+- **Q**: [Agent Q]
+- **A**: [User A]
 
-## 🧠 2. Implementation Strategy (Planner Agent)
+### 1.4 The Blueprint (Planner Agent)
 
-*Trigger: Status = `PLANNING`*
+*The finalized technical plan. To be approved by User.*
 
-### Analysis
+#### Files to Create/Modify
 
-* **Files Touched**:
-  - `src/components/Example.tsx`
-- **Dependencies**: None
+- `src/path/to/file.ts`
 
-### Plan
+#### Milestones
+
+*If the feature is huge, the Planner will break it down here.*
+
+**Milestone 1: [Name]**
 
 1. Step 1
 2. Step 2
 
-> [!NOTE]
-> **Questions for User**:
+**Milestone 2: [Name]**
+
+1. ...
+
+> [!IMPORTANT]
+> **Approval**:
 >
-> 1. ...
-
-**Next Step**: Change Status to `ARCHITECT_REVIEW`
-
----
-
-## 📐 3. Architecture Sign-off (Architect Agent)
-
-*Trigger: Status = `ARCHITECT_REVIEW`*
-
-### Review
-
-- [ ] Security Check
-- [ ] Scalability Check
-
-> [!TIP]
-> **Feedback**:
-> ...
-
-**Decision**: ✅ APPROVED / ❌ REJECTED
-**Next Step**: If Approved, change Status to `IMPLEMENTING`.
+> - [ ] I have reviewed the Clarification Log and The Blueprint.
+> - [ ] I authorize the agents to Execute this plan. (Transition Status to `APPROVED`).
 
 ---
 
-## 🔨 4. Development Log (Implementation Agent)
+## 🏃 Phase 2: Autonomous Execution (Auto-Pilot)
 
-*Trigger: Status = `IMPLEMENTING`*
+*Triggers automatically when Status = `APPROVED`*
 
-### Changelog
+### 2.1 Architecture Review (Architect Agent)
 
-* Modified `src/foo.ts`
-- Added `src/bar.ts`
+- [ ] Security/Consistency Check Passed
+- *Adjustments made to Blueprint*: (None/List)
 
-### Hurdles & Resolutions
+### 2.2 Execution Log (Implementation Agent)
 
-* *Issue*: Library X didn't work.
-- *Fix*: Used Library Y instead.
+#### Milestone 1
 
-**Next Step**: Change Status to `TESTING`
+* [ ] Step 1
+- [ ] Verification (Tests/Screenshots): `[link](...)`
+
+#### Milestone 2
+
+* [ ] Step 1...
+
+### 2.3 Final Assembly
+
+**Outcome**: Status moved to `REVIEW`
 
 ---
 
-## 🧪 5. Validation (Test/Review Agent)
+## 🏁 Phase 3: Final Review (User)
 
-*Trigger: Status = `TESTING`*
+- [ ] I have verified the functionality.
+- [ ] Code looks good.
 
-### Test Results
-
-- [ ] Unit Tests Passed
-- [ ] Integration Tests Passed
-
-### Visual Verification
-
-* [ ] Screen Recording: `[review_video.webm](file:///...)`
-
-**Next Step**: Change Status to `DONE`
+**Action**: Move Status to `DONE`.
