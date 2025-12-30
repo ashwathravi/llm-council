@@ -7,11 +7,16 @@ import './Login.css';
 export default function Login() {
     const { handleLoginSuccess } = useAuth();
     const [error, setError] = React.useState('');
+    const [isLoading, setIsLoading] = React.useState(false);
 
     const onSuccess = async (credentialResponse) => {
         try {
+            setIsLoading(true);
+            setError(''); // Clear previous errors
+
             if (!credentialResponse.credential) {
                 setError('No credential received from Google');
+                setIsLoading(false);
                 return;
             }
 
@@ -21,6 +26,7 @@ export default function Login() {
         } catch (err) {
             console.error('Login error:', err);
             setError('Failed to log in with server');
+            setIsLoading(false);
         }
     };
 
@@ -30,15 +36,22 @@ export default function Login() {
                 <h1>LLM Council</h1>
                 <p>Sign in to consult the council</p>
 
-                <div className="google-btn-container">
-                    <GoogleLogin
-                        onSuccess={onSuccess}
-                        onError={() => setError('Login Failed')}
-                        useOneTap
-                    />
+                <div className="google-btn-container" aria-busy={isLoading}>
+                    {isLoading ? (
+                        <div className="loading-state">
+                            <div className="spinner" aria-hidden="true"></div>
+                            <span>Verifying credentials...</span>
+                        </div>
+                    ) : (
+                        <GoogleLogin
+                            onSuccess={onSuccess}
+                            onError={() => setError('Login Failed')}
+                            useOneTap
+                        />
+                    )}
                 </div>
 
-                {error && <div className="error-message">{error}</div>}
+                {error && <div className="error-message" role="alert">{error}</div>}
             </div>
         </div>
     );
