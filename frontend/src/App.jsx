@@ -119,6 +119,10 @@ function App() {
     }
   }, [isMobile]);
 
+  const handleSidebarClose = useCallback(() => {
+    setIsSidebarOpen(false);
+  }, []);
+
   const handleSendMessage = async (content) => {
     if (!currentConversationId) return;
 
@@ -327,7 +331,7 @@ function App() {
       <Sidebar
         isMobile={isMobile}
         isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
+        onClose={handleSidebarClose}
         conversations={conversations}
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
