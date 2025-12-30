@@ -12,6 +12,18 @@ function App() {
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  // Theme State
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
+
   const mobileBreakpoint = 900;
   const [isMobile, setIsMobile] = useState(window.innerWidth < mobileBreakpoint);
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= mobileBreakpoint);
@@ -343,6 +355,16 @@ function App() {
           >
             <span aria-hidden="true">☰</span>
           </button>
+          <div className="theme-toggle-container">
+            <button
+              onClick={toggleTheme}
+              className="theme-toggle"
+              aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+              title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+            >
+              {theme === 'light' ? '🌙' : '☀️'}
+            </button>
+          </div>
           <span>{user.name}</span>
           <button onClick={logout} className="logout-btn">Logout</button>
         </div>
