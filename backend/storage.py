@@ -39,19 +39,25 @@ async def db_get_conversation(conversation_id: str, user_id: str) -> Optional[Di
 
 async def db_list_conversations(user_id: str) -> List[Dict[str, Any]]:
     async with AsyncSessionLocal() as session:
+        # Optimization: Only select necessary columns.
+        # Dropped message_count as it requires fetching the full JSON body and is unused in the frontend.
         result = await session.execute(
-            select(ConversationModel)
+            select(
+                ConversationModel.id,
+                ConversationModel.created_at,
+                ConversationModel.title,
+                ConversationModel.framework
+            )
             .where(ConversationModel.user_id == user_id)
             .order_by(ConversationModel.created_at.desc())
         )
-        conversations = result.scalars().all()
+        conversations = result.all()
         return [
             {
                 "id": c.id,
                 "created_at": c.created_at.isoformat(),
                 "title": c.title,
                 "framework": c.framework,
-                "message_count": len(c.messages) # This might be heavy if messages are huge, but fine for now
             }
             for c in conversations
         ]
@@ -178,7 +184,6 @@ def file_list_conversations(user_id: str) -> List[Dict[str, Any]]:
                             "created_at": data["created_at"],
                             "title": data.get("title", "New Conversation"),
                             "framework": data.get("framework", "standard"),
-                            "message_count": len(data["messages"])
                         })
             except Exception: continue
     conversations.sort(key=lambda x: x["created_at"], reverse=True)

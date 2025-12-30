@@ -60,7 +60,6 @@ class ConversationMetadata(BaseModel):
     created_at: str
     title: str
     framework: str = "standard"
-    message_count: int
 
 
 class Conversation(BaseModel):
