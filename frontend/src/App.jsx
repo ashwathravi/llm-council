@@ -174,9 +174,11 @@ function App() {
           case 'stage1_start':
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.loading.stage1 = true;
+              const lastIndex = messages.length - 1;
+              const lastMsg = { ...messages[lastIndex] };
+              lastMsg.loading = { ...lastMsg.loading, stage1: true };
               lastMsg.stage1 = []; // Initialize empty array
+              messages[lastIndex] = lastMsg;
               return { ...prev, messages };
             });
             break;
@@ -185,10 +187,12 @@ function App() {
             // Append single model result
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
+              const lastIndex = messages.length - 1;
+              const lastMsg = { ...messages[lastIndex] };
               // Ensure stage1 is an array
-              if (!Array.isArray(lastMsg.stage1)) lastMsg.stage1 = [];
-              lastMsg.stage1.push(event.data);
+              const currentStage1 = Array.isArray(lastMsg.stage1) ? lastMsg.stage1 : [];
+              lastMsg.stage1 = [...currentStage1, event.data];
+              messages[lastIndex] = lastMsg;
               return { ...prev, messages };
             });
             break;
@@ -196,9 +200,11 @@ function App() {
           case 'stage1_error':
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              if (!Array.isArray(lastMsg.errors)) lastMsg.errors = [];
-              lastMsg.errors.push(event.data);
+              const lastIndex = messages.length - 1;
+              const lastMsg = { ...messages[lastIndex] };
+              const currentErrors = Array.isArray(lastMsg.errors) ? lastMsg.errors : [];
+              lastMsg.errors = [...currentErrors, event.data];
+              messages[lastIndex] = lastMsg;
               return { ...prev, messages };
             });
             break;
@@ -206,10 +212,12 @@ function App() {
           case 'stage1_complete':
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
+              const lastIndex = messages.length - 1;
+              const lastMsg = { ...messages[lastIndex] };
               // Prefer the complete list from server to ensure order/consistency
               lastMsg.stage1 = event.data;
-              lastMsg.loading.stage1 = false;
+              lastMsg.loading = { ...lastMsg.loading, stage1: false };
+              messages[lastIndex] = lastMsg;
               return { ...prev, messages };
             });
             break;
@@ -217,8 +225,10 @@ function App() {
           case 'stage2_start':
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.loading.stage2 = true;
+              const lastIndex = messages.length - 1;
+              const lastMsg = { ...messages[lastIndex] };
+              lastMsg.loading = { ...lastMsg.loading, stage2: true };
+              messages[lastIndex] = lastMsg;
               return { ...prev, messages };
             });
             break;
@@ -226,10 +236,12 @@ function App() {
           case 'stage2_complete':
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
+              const lastIndex = messages.length - 1;
+              const lastMsg = { ...messages[lastIndex] };
               lastMsg.stage2 = event.data;
               lastMsg.metadata = event.metadata;
-              lastMsg.loading.stage2 = false;
+              lastMsg.loading = { ...lastMsg.loading, stage2: false };
+              messages[lastIndex] = lastMsg;
               return { ...prev, messages };
             });
             break;
@@ -237,10 +249,12 @@ function App() {
           case 'stage3_start':
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.loading.stage3 = true;
+              const lastIndex = messages.length - 1;
+              const lastMsg = { ...messages[lastIndex] };
+              lastMsg.loading = { ...lastMsg.loading, stage3: true };
               // Initialize with empty response so we can append tokens
               lastMsg.stage3 = { model: 'chairman', response: '' };
+              messages[lastIndex] = lastMsg;
               return { ...prev, messages };
             });
             break;
@@ -249,13 +263,18 @@ function App() {
             // Append token to response
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
+              const lastIndex = messages.length - 1;
+              const lastMsg = { ...messages[lastIndex] };
               if (lastMsg.stage3 && lastMsg.stage3.response !== undefined) {
-                lastMsg.stage3.response += event.data;
+                lastMsg.stage3 = {
+                  ...lastMsg.stage3,
+                  response: lastMsg.stage3.response + event.data
+                };
               } else {
                 // Fallback init
                 lastMsg.stage3 = { model: 'chairman', response: event.data };
               }
+              messages[lastIndex] = lastMsg;
               return { ...prev, messages };
             });
             break;
@@ -263,9 +282,11 @@ function App() {
           case 'stage3_complete':
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
+              const lastIndex = messages.length - 1;
+              const lastMsg = { ...messages[lastIndex] };
               lastMsg.stage3 = event.data;
-              lastMsg.loading.stage3 = false;
+              lastMsg.loading = { ...lastMsg.loading, stage3: false };
+              messages[lastIndex] = lastMsg;
               return { ...prev, messages };
             });
             break;
@@ -285,17 +306,22 @@ function App() {
             console.error('Stream error:', event.error);
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              if (!Array.isArray(lastMsg.errors)) lastMsg.errors = [];
-              lastMsg.errors.push({
+              const lastIndex = messages.length - 1;
+              const lastMsg = { ...messages[lastIndex] };
+              const currentErrors = Array.isArray(lastMsg.errors) ? lastMsg.errors : [];
+              lastMsg.errors = [...currentErrors, {
                 model: 'system',
                 error: event.error || 'Unknown error',
-              });
+              }];
               if (lastMsg.loading) {
-                lastMsg.loading.stage1 = false;
-                lastMsg.loading.stage2 = false;
-                lastMsg.loading.stage3 = false;
+                lastMsg.loading = {
+                  ...lastMsg.loading,
+                  stage1: false,
+                  stage2: false,
+                  stage3: false,
+                };
               }
+              messages[lastIndex] = lastMsg;
               return { ...prev, messages };
             });
             setIsLoading(false);
@@ -304,10 +330,12 @@ function App() {
           case 'stage2_skipped':
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
+              const lastIndex = messages.length - 1;
+              const lastMsg = { ...messages[lastIndex] };
               lastMsg.stage2 = []; // Empty or skipped
               lastMsg.metadata = event.metadata;
-              lastMsg.loading.stage2 = false;
+              lastMsg.loading = { ...lastMsg.loading, stage2: false };
+              messages[lastIndex] = lastMsg;
               return { ...prev, messages };
             });
             break;
