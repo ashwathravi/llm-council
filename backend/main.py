@@ -96,7 +96,7 @@ async def root():
     return {"status": "ok", "service": "LLM Council API"}
 
 
-@app.post("/api/auth/login", response_model=LoginResponse, dependencies=[Depends(security.rate_limiter(requests_limit=5, time_window=60))])
+@app.post("/api/auth/login", response_model=LoginResponse, dependencies=[Depends(security.rate_limiter(requests_limit=5, time_window=60, scope="auth"))])
 async def login(request: auth.GoogleLoginRequest):
     """
     Verify Google ID token and return session JWT.
@@ -203,7 +203,7 @@ async def get_status():
     }
 
 
-@app.post("/api/conversations", response_model=Conversation)
+@app.post("/api/conversations", response_model=Conversation, dependencies=[Depends(security.rate_limiter(requests_limit=10, time_window=60, scope="create_conv"))])
 async def create_conversation(
     request: CreateConversationRequest,
     user_id: str = Depends(auth.get_current_user_id)
@@ -232,7 +232,7 @@ async def get_conversation(
     return conversation
 
 
-@app.post("/api/conversations/{conversation_id}/message")
+@app.post("/api/conversations/{conversation_id}/message", dependencies=[Depends(security.rate_limiter(requests_limit=20, time_window=60, scope="chat"))])
 async def send_message(
     conversation_id: str,
     request: SendMessageRequest,
@@ -300,7 +300,7 @@ async def send_message(
     }
 
 
-@app.post("/api/conversations/{conversation_id}/message/stream")
+@app.post("/api/conversations/{conversation_id}/message/stream", dependencies=[Depends(security.rate_limiter(requests_limit=20, time_window=60, scope="chat"))])
 async def send_message_stream(
     conversation_id: str,
     request: SendMessageRequest,
