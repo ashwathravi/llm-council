@@ -32,6 +32,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="LLM Council API", lifespan=lifespan)
 
+# Security Headers Middleware
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Content-Security-Policy is complex for existing React apps, omitting for now to avoid breakage
+    return response
+
 # Enable CORS for local development
 app.add_middleware(
     CORSMiddleware,
