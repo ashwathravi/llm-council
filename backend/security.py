@@ -6,16 +6,17 @@ from collections import defaultdict
 from typing import Callable, Coroutine, Any
 
 # Simple in-memory rate limiter
-# Map: IP -> list of timestamps
-_limiter_store = defaultdict(list)
+# Map: scope -> IP -> list of timestamps
+_limiter_store = defaultdict(lambda: defaultdict(list))
 
-def rate_limiter(requests_limit: int = 5, time_window: int = 60) -> Callable[[Request], Coroutine[Any, Any, bool]]:
+def rate_limiter(requests_limit: int = 5, time_window: int = 60, scope: str = "default") -> Callable[[Request], Coroutine[Any, Any, bool]]:
     """
     Dependency factory for rate limiting.
 
     Args:
         requests_limit: Max number of requests allowed in the time window.
         time_window: Time window in seconds.
+        scope: The scope/bucket name for the rate limit.
 
     Returns:
         Async dependency function.
@@ -25,8 +26,8 @@ def rate_limiter(requests_limit: int = 5, time_window: int = 60) -> Callable[[Re
         client_ip = request.client.host if request.client else "unknown"
         current_time = time.time()
 
-        # Get history for this IP
-        history = _limiter_store[client_ip]
+        # Get history for this scope and IP
+        history = _limiter_store[scope][client_ip]
 
         # Filter out old requests (cleanup)
         # We modify the list in place
