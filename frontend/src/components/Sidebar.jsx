@@ -117,10 +117,17 @@ const Sidebar = memo(({
 
         <div className="framework-select-container">
           <div className="label-with-info">
-            <label>Council Mode</label>
+            <label id="council-mode-label">Council Mode</label>
             <div className="info-icon-wrapper">
-              <span className="info-icon">ℹ️</span>
-              <div className="mode-tooltip">
+              <button
+                type="button"
+                className="info-icon"
+                aria-label="Learn about council modes"
+                aria-describedby="council-mode-tooltip"
+              >
+                ℹ️
+              </button>
+              <div className="mode-tooltip" id="council-mode-tooltip" role="tooltip">
                 <div className="tooltip-item">
                   <strong>Standard Council</strong>
                   <p>Models answer individually, rank each other, and a Chairman synthesizes the best answer.</p>

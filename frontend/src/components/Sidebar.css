@@ -134,6 +134,16 @@
   font-size: 14px;
   opacity: 0.6;
   filter: grayscale(1);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.info-icon:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--md-sys-color-primary);
+  border-radius: 50%;
 }
 
 .mode-tooltip {
@@ -156,7 +166,8 @@
   border: 1px solid var(--md-sys-color-outline-variant);
 }
 
-.info-icon-wrapper:hover .mode-tooltip {
+.info-icon-wrapper:hover .mode-tooltip,
+.info-icon:focus + .mode-tooltip {
   visibility: visible;
   opacity: 1;
 }
