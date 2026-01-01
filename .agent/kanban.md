@@ -4,6 +4,8 @@
 
 ## 🧠 Planning (Idea -> Plan)
 
+[Support for uploading PDF files to the conversation / models](passports/GH-18_support_for_uploading_pdf_files_to_the_conversation_models.md)
+
 ## 📐 Architecture Review
 
 ## 🔨 In Progress (Coding)

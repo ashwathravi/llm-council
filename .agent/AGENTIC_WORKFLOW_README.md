@@ -7,7 +7,18 @@ Version 3.0 eliminates the "relay race" friction of V2.0. Instead of constantly 
 * **Front-Loaded Effort**: You and the Planner Agent clarify *everything* upfront.
 * **Zero-Friction Handoffs**: Once execution starts, agents handle the `Plan -> Architect -> Code -> Test` transitions automatically.
 
-## 🔄 The V3.0 Process
+## 🔄 The V3.1 Process
+
+### Phase 0: The Scout (Automated Ingestion) 🦅
+
+*Optional: Use the Scout Agent to auto-create passports from GitHub Issues.*
+
+1. **Login** Ensure you are logged into GitHub CLI: `gh auth login`.
+2. **Assign**: Assign an issue to yourself (or the bot user) in GitHub.
+3. **Scout**: Run `./scripts/scout_agent.py`.
+    * *Detects* assigned issues.
+    * *Creates* `passports/GH-{id}_{title}.md`.
+    * *Updates* `kanban.md`.
 
 ### Phase 1: Deep Planning (Human-in-the-Loop) 🧠
 
