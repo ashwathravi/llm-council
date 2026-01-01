@@ -14,6 +14,7 @@ const ModelSelect = ({
     const [search, setSearch] = useState('');
     const [hoveredModel, setHoveredModel] = useState(null);
     const wrapperRef = useRef(null);
+    const triggerRef = useRef(null);
     const tooltipRef = useRef(null);
     const isDropdownOpen = isOpen && !disabled;
 
@@ -41,6 +42,25 @@ const ModelSelect = ({
     const closeDropdown = () => {
         setIsOpen(false);
         setHoveredModel(null);
+        // Return focus to trigger when closed
+        if (triggerRef.current) {
+            triggerRef.current.focus();
+        }
+    };
+
+    const handleTriggerKeyDown = (e) => {
+        if (disabled) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsOpen(!isOpen);
+        }
+    };
+
+    const handleOptionKeyDown = (e, option) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleSelect(option);
+        }
     };
 
     const filteredOptions = options.filter(option =>
@@ -87,8 +107,9 @@ const ModelSelect = ({
 
     return (
         <div className="model-select-container" ref={wrapperRef}>
-            <label>{label}</label>
+            <label id={`label-${label.replace(/\s+/g, '-').toLowerCase()}`}>{label}</label>
             <div
+                ref={triggerRef}
                 className={`model-select-trigger ${disabled ? 'disabled' : ''}`}
                 onClick={() => {
                     if (!disabled) {
@@ -99,6 +120,12 @@ const ModelSelect = ({
                         }
                     }
                 }}
+                onKeyDown={handleTriggerKeyDown}
+                tabIndex={disabled ? -1 : 0}
+                role="button"
+                aria-haspopup="listbox"
+                aria-expanded={isOpen}
+                aria-labelledby={`label-${label.replace(/\s+/g, '-').toLowerCase()}`}
             >
                 {getDisplayValue()}
                 <span className="arrow">▼</span>
@@ -123,8 +150,9 @@ const ModelSelect = ({
                         onClick={(e) => e.stopPropagation()}
                         autoFocus
                         disabled={disabled}
+                        aria-label="Filter models"
                     />
-                    <div className="model-options">
+                    <div className="model-options" role="listbox">
                         {filteredOptions.length > 0 ? (
                             filteredOptions.map(option => (
                                 <div
@@ -137,6 +165,10 @@ const ModelSelect = ({
                                     // Actually the issue is it persists when closed.
                                     // Let's keep onMouseLeave but ALSO clear on close.
                                     onMouseLeave={() => setHoveredModel(null)}
+                                    role="option"
+                                    aria-selected={isSelected(option)}
+                                    tabIndex={0}
+                                    onKeyDown={(e) => handleOptionKeyDown(e, option)}
                                 >
                                     {option.name}
                                     {isSelected(option) && <span className="check">✓</span>}
