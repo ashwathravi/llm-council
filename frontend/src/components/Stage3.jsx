@@ -1,7 +1,8 @@
+import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import './Stage3.css';
 
-export default function Stage3({ finalResponse }) {
+const Stage3 = memo(function Stage3({ finalResponse }) {
   if (!finalResponse) {
     return null;
   }
@@ -19,4 +20,6 @@ export default function Stage3({ finalResponse }) {
       </div>
     </div>
   );
-}
+});
+
+export default Stage3;
