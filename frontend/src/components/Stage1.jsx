@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import './Stage1.css';
 
-export default function Stage1({ responses }) {
+const Stage1 = memo(function Stage1({ responses }) {
   const [activeTab, setActiveTab] = useState(0);
 
   if (!responses || responses.length === 0) {
@@ -33,4 +33,6 @@ export default function Stage1({ responses }) {
       </div>
     </div>
   );
-}
+});
+
+export default Stage1;
