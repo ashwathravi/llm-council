@@ -23,7 +23,14 @@ def rate_limiter(requests_limit: int = 5, time_window: int = 60, scope: str = "d
     """
     async def dependency(request: Request) -> bool:
         # Use client IP as identifier
-        client_ip = request.client.host if request.client else "unknown"
+        # Prioritize X-Forwarded-For header for use behind proxies (e.g. Render)
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            # X-Forwarded-For: <client>, <proxy1>, <proxy2>
+            client_ip = forwarded.split(",")[0].strip()
+        else:
+            client_ip = request.client.host if request.client else "unknown"
+
         current_time = time.time()
 
         # Get history for this scope and IP
