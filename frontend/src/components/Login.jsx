@@ -1,8 +1,10 @@
 import React from 'react';
-import { GoogleLogin } from '@react-oauth/google';
+import { GoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../api';
 import './Login.css';
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "154618380883-hlmnd78sufsgvrmvk39ht872brk4o32r.apps.googleusercontent.com";
 
 export default function Login() {
     const { handleLoginSuccess } = useAuth();
@@ -31,28 +33,30 @@ export default function Login() {
     };
 
     return (
-        <div className="login-container">
-            <div className="login-card">
-                <h1>LLM Council</h1>
-                <p>Sign in to consult the council</p>
+        <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+            <div className="login-container">
+                <div className="login-card">
+                    <h1>LLM Council</h1>
+                    <p>Sign in to consult the council</p>
 
-                <div className="google-btn-container" aria-busy={isLoading}>
-                    {isLoading ? (
-                        <div className="loading-state">
-                            <div className="spinner" aria-hidden="true"></div>
-                            <span>Verifying credentials...</span>
-                        </div>
-                    ) : (
-                        <GoogleLogin
-                            onSuccess={onSuccess}
-                            onError={() => setError('Login Failed')}
-                            useOneTap
-                        />
-                    )}
+                    <div className="google-btn-container" aria-busy={isLoading}>
+                        {isLoading ? (
+                            <div className="loading-state">
+                                <div className="spinner" aria-hidden="true"></div>
+                                <span>Verifying credentials...</span>
+                            </div>
+                        ) : (
+                            <GoogleLogin
+                                onSuccess={onSuccess}
+                                onError={() => setError('Login Failed')}
+                                useOneTap
+                            />
+                        )}
+                    </div>
+
+                    {error && <div className="error-message" role="alert">{error}</div>}
                 </div>
-
-                {error && <div className="error-message" role="alert">{error}</div>}
             </div>
-        </div>
+        </GoogleOAuthProvider>
     );
 }

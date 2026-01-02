@@ -1,5 +1,4 @@
 import React, { useState, createContext, useContext } from 'react';
-import { googleLogout } from '@react-oauth/google';
 
 export const AuthContext = createContext(null);
 
@@ -20,7 +19,11 @@ export const AuthProvider = ({ children }) => {
     };
 
     const logout = () => {
-        googleLogout();
+        // Dynamically import googleLogout to avoid bundling @react-oauth/google in main chunk
+        import('@react-oauth/google').then(({ googleLogout }) => {
+            googleLogout();
+        }).catch(err => console.error("Failed to load googleLogout", err));
+
         setToken(null);
         setUser(null);
         localStorage.removeItem('auth_token');

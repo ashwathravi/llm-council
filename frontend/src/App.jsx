@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
-import Login from './components/Login';
 import { api } from './api';
+
+const Login = lazy(() => import('./components/Login'));
 import { useAuth } from './contexts/AuthContext';
 import './App.css';
 
@@ -356,7 +357,13 @@ function App() {
   };
 
   if (authLoading) return <div className="loading">Loading...</div>;
-  if (!user) return <Login />;
+  if (!user) {
+    return (
+      <Suspense fallback={<div className="loading">Loading login...</div>}>
+        <Login />
+      </Suspense>
+    );
+  }
 
   return (
     <div className="app">
