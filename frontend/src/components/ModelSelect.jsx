@@ -17,6 +17,7 @@ const ModelSelect = ({
     const triggerRef = useRef(null);
     const tooltipRef = useRef(null);
     const isDropdownOpen = isOpen && !disabled;
+    const searchInputRef = useRef(null);
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -141,17 +142,35 @@ const ModelSelect = ({
 
             {isDropdownOpen && (
                 <div className="model-select-dropdown">
-                    <input
-                        type="text"
-                        className="model-search"
-                        placeholder="Search models..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        autoFocus
-                        disabled={disabled}
-                        aria-label="Filter models"
-                    />
+                    <div className="search-container">
+                        <input
+                            ref={searchInputRef}
+                            type="text"
+                            className="model-search"
+                            placeholder="Search models..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            autoFocus
+                            disabled={disabled}
+                            aria-label="Filter models"
+                        />
+                        {search && (
+                            <button
+                                type="button"
+                                className="clear-search-btn"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSearch('');
+                                    searchInputRef.current?.focus();
+                                }}
+                                aria-label="Clear search"
+                                title="Clear search"
+                            >
+                                ×
+                            </button>
+                        )}
+                    </div>
                     <div className="model-options" role="listbox">
                         {filteredOptions.length > 0 ? (
                             filteredOptions.map(option => (
