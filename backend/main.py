@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any
 import uuid
 import json
@@ -56,8 +56,26 @@ app.add_middleware(
 class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
     framework: str = "standard"
-    council_models: List[str] = []
+    council_models: List[str] = Field(default=[], max_length=10)
     chairman_model: str | None = None
+
+    @field_validator("framework")
+    @classmethod
+    def validate_framework(cls, v: str) -> str:
+        allowed = {"standard", "six_hats", "debate", "ensemble"}
+        if v not in allowed:
+            raise ValueError(f"Framework must be one of: {', '.join(allowed)}")
+        return v
+
+    @field_validator("council_models")
+    @classmethod
+    def validate_council_models(cls, v: List[str]) -> List[str]:
+        if len(v) > 10:
+            raise ValueError("Too many models selected (max 10)")
+        for model in v:
+            if len(model) > 100:
+                raise ValueError("Model name too long")
+        return v
 
 
 class SendMessageRequest(BaseModel):
