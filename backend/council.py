@@ -5,7 +5,17 @@ from .openrouter import query_models_parallel, query_model, query_model_stream
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
 
 
-async def stage1_collect_responses(messages: List[Dict[str, str]], council_models: List[str] = None):
+def _apply_retrieval_context(messages: List[Dict[str, str]], retrieval_context: str | None) -> List[Dict[str, str]]:
+    if not retrieval_context:
+        return messages
+    return [{"role": "system", "content": retrieval_context}] + list(messages)
+
+
+async def stage1_collect_responses(
+    messages: List[Dict[str, str]],
+    council_models: List[str] = None,
+    retrieval_context: str | None = None
+):
     """
     Stage 1: Collect individual responses from all council models.
     Yields dicts with 'model' and 'response' keys as they complete.
@@ -13,13 +23,15 @@ async def stage1_collect_responses(messages: List[Dict[str, str]], council_model
     active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
     import asyncio
 
+    messages_with_context = _apply_retrieval_context(messages, retrieval_context)
+
     # Wrapper to attach model name to the task result
     async def query_with_name(model_name, msgs):
         response = await query_model(model_name, msgs)
         return model_name, response
 
     # Create tasks
-    tasks = [query_with_name(model, messages) for model in active_models]
+    tasks = [query_with_name(model, messages_with_context) for model in active_models]
 
     # Yield results as they complete
     for completed_task in asyncio.as_completed(tasks):
@@ -40,7 +52,8 @@ async def stage2_collect_rankings(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
     council_models: List[str] = None,
-    chairman_model: str = None
+    chairman_model: str = None,
+    retrieval_context: str | None = None
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """
     Stage 2: Each model ranks the anonymized responses.
@@ -70,9 +83,15 @@ async def stage2_collect_rankings(
         for label, result in zip(labels, stage1_results)
     ])
 
+    retrieval_block = ""
+    if retrieval_context:
+        retrieval_block = f"\n\nRelevant document excerpts:\n{retrieval_context}\n"
+
     ranking_prompt = f"""You are evaluating different responses to the following question:
 
 Question: {user_query}
+
+{retrieval_block}
 
 Here are the responses from different models (anonymized):
 
@@ -240,7 +259,14 @@ Title:"""
     return title
 
 
-async def run_full_council(messages: List[Dict[str, str]], framework: str = "standard", council_models: list = None, chairman_model: str = None):
+async def run_full_council(
+    messages: List[Dict[str, str]],
+    framework: str = "standard",
+    council_models: list = None,
+    chairman_model: str = None,
+    retrieval_context: str | None = None,
+    retrieval_citations: List[Dict[str, Any]] | None = None
+):
     """
     Orchestrates the selected council process.
     """
@@ -256,10 +282,14 @@ async def run_full_council(messages: List[Dict[str, str]], framework: str = "sta
     # We need to pass the full messages to stage 1 functions
     stage1_errors = []
     if framework == "six_hats":
-        stage1_results, stage1_errors = await stage1_collect_responses_six_hats(messages, active_council_models)
+        stage1_results, stage1_errors = await stage1_collect_responses_six_hats(
+            messages,
+            active_council_models,
+            retrieval_context=retrieval_context
+        )
     else:
         stage1_results = []
-        async for result in stage1_collect_responses(messages, active_council_models):
+        async for result in stage1_collect_responses(messages, active_council_models, retrieval_context=retrieval_context):
             if result.get("error"):
                 stage1_errors.append(result)
             else:
@@ -274,7 +304,12 @@ async def run_full_council(messages: List[Dict[str, str]], framework: str = "sta
 
     # Stage 2: Rank or Critique
     if framework == "debate":
-        stage2_results, label_to_model = await stage2_collect_critiques(latest_query, stage1_results, active_council_models)
+        stage2_results, label_to_model = await stage2_collect_critiques(
+            latest_query,
+            stage1_results,
+            active_council_models,
+            retrieval_context=retrieval_context
+        )
     elif framework == "ensemble":
          # Ensemble doesn't use Stage 2 for logic, but we need to return something
          stage2_results = []
@@ -286,7 +321,13 @@ async def run_full_council(messages: List[Dict[str, str]], framework: str = "sta
          }
     else:
         # Standard and Six Hats use ranking
-        stage2_results, label_to_model = await stage2_collect_rankings(latest_query, stage1_results, active_council_models, active_chairman_model)
+        stage2_results, label_to_model = await stage2_collect_rankings(
+            latest_query,
+            stage1_results,
+            active_council_models,
+            active_chairman_model,
+            retrieval_context=retrieval_context
+        )
 
     # Calculate aggregate rankings if applicable
     aggregate_rankings = []
@@ -299,7 +340,8 @@ async def run_full_council(messages: List[Dict[str, str]], framework: str = "sta
         stage1_results, 
         stage2_results, 
         active_chairman_model, # Pass chairman model
-        mode=framework
+        mode=framework,
+        retrieval_context=retrieval_context
     )
 
     metadata = {
@@ -309,6 +351,7 @@ async def run_full_council(messages: List[Dict[str, str]], framework: str = "sta
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
         "stage1_errors": stage1_errors,
+        "retrieval": {"citations": retrieval_citations or []},
     }
 
     return stage1_results, stage2_results, stage3_result, metadata
@@ -448,7 +491,8 @@ def _return_error():
 
 async def stage1_collect_responses_six_hats(
     messages: List[Dict[str, str]],
-    council_models: List[str] = None
+    council_models: List[str] = None,
+    retrieval_context: str | None = None
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Stage 1 for Six Hats: Assign prompts to models."""
     active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
@@ -470,6 +514,8 @@ async def stage1_collect_responses_six_hats(
         hat_name, hat_prompt = hats[i % len(hats)]
         
         system_prompt = f"You are wearing the {hat_name}. {hat_prompt}"
+        if retrieval_context:
+            system_prompt = f"{system_prompt}\n\n{retrieval_context}"
         
         # Prepend system prompt to the FULL history
         current_messages = [{"role": "system", "content": system_prompt}] + messages
@@ -504,7 +550,12 @@ async def stage1_collect_responses_six_hats(
     return results, errors
 
 
-async def stage2_collect_critiques(user_query: str, stage1_results: List[Dict[str, Any]], council_models: List[str] = None) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+async def stage2_collect_critiques(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    council_models: List[str] = None,
+    retrieval_context: str | None = None
+) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """Stage 2 for Debate: Critiques instead of rankings."""
     active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
     labels = [chr(65 + i) for i in range(len(stage1_results))]
@@ -515,7 +566,12 @@ async def stage2_collect_critiques(user_query: str, stage1_results: List[Dict[st
         for label, result in zip(labels, stage1_results)
     ])
 
+    retrieval_block = ""
+    if retrieval_context:
+        retrieval_block = f"\nRelevant document excerpts:\n{retrieval_context}\n"
+
     critique_prompt = f"""You are participating in a debate about: "{user_query}"
+{retrieval_block}
 
 Here are the arguments from other participants (anonymized):
 
@@ -549,7 +605,8 @@ async def stage3_synthesize_final(
     stage1_results: List[Dict[str, Any]],
     stage2_results: List[Dict[str, Any]],
     chairman_model: str = None,
-    mode: str = "standard"
+    mode: str = "standard",
+    retrieval_context: str | None = None
 ):
     """
     Stage 3: Chairman synthesizes final response (streaming).
@@ -583,9 +640,14 @@ async def stage3_synthesize_final(
         instruction = "Synthesize all of this information into a single, comprehensive, accurate answer. Consider the individual responses and the peer rankings."
         stage2_label = "STAGE 2 - Peer Rankings:"
 
+    retrieval_block = ""
+    if retrieval_context:
+        retrieval_block = f"\nRETRIEVED DOCUMENT EXCERPTS:\n{retrieval_context}\n"
+
     chairman_prompt = f"""You are the Chairman of an LLM Council.
     
 Original Question: {user_query}
+{retrieval_block}
 
 STAGE 1 - Individual Responses:
 {stage1_text}

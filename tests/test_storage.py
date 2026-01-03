@@ -13,10 +13,12 @@ def setup_teardown_storage():
     """Setup and teardown test data directory."""
     # Setup
     original_data_dir = config.DATA_DIR
+    original_documents_dir = getattr(config, "DOCUMENTS_DIR", None)
     original_db_url = config.DATABASE_URL
     
     # Force file mode
     config.DATA_DIR = TEST_DATA_DIR
+    config.DOCUMENTS_DIR = os.path.join(TEST_DATA_DIR, "documents")
     config.DATABASE_URL = "" 
     # Note: modifying config.DATABASE_URL at runtime might not switch `storage.py` logic 
     # if `storage.py` imported `DATABASE_URL` directly using `from .config import DATABASE_URL`.
@@ -25,6 +27,7 @@ def setup_teardown_storage():
     # So we need to patch `backend.storage.DATABASE_URL` directly.
     
     storage.DATA_DIR = TEST_DATA_DIR
+    storage.DOCUMENTS_DIR = config.DOCUMENTS_DIR
     storage.DATABASE_URL = ""
     
     if os.path.exists(TEST_DATA_DIR):
@@ -39,8 +42,12 @@ def setup_teardown_storage():
     
     # Restore (optional if process dies anyway, but good practice)
     config.DATA_DIR = original_data_dir
+    if original_documents_dir is not None:
+        config.DOCUMENTS_DIR = original_documents_dir
     config.DATABASE_URL = original_db_url
     storage.DATA_DIR = original_data_dir
+    if original_documents_dir is not None:
+        storage.DOCUMENTS_DIR = original_documents_dir
     storage.DATABASE_URL = original_db_url
 
 @pytest.mark.asyncio

@@ -2,14 +2,15 @@
 import json
 import os
 import asyncio
+import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from sqlalchemy.future import select
-from sqlalchemy import update
+from sqlalchemy import update, delete
 from sqlalchemy.orm.attributes import flag_modified
-from .config import DATA_DIR, APP_ORIGIN
-from .database import AsyncSessionLocal, ConversationModel, init_db
+from .config import DATA_DIR, APP_ORIGIN, DOCUMENTS_DIR
+from .database import AsyncSessionLocal, ConversationModel, DocumentModel, DocumentChunkModel, init_db
 
 # --- Database Storage Helpers ---
 
@@ -97,8 +98,137 @@ async def db_delete_conversation(conversation_id: str, user_id: str):
         conv = result.scalar_one_or_none()
         if not conv or conv.user_id != user_id:
             raise ValueError("Unauthorized or not found")
+
+        await session.execute(
+            delete(DocumentChunkModel)
+            .where(
+                DocumentChunkModel.conversation_id == conversation_id,
+                DocumentChunkModel.user_id == user_id
+            )
+        )
+        await session.execute(
+            delete(DocumentModel)
+            .where(
+                DocumentModel.conversation_id == conversation_id,
+                DocumentModel.user_id == user_id
+            )
+        )
         
         await session.delete(conv)
+        await session.commit()
+
+async def db_create_document(
+    conversation_id: str,
+    user_id: str,
+    filename: str,
+    size_bytes: int
+) -> Dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        doc = DocumentModel(
+            id=str(uuid.uuid4()),
+            conversation_id=conversation_id,
+            user_id=user_id,
+            filename=filename,
+            size_bytes=size_bytes,
+            status="processing",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        session.add(doc)
+        await session.commit()
+        await session.refresh(doc)
+        return _document_to_dict(doc)
+
+async def db_update_document(
+    conversation_id: str,
+    document_id: str,
+    user_id: str,
+    **updates: Any
+) -> Dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(DocumentModel)
+            .where(
+                DocumentModel.id == document_id,
+                DocumentModel.conversation_id == conversation_id,
+                DocumentModel.user_id == user_id
+            )
+        )
+        doc = result.scalar_one_or_none()
+        if not doc:
+            raise ValueError("Unauthorized or not found")
+
+        for key, value in updates.items():
+            if hasattr(doc, key):
+                setattr(doc, key, value)
+        doc.updated_at = datetime.utcnow()
+        await session.commit()
+        await session.refresh(doc)
+        return _document_to_dict(doc)
+
+async def db_list_documents(conversation_id: str, user_id: str) -> List[Dict[str, Any]]:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(DocumentModel)
+            .where(DocumentModel.conversation_id == conversation_id, DocumentModel.user_id == user_id)
+            .order_by(DocumentModel.created_at.desc())
+        )
+        documents = result.scalars().all()
+        return [_document_to_dict(doc) for doc in documents]
+
+async def db_add_document_chunks(chunks: List[Dict[str, Any]]):
+    if not chunks:
+        return
+    async with AsyncSessionLocal() as session:
+        models = [
+            DocumentChunkModel(
+                id=str(uuid.uuid4()),
+                document_id=chunk["document_id"],
+                conversation_id=chunk["conversation_id"],
+                user_id=chunk["user_id"],
+                chunk_index=chunk["chunk_index"],
+                page_number=chunk["page_number"],
+                text=chunk["text"],
+                embedding=chunk["embedding"],
+                created_at=datetime.utcnow()
+            )
+            for chunk in chunks
+        ]
+        session.add_all(models)
+        await session.commit()
+
+async def db_list_document_chunks(conversation_id: str, user_id: str) -> List[Dict[str, Any]]:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(DocumentChunkModel)
+            .where(DocumentChunkModel.conversation_id == conversation_id, DocumentChunkModel.user_id == user_id)
+        )
+        chunks = result.scalars().all()
+        return [_chunk_to_dict(chunk) for chunk in chunks]
+
+async def db_delete_document(conversation_id: str, document_id: str, user_id: str):
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(DocumentModel)
+            .where(
+                DocumentModel.id == document_id,
+                DocumentModel.conversation_id == conversation_id,
+                DocumentModel.user_id == user_id
+            )
+        )
+        doc = result.scalar_one_or_none()
+        if not doc:
+            raise ValueError("Unauthorized or not found")
+
+        await session.execute(
+            delete(DocumentChunkModel)
+            .where(
+                DocumentChunkModel.document_id == document_id,
+                DocumentChunkModel.conversation_id == conversation_id,
+                DocumentChunkModel.user_id == user_id
+            )
+        )
+        await session.delete(doc)
         await session.commit()
 
 def _model_to_dict(model: ConversationModel) -> Dict[str, Any]:
@@ -112,6 +242,33 @@ def _model_to_dict(model: ConversationModel) -> Dict[str, Any]:
         "chairman_model": model.chairman_model,
         "messages": model.messages,
         "origin": model.origin
+    }
+
+def _document_to_dict(model: DocumentModel) -> Dict[str, Any]:
+    return {
+        "id": model.id,
+        "conversation_id": model.conversation_id,
+        "user_id": model.user_id,
+        "filename": model.filename,
+        "size_bytes": model.size_bytes,
+        "page_count": model.page_count,
+        "status": model.status,
+        "error_message": model.error_message,
+        "created_at": model.created_at.isoformat() if model.created_at else None,
+        "updated_at": model.updated_at.isoformat() if model.updated_at else None,
+    }
+
+def _chunk_to_dict(model: DocumentChunkModel) -> Dict[str, Any]:
+    return {
+        "id": model.id,
+        "document_id": model.document_id,
+        "conversation_id": model.conversation_id,
+        "user_id": model.user_id,
+        "chunk_index": model.chunk_index,
+        "page_number": model.page_number,
+        "text": model.text,
+        "embedding": model.embedding,
+        "created_at": model.created_at.isoformat() if model.created_at else None,
     }
 
 # --- File Storage (Legacy Fallback) ---
@@ -169,6 +326,9 @@ def file_delete_conversation(conversation_id: str, user_id: str):
              raise ValueError("Unauthorized")
     
     os.remove(path)
+    documents_path = get_documents_path(conversation_id)
+    if os.path.exists(documents_path):
+        os.remove(documents_path)
 
 def file_list_conversations(user_id: str) -> List[Dict[str, Any]]:
     ensure_data_dir()
@@ -188,6 +348,103 @@ def file_list_conversations(user_id: str) -> List[Dict[str, Any]]:
             except Exception: continue
     conversations.sort(key=lambda x: x["created_at"], reverse=True)
     return conversations
+
+# --- File Document Storage ---
+
+def ensure_documents_dir():
+    Path(DOCUMENTS_DIR).mkdir(parents=True, exist_ok=True)
+
+def get_documents_path(conversation_id: str) -> str:
+    base = os.path.basename(conversation_id)
+    if base != conversation_id or ".." in conversation_id:
+        raise ValueError("Invalid conversation ID")
+    return os.path.join(DOCUMENTS_DIR, f"{conversation_id}.json")
+
+def load_documents_bundle(conversation_id: str) -> Dict[str, Any]:
+    ensure_documents_dir()
+    path = get_documents_path(conversation_id)
+    if not os.path.exists(path):
+        return {"documents": [], "chunks": []}
+    with open(path, 'r') as f:
+        data = json.load(f)
+        if "documents" not in data or "chunks" not in data:
+            return {"documents": [], "chunks": []}
+        return data
+
+def save_documents_bundle(conversation_id: str, bundle: Dict[str, Any]):
+    ensure_documents_dir()
+    path = get_documents_path(conversation_id)
+    with open(path, 'w') as f:
+        json.dump(bundle, f, indent=2)
+
+def file_create_document(conversation_id: str, user_id: str, filename: str, size_bytes: int) -> Dict[str, Any]:
+    bundle = load_documents_bundle(conversation_id)
+    now = datetime.utcnow().isoformat()
+    document = {
+        "id": str(uuid.uuid4()),
+        "conversation_id": conversation_id,
+        "user_id": user_id,
+        "filename": filename,
+        "size_bytes": size_bytes,
+        "page_count": None,
+        "status": "processing",
+        "error_message": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    bundle["documents"].append(document)
+    save_documents_bundle(conversation_id, bundle)
+    return document
+
+def file_update_document(conversation_id: str, document_id: str, user_id: str, **updates: Any) -> Dict[str, Any]:
+    bundle = load_documents_bundle(conversation_id)
+    documents = bundle.get("documents", [])
+    for doc in documents:
+        if doc.get("id") == document_id and doc.get("user_id") == user_id:
+            for key, value in updates.items():
+                if key in doc:
+                    doc[key] = value
+            doc["updated_at"] = datetime.utcnow().isoformat()
+            save_documents_bundle(conversation_id, bundle)
+            return doc
+    raise ValueError("Unauthorized or not found")
+
+def file_list_documents(conversation_id: str, user_id: str) -> List[Dict[str, Any]]:
+    bundle = load_documents_bundle(conversation_id)
+    documents = [
+        doc for doc in bundle.get("documents", [])
+        if doc.get("user_id") == user_id
+    ]
+    documents.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return documents
+
+def file_add_document_chunks(conversation_id: str, user_id: str, chunks: List[Dict[str, Any]]):
+    if not chunks:
+        return
+    bundle = load_documents_bundle(conversation_id)
+    for chunk in chunks:
+        if chunk.get("user_id") != user_id:
+            continue
+        bundle["chunks"].append(chunk)
+    save_documents_bundle(conversation_id, bundle)
+
+def file_list_document_chunks(conversation_id: str, user_id: str) -> List[Dict[str, Any]]:
+    bundle = load_documents_bundle(conversation_id)
+    return [
+        chunk for chunk in bundle.get("chunks", [])
+        if chunk.get("user_id") == user_id
+    ]
+
+def file_delete_document(conversation_id: str, document_id: str, user_id: str):
+    bundle = load_documents_bundle(conversation_id)
+    documents = bundle.get("documents", [])
+    chunks = bundle.get("chunks", [])
+    new_documents = [doc for doc in documents if not (doc.get("id") == document_id and doc.get("user_id") == user_id)]
+    if len(new_documents) == len(documents):
+        raise ValueError("Unauthorized or not found")
+    bundle["documents"] = new_documents
+    bundle["chunks"] = [chunk for chunk in chunks if chunk.get("document_id") != document_id]
+    save_documents_bundle(conversation_id, bundle)
 
 # --- Unified Public Interface ---
 
@@ -226,13 +483,15 @@ async def add_user_message(conversation_id: str, user_id: str, content: str):
         conv["messages"].append({"role": "user", "content": content})
         file_save_conversation(conv)
 
-async def add_assistant_message(conversation_id: str, user_id: str, stage1, stage2, stage3):
+async def add_assistant_message(conversation_id: str, user_id: str, stage1, stage2, stage3, metadata: Dict[str, Any] | None = None):
     message = {
         "role": "assistant",
         "stage1": stage1,
         "stage2": stage2,
         "stage3": stage3
     }
+    if metadata is not None:
+        message["metadata"] = metadata
     if os.getenv("DATABASE_URL"):
         await db_add_message(conversation_id, user_id, message)
     else:
@@ -255,3 +514,39 @@ async def delete_conversation(conversation_id: str, user_id: str):
         await db_delete_conversation(conversation_id, user_id)
     else:
         file_delete_conversation(conversation_id, user_id)
+
+async def create_document(conversation_id: str, user_id: str, filename: str, size_bytes: int):
+    if os.getenv("DATABASE_URL"):
+        return await db_create_document(conversation_id, user_id, filename, size_bytes)
+    else:
+        return file_create_document(conversation_id, user_id, filename, size_bytes)
+
+async def update_document(conversation_id: str, document_id: str, user_id: str, **updates: Any):
+    if os.getenv("DATABASE_URL"):
+        return await db_update_document(conversation_id, document_id, user_id, **updates)
+    else:
+        return file_update_document(conversation_id, document_id, user_id, **updates)
+
+async def list_documents(conversation_id: str, user_id: str):
+    if os.getenv("DATABASE_URL"):
+        return await db_list_documents(conversation_id, user_id)
+    else:
+        return file_list_documents(conversation_id, user_id)
+
+async def add_document_chunks(conversation_id: str, user_id: str, chunks: List[Dict[str, Any]]):
+    if os.getenv("DATABASE_URL"):
+        await db_add_document_chunks(chunks)
+    else:
+        file_add_document_chunks(conversation_id, user_id, chunks)
+
+async def list_document_chunks(conversation_id: str, user_id: str):
+    if os.getenv("DATABASE_URL"):
+        return await db_list_document_chunks(conversation_id, user_id)
+    else:
+        return file_list_document_chunks(conversation_id, user_id)
+
+async def delete_document(conversation_id: str, document_id: str, user_id: str):
+    if os.getenv("DATABASE_URL"):
+        await db_delete_document(conversation_id, document_id, user_id)
+    else:
+        file_delete_document(conversation_id, document_id, user_id)
