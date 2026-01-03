@@ -306,6 +306,7 @@ export default function ChatInterface({
                       type="button"
                       className="document-remove"
                       onClick={() => handleDeleteDocument(doc.id)}
+                      aria-label={`Remove ${doc.filename}`}
                     >
                       Remove
                     </button>
@@ -325,6 +326,7 @@ export default function ChatInterface({
               onKeyDown={handleKeyDown}
               disabled={isLoading}
               rows={1}
+              aria-label="Chat input"
             />
             <button
               type="submit"
