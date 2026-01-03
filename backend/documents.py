@@ -23,6 +23,11 @@ def is_pdf_file(filename: str | None, content_type: str | None) -> bool:
     return False
 
 
+def validate_pdf_header(content_header: bytes) -> bool:
+    """Validate PDF magic number (must start with %PDF-)."""
+    return content_header.startswith(b"%PDF-")
+
+
 def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 

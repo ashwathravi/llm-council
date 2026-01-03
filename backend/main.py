@@ -320,6 +320,11 @@ async def upload_documents(
             errors.append({"filename": filename, "error": "File is empty."})
             continue
 
+        # Security: Validate PDF magic number
+        if not documents.validate_pdf_header(content):
+            errors.append({"filename": filename, "error": "Invalid file format. File does not appear to be a valid PDF."})
+            continue
+
         doc = await storage.create_document(conversation_id, user_id, filename, len(content))
         try:
             pages = documents.extract_pdf_text(content)
