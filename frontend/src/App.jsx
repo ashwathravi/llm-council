@@ -21,9 +21,9 @@ function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  const toggleTheme = () => {
+  const toggleTheme = useCallback(() => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
+  }, []);
 
   const mobileBreakpoint = 900;
   const [isMobile, setIsMobile] = useState(window.innerWidth < mobileBreakpoint);
@@ -136,7 +136,7 @@ function App() {
     setIsSidebarOpen(false);
   }, []);
 
-  const handleSendMessage = async (content) => {
+  const handleSendMessage = useCallback(async (content) => {
     if (!currentConversationId) return;
 
     setIsLoading(true);
@@ -354,7 +354,7 @@ function App() {
       }));
       setIsLoading(false);
     }
-  };
+  }, [currentConversationId, loadConversations]);
 
   if (authLoading) return <div className="loading">Loading...</div>;
   if (!user) {
