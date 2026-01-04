@@ -54,6 +54,16 @@ const ModelSelect = ({
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             setIsOpen(!isOpen);
+        } else if (e.key === 'Escape' && isOpen) {
+            e.preventDefault();
+            closeDropdown();
+        }
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            closeDropdown();
         }
     };
 
@@ -141,7 +151,7 @@ const ModelSelect = ({
             )}
 
             {isDropdownOpen && (
-                <div className="model-select-dropdown">
+                <div className="model-select-dropdown" onKeyDown={handleKeyDown}>
                     <div className="search-container">
                         <input
                             ref={searchInputRef}
@@ -184,6 +194,7 @@ const ModelSelect = ({
                                     // Actually the issue is it persists when closed.
                                     // Let's keep onMouseLeave but ALSO clear on close.
                                     onMouseLeave={() => setHoveredModel(null)}
+                                    onFocus={() => setHoveredModel(option)}
                                     role="option"
                                     aria-selected={isSelected(option)}
                                     tabIndex={0}

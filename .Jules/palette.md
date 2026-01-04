@@ -5,3 +5,7 @@
 ## 2024-05-23 - Tooltip Accessibility
 **Learning:** Tooltips triggered only by `:hover` exclude keyboard users.
 **Action:** Converted an icon-only `<span>` tooltip trigger into a semantic `<button>`. Used CSS `:focus + .tooltip` selector (alongside `:hover`) and `aria-describedby` to ensure keyboard users can access the help text via Tab navigation.
+
+## 2024-05-24 - Disabled Button Accessibility
+**Learning:** Standard `disabled` attributes remove elements from the tab order, preventing keyboard and screen reader users from discovering *why* an action is unavailable.
+**Action:** Replaced `disabled` attribute with `aria-disabled="true"` and custom CSS to maintain focusability. Added `aria-describedby` pointing to a tooltip that explains the constraint (e.g., "Start a conversation to attach files"), ensuring all users can understand the interface state. Also fixed `ModelSelect` keyboard navigation (Escape to close, focus tracking).
