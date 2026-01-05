@@ -63,6 +63,7 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
   };
 
   const handleUploadClick = () => {
+    if (!conversationId || uploading) return;
     fileInputRef.current?.click();
   };
 
@@ -128,16 +129,23 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
       <div className="input-stack">
         <div className="upload-toolbar">
           <div className="upload-actions">
-            <button
-              type="button"
-              className="upload-button"
-              onClick={handleUploadClick}
-              disabled={!conversationId || uploading}
-              aria-label="Attach PDF files"
-              title="Attach PDF files"
-            >
-              <span>Attach PDFs</span>
-            </button>
+            <div className="upload-button-wrapper">
+              <button
+                type="button"
+                className="upload-button"
+                onClick={handleUploadClick}
+                aria-disabled={!conversationId || uploading}
+                aria-label="Attach PDF files"
+                aria-describedby={!conversationId ? "upload-disabled-tooltip" : undefined}
+              >
+                <span>Attach PDFs</span>
+              </button>
+              {!conversationId && (
+                <div id="upload-disabled-tooltip" className="upload-tooltip" role="tooltip">
+                  Start a conversation to attach files
+                </div>
+              )}
+            </div>
             <input
               ref={fileInputRef}
               type="file"

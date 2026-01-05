@@ -347,6 +347,11 @@
   flex-wrap: wrap;
 }
 
+.upload-button-wrapper {
+  position: relative;
+  display: flex;
+}
+
 .upload-button {
   border: 1px solid var(--md-sys-color-outline-variant);
   background: var(--md-sys-color-surface-container-high);
@@ -358,14 +363,41 @@
   transition: all 0.2s;
 }
 
-.upload-button:hover:not(:disabled) {
+.upload-button:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--md-sys-color-secondary-container);
   color: var(--md-sys-color-on-secondary-container);
 }
 
-.upload-button:disabled {
+.upload-button:disabled,
+.upload-button[aria-disabled="true"] {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Tooltip for disabled state explanation */
+.upload-tooltip {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 8px;
+  background-color: var(--md-sys-color-inverse-surface);
+  color: var(--md-sys-color-inverse-on-surface);
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 100;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.upload-button-wrapper:hover .upload-tooltip,
+.upload-button-wrapper:focus-within .upload-tooltip {
+  visibility: visible;
+  opacity: 1;
 }
 
 .file-input {
