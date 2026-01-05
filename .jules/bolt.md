@@ -5,3 +5,7 @@
 ## 2025-01-02 - [Nested Component Re-renders]
 **Learning:** Even with `MessageItem` memoized, its children (`Stage1`, `Stage2`, `Stage3`) were re-rendering unnecessarily during streaming updates of sibling stages. For example, during Stage 3 streaming, Stage 1 and 2 components (which are static) were re-rendering on every token because the parent `MessageItem` re-rendered.
 **Action:** Memoize computational/heavy presentation components (`React.memo`) that are children of frequently updating parents, even if they seem static.
+
+## 2025-01-08 - [Blocking Async Endpoints]
+**Learning:** `async def` endpoints in FastAPI run on the main event loop. Calling synchronous CPU-bound functions (like PDF extraction/embedding) inside them blocks the entire server.
+**Action:** Always wrap synchronous blocking calls in `await starlette.concurrency.run_in_threadpool(func, *args)` when using `async def`.

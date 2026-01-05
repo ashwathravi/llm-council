@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any
 import uuid
@@ -327,14 +328,17 @@ async def upload_documents(
 
         doc = await storage.create_document(conversation_id, user_id, filename, len(content))
         try:
-            pages = documents.extract_pdf_text(content)
+            # Offload CPU-bound PDF extraction to threadpool to avoid blocking event loop
+            pages = await run_in_threadpool(documents.extract_pdf_text, content)
             if not any(page.strip() for page in pages):
                 raise ValueError("No extractable text found in PDF.")
 
             chunks = documents.chunk_pages(pages)
             if not chunks:
                 raise ValueError("No extractable text found in PDF.")
-            embeddings = documents.embed_texts([chunk["text"] for chunk in chunks])
+
+            # Offload heavy embedding model inference to threadpool
+            embeddings = await run_in_threadpool(documents.embed_texts, [chunk["text"] for chunk in chunks])
             if len(embeddings) != len(chunks):
                 raise ValueError("Failed to embed document chunks.")
 
