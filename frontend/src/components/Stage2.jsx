@@ -31,10 +31,14 @@ const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings 
         Below, model names are shown in <strong>bold</strong> for readability, but the original evaluation used anonymous labels.
       </p>
 
-      <div className="tabs">
+      <div className="tabs" role="tablist" aria-label="Peer rankings">
         {rankings.map((rank, index) => (
           <button
             key={index}
+            role="tab"
+            id={`stage2-tab-${index}`}
+            aria-selected={activeTab === index}
+            aria-controls={`stage2-panel-${index}`}
             className={`tab ${activeTab === index ? 'active' : ''}`}
             onClick={() => setActiveTab(index)}
           >
@@ -43,7 +47,13 @@ const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings 
         ))}
       </div>
 
-      <div className="tab-content">
+      <div
+        className="tab-content"
+        role="tabpanel"
+        id={`stage2-panel-${activeTab}`}
+        aria-labelledby={`stage2-tab-${activeTab}`}
+        tabIndex="0"
+      >
         <div className="ranking-model">
           {rankings[activeTab].model}
         </div>
