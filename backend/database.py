@@ -1,5 +1,6 @@
 
 import os
+import ssl
 from datetime import datetime
 from typing import List, Optional, Any, Dict
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -83,17 +84,13 @@ if DATABASE_URL:
     
     if "sslmode" in query_params:
         ssl_mode = query_params.pop("sslmode")
-        # Map sslmode to asyncpg ssl parameter
         if ssl_mode == "require" or ssl_mode == "verify-full":
-             # For now, just enable basic SSL if require was requested
-             # Ideally we'd pass an SSLContext, but "require" string often works 
-             # depending on asyncpg version, or simply 'True' implies some check.
-             # However, safer to just remove the incompatible arg and let asyncpg defaults 
-             # work or manually pass unverified context if needed.
-             # In many cloud envs, just removing sslmode=require and relying on default 
-             # (or handling it via connect_args) is the standard fix.
-             # Let's try passing ssl='require' in connect_args which asyncpg >= 0.27 supports.
-             connect_args["ssl"] = "require"
+            # Create a custom SSL context to avoid certificate verification errors
+            # which are common in some deployment environments
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            connect_args["ssl"] = ssl_context
     
     # Reconstruct URL without the incompatible query params
     url_obj = url_obj._replace(query=query_params)
