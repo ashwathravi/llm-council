@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import uuid
 import json
 import asyncio
@@ -58,7 +58,7 @@ class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
     framework: str = "standard"
     council_models: List[str] = Field(default=[], max_length=10)
-    chairman_model: str | None = None
+    chairman_model: Optional[str] = None
 
     @field_validator("framework")
     @classmethod
@@ -98,8 +98,8 @@ class Conversation(BaseModel):
     created_at: str
     title: str
     framework: str = "standard"
-    council_models: List[str] | None = None
-    chairman_model: str | None = None
+    council_models: Optional[List[str]] = None
+    chairman_model: Optional[str] = None
     messages: List[Dict[str, Any]]
 
 
@@ -114,10 +114,10 @@ class DocumentMetadata(BaseModel):
     filename: str
     size_bytes: int
     status: str
-    page_count: int | None = None
-    error_message: str | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
+    page_count: Optional[int] = None
+    error_message: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 class DocumentUploadError(BaseModel):
     filename: str

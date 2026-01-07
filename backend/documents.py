@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import io
 import re
 import threading
@@ -15,7 +15,7 @@ _EMBEDDING_MODEL = None
 _EMBEDDING_LOCK = threading.Lock()
 
 
-def is_pdf_file(filename: str | None, content_type: str | None) -> bool:
+def is_pdf_file(filename: Optional[str], content_type: Optional[str]) -> bool:
     if content_type and "pdf" in content_type.lower():
         return True
     if filename and filename.lower().endswith(".pdf"):

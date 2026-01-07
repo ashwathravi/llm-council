@@ -1,6 +1,11 @@
+
 import React, { memo, useState, useEffect, useRef } from 'react';
 import { api } from '../api';
-import './ChatInterface.css';
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
+import { Paperclip, Send, X, FileText, Loader2 } from "lucide-react";
 
 const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
   const [input, setInput] = useState('');
@@ -13,14 +18,15 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
 
+  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
   }, [input]);
 
-  // Load documents when conversation changes
+  // Load documents
   useEffect(() => {
     setUploadError('');
     setUploading(false);
@@ -51,11 +57,12 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
     if (input.trim() && !isLoading) {
       onSendMessage(input);
       setInput('');
+      // Reset height
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
     }
   };
 
   const handleKeyDown = (e) => {
-    // Submit on Enter (without Shift)
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
@@ -78,9 +85,8 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
   const handleFilesSelected = async (event) => {
     const files = Array.from(event.target.files || []);
     event.target.value = '';
-    if (!files.length || !conversationId) {
-      return;
-    }
+
+    if (!files.length || !conversationId) return;
 
     if (documents.length + files.length > 5) {
       setUploadError('Max 5 PDFs per conversation.');
@@ -119,110 +125,103 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
       const updatedDocuments = await api.listDocuments(conversationId);
       setDocuments(updatedDocuments);
     } catch (error) {
-      console.error('Failed to delete document:', error);
       setUploadError('Failed to remove document.');
     }
   };
 
   return (
-    <form className="input-form" onSubmit={handleSubmit}>
-      <div className="input-stack">
-        <div className="upload-toolbar">
-          <div className="upload-actions">
-            <div className="upload-button-wrapper">
-              <button
-                type="button"
-                className="upload-button"
-                onClick={handleUploadClick}
-                aria-disabled={!conversationId || uploading}
-                aria-label="Attach PDF files"
-                aria-describedby={!conversationId ? "upload-disabled-tooltip" : undefined}
-              >
-                <span>Attach PDFs</span>
-              </button>
-              {!conversationId && (
-                <div id="upload-disabled-tooltip" className="upload-tooltip" role="tooltip">
-                  Start a conversation to attach files
-                </div>
-              )}
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf"
-              multiple
-              onChange={handleFilesSelected}
-              className="file-input"
-            />
-            <span className="upload-hint">Max 5 PDFs - 10MB each</span>
-          </div>
-          {uploading && (
-            <div className="upload-progress">
-              <div className="upload-progress-bar" style={{ width: `${uploadProgress}%` }} />
-              <span>Uploading {uploadProgress}%</span>
-            </div>
-          )}
-          {uploadError && <div className="upload-error">{uploadError}</div>}
-        </div>
+    <div className="border-t bg-background p-4">
+      <form onSubmit={handleSubmit} className="mx-auto max-w-3xl flex flex-col gap-3">
+        {/* Upload Error */}
+        {uploadError && (
+          <div className="text-xs text-destructive bg-destructive/10 p-2 rounded">{uploadError}</div>
+        )}
 
-        {(documentsLoading || documents.length > 0) && (
-          <div className="document-list">
-            {documentsLoading && <div className="document-loading">Loading documents...</div>}
+        {/* Document List */}
+        {(documents.length > 0 || uploading) && (
+          <div className="flex flex-wrap gap-2">
             {documents.map((doc) => (
-              <div key={doc.id} className={`document-item status-${doc.status}`}>
-                <div className="document-meta">
-                  <div className="document-name">{doc.filename}</div>
-                  <div className="document-details">
-                    {formatBytes(doc.size_bytes)}
-                    {doc.page_count ? ` · ${doc.page_count} pages` : ''}
-                  </div>
-                  {doc.error_message && (
-                    <div className="document-error">{doc.error_message}</div>
-                  )}
-                </div>
-                <div className="document-actions">
-                  <span className={`document-status status-${doc.status}`}>{doc.status}</span>
-                  <button
-                    type="button"
-                    className="document-remove"
-                    onClick={() => handleDeleteDocument(doc.id)}
-                    aria-label={`Remove ${doc.filename}`}
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
+              <Badge key={doc.id} variant="secondary" className="pl-2 pr-1 py-1 gap-2 h-7 font-normal">
+                <FileText className="h-3 w-3 text-muted-foreground" />
+                <span className="truncate max-w-[150px]">{doc.filename}</span>
+                <span className="text-xs text-muted-foreground ml-1">{formatBytes(doc.size_bytes)}</span>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteDocument(doc.id)}
+                  className="ml-1 rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
             ))}
+
+            {uploading && (
+              <Badge variant="outline" className="animate-pulse">
+                Uploading... {uploadProgress}%
+              </Badge>
+            )}
           </div>
         )}
 
-        <div className="composer-row">
-          <textarea
-            ref={textareaRef}
-            className="message-input"
-            placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isLoading}
-            rows={1}
-            aria-label="Chat input"
+        {/* Input Area */}
+        <div className="relative flex items-end gap-2 rounded-lg border bg-background p-2 shadow-sm focus-within:ring-1 focus-within:ring-ring">
+          {/* Attachment Button */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={handleUploadClick}
+                  disabled={!conversationId || uploading}
+                >
+                  <Paperclip className="h-4 w-4" />
+                  <span className="sr-only">Attach PDF</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Attach PDF (Max 5)</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/pdf"
+            multiple
+            className="hidden"
+            onChange={handleFilesSelected}
           />
-          <button
+
+          <Textarea
+            ref={textareaRef}
+            tabIndex={0}
+            rows={1}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Message the Council..."
+            spellCheck={false}
+            className="min-h-[44px] w-full resize-none border-0 bg-transparent py-3 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
+            disabled={isLoading}
+          />
+
+          <Button
             type="submit"
-            className="send-button"
+            size="icon"
             disabled={!input.trim() || isLoading}
-            aria-label="Send message"
-            title="Send message (Enter)"
+            className="h-9 w-9 shrink-0"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-            </svg>
-          </button>
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            <span className="sr-only">Send message</span>
+          </Button>
         </div>
-      </div>
-    </form>
+        <div className="text-xs text-muted-foreground text-center">
+          Review Council responses carefully. AI can make mistakes.
+        </div>
+      </form>
+    </div>
   );
 });
 

@@ -1,8 +1,10 @@
+
 import { useEffect, useRef } from 'react';
 import MessageItem from './MessageItem';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
-import './ChatInterface.css';
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { BrainCircuit } from "lucide-react";
 
 export default function ChatInterface({
   conversation,
@@ -10,6 +12,7 @@ export default function ChatInterface({
   isLoading,
 }) {
   const messagesEndRef = useRef(null);
+  const scrollAreaRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -17,31 +20,33 @@ export default function ChatInterface({
 
   useEffect(() => {
     scrollToBottom();
-  }, [conversation]);
+  }, [conversation?.messages, isLoading]);
 
   if (!conversation) {
     return (
-      <div className="chat-interface">
-        <div className="empty-state">
-          <h2>Welcome to LLM Council</h2>
-          <p>Create a new conversation to get started</p>
+      <div className="h-full flex flex-col items-center justify-center p-8 text-center text-muted-foreground animate-in fade-in zoom-in-95 duration-300">
+        <div className="bg-muted/50 p-6 rounded-full mb-6">
+          <BrainCircuit className="h-16 w-16 opacity-50" />
         </div>
+        <h2 className="text-2xl font-bold mb-2">Welcome to LLM Council</h2>
+        <p className="max-w-md">Create a new conversation from the sidebar to begin consulting with multiple AI models simultaneously.</p>
       </div>
     );
   }
 
   return (
-    <div className="chat-interface">
+    <div className="flex flex-col h-full bg-background relative">
       <ChatHeader
         title={conversation.title}
         framework={conversation.framework}
         conversationId={conversation.id}
       />
 
-      <div className="messages-container">
+      {/* Messages Area - Using overflow-y-auto for better scroll-to-bottom behavior vs ScrollArea */}
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
         {conversation.messages.length === 0 ? (
-          <div className="empty-state">
-            <h2>Start a conversation</h2>
+          <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground opacity-70">
+            <h2 className="text-xl font-semibold mb-2">Start a conversation</h2>
             <p>Ask a question to consult the LLM Council</p>
           </div>
         ) : (
@@ -50,14 +55,8 @@ export default function ChatInterface({
           ))
         )}
 
-        {isLoading && (
-          <div className="loading-indicator">
-            <div className="spinner"></div>
-            <span>Consulting the council...</span>
-          </div>
-        )}
 
-        <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} className="h-1" />
       </div>
 
       <ChatInput

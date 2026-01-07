@@ -7,14 +7,14 @@ from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
 DEFAULT_REFERER = "https://llm-council.local"
 logger = logging.getLogger(__name__)
 
-def _get_request_id(response: httpx.Response) -> str | None:
+def _get_request_id(response: httpx.Response) -> Optional[str]:
     return (
         response.headers.get("x-request-id")
         or response.headers.get("x-openrouter-request-id")
         or response.headers.get("openai-request-id")
     )
 
-def _get_provider(response: httpx.Response) -> str | None:
+def _get_provider(response: httpx.Response) -> Optional[str]:
     return response.headers.get("x-openrouter-provider")
 
 def _normalize_message_content(message: Dict[str, Any]) -> str:

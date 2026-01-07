@@ -1,11 +1,11 @@
 """3-stage LLM Council orchestration."""
 
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from .openrouter import query_models_parallel, query_model, query_model_stream
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
 
 
-def _apply_retrieval_context(messages: List[Dict[str, str]], retrieval_context: str | None) -> List[Dict[str, str]]:
+def _apply_retrieval_context(messages: List[Dict[str, str]], retrieval_context: Optional[str]) -> List[Dict[str, str]]:
     if not retrieval_context:
         return messages
     return [{"role": "system", "content": retrieval_context}] + list(messages)
@@ -14,7 +14,7 @@ def _apply_retrieval_context(messages: List[Dict[str, str]], retrieval_context: 
 async def stage1_collect_responses(
     messages: List[Dict[str, str]],
     council_models: List[str] = None,
-    retrieval_context: str | None = None
+    retrieval_context: Optional[str] = None
 ):
     """
     Stage 1: Collect individual responses from all council models.
@@ -53,7 +53,7 @@ async def stage2_collect_rankings(
     stage1_results: List[Dict[str, Any]],
     council_models: List[str] = None,
     chairman_model: str = None,
-    retrieval_context: str | None = None
+    retrieval_context: Optional[str] = None
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """
     Stage 2: Each model ranks the anonymized responses.
@@ -264,8 +264,8 @@ async def run_full_council(
     framework: str = "standard",
     council_models: list = None,
     chairman_model: str = None,
-    retrieval_context: str | None = None,
-    retrieval_citations: List[Dict[str, Any]] | None = None
+    retrieval_context: Optional[str] = None,
+    retrieval_citations: Optional[List[Dict[str, Any]]] = None
 ):
     """
     Orchestrates the selected council process.
@@ -492,7 +492,7 @@ def _return_error():
 async def stage1_collect_responses_six_hats(
     messages: List[Dict[str, str]],
     council_models: List[str] = None,
-    retrieval_context: str | None = None
+    retrieval_context: Optional[str] = None
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Stage 1 for Six Hats: Assign prompts to models."""
     active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
@@ -554,7 +554,7 @@ async def stage2_collect_critiques(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
     council_models: List[str] = None,
-    retrieval_context: str | None = None
+    retrieval_context: Optional[str] = None
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """Stage 2 for Debate: Critiques instead of rankings."""
     active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
@@ -606,7 +606,7 @@ async def stage3_synthesize_final(
     stage2_results: List[Dict[str, Any]],
     chairman_model: str = None,
     mode: str = "standard",
-    retrieval_context: str | None = None
+    retrieval_context: Optional[str] = None
 ):
     """
     Stage 3: Chairman synthesizes final response (streaming).
