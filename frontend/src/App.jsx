@@ -4,7 +4,7 @@ import ChatInterface from './components/ChatInterface';
 import { api } from './api';
 
 const Login = lazy(() => import('./components/Login'));
-import { useAuth } from './contexts/AuthContext';
+import { useAuth } from './contexts/AuthContextDefinition';
 import './App.css';
 
 function App() {
