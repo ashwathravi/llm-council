@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { GoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContextDefinition';
 import { api } from '../api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { BrainCircuit } from "lucide-react";
