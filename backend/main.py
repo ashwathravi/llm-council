@@ -1,10 +1,11 @@
 """FastAPI backend for LLM Council."""
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any
 import uuid
 import json
@@ -14,7 +15,7 @@ import io
 import requests
 from contextlib import asynccontextmanager
 
-from . import storage, auth, openrouter, security
+from . import storage, auth, openrouter, security, documents, retrieval, config
 from .database import init_db
 from .council import (
     run_full_council, generate_conversation_title,
@@ -56,8 +57,26 @@ app.add_middleware(
 class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
     framework: str = "standard"
-    council_models: List[str] = []
+    council_models: List[str] = Field(default=[], max_length=10)
     chairman_model: str | None = None
+
+    @field_validator("framework")
+    @classmethod
+    def validate_framework(cls, v: str) -> str:
+        allowed = {"standard", "six_hats", "debate", "ensemble"}
+        if v not in allowed:
+            raise ValueError(f"Framework must be one of: {', '.join(allowed)}")
+        return v
+
+    @field_validator("council_models")
+    @classmethod
+    def validate_council_models(cls, v: List[str]) -> List[str]:
+        if len(v) > 10:
+            raise ValueError("Too many models selected (max 10)")
+        for model in v:
+            if len(model) > 100:
+                raise ValueError("Model name too long")
+        return v
 
 
 class SendMessageRequest(BaseModel):
@@ -88,6 +107,25 @@ class LoginResponse(BaseModel):
     access_token: str
     token_type: str
     user: Dict[str, Any]
+
+class DocumentMetadata(BaseModel):
+    id: str
+    conversation_id: str
+    filename: str
+    size_bytes: int
+    status: str
+    page_count: int | None = None
+    error_message: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+class DocumentUploadError(BaseModel):
+    filename: str
+    error: str
+
+class DocumentUploadResponse(BaseModel):
+    documents: List[DocumentMetadata]
+    errors: List[DocumentUploadError] = []
 
 
 @app.get("/api/health")
@@ -232,6 +270,129 @@ async def get_conversation(
     return conversation
 
 
+@app.get("/api/conversations/{conversation_id}/documents", response_model=List[DocumentMetadata])
+async def list_documents(
+    conversation_id: str,
+    user_id: str = Depends(auth.get_current_user_id)
+):
+    conversation = await storage.get_conversation(conversation_id, user_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return await storage.list_documents(conversation_id, user_id)
+
+
+@app.post(
+    "/api/conversations/{conversation_id}/documents",
+    response_model=DocumentUploadResponse,
+    dependencies=[Depends(security.rate_limiter(requests_limit=10, time_window=60, scope="upload_docs"))]
+)
+async def upload_documents(
+    conversation_id: str,
+    files: List[UploadFile] = File(...),
+    user_id: str = Depends(auth.get_current_user_id)
+):
+    conversation = await storage.get_conversation(conversation_id, user_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    existing_documents = await storage.list_documents(conversation_id, user_id)
+    if len(existing_documents) + len(files) > config.PDF_MAX_FILES_PER_CONVERSATION:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum {config.PDF_MAX_FILES_PER_CONVERSATION} PDFs per conversation."
+        )
+
+    uploaded_documents: List[Dict[str, Any]] = []
+    errors: List[Dict[str, str]] = []
+
+    for upload in files:
+        filename = upload.filename or "document.pdf"
+        if not documents.is_pdf_file(filename, upload.content_type):
+            errors.append({"filename": filename, "error": "Only PDF files are supported."})
+            continue
+
+        content = await upload.read(config.PDF_MAX_FILE_SIZE_BYTES + 1)
+        if len(content) > config.PDF_MAX_FILE_SIZE_BYTES:
+            errors.append({"filename": filename, "error": "File exceeds the 10MB limit."})
+            continue
+        if len(content) == 0:
+            errors.append({"filename": filename, "error": "File is empty."})
+            continue
+
+        # Security: Validate PDF magic number
+        if not documents.validate_pdf_header(content):
+            errors.append({"filename": filename, "error": "Invalid file format. File does not appear to be a valid PDF."})
+            continue
+
+        doc = await storage.create_document(conversation_id, user_id, filename, len(content))
+        try:
+            # Offload CPU-bound PDF extraction to threadpool to avoid blocking event loop
+            pages = await run_in_threadpool(documents.extract_pdf_text, content)
+            if not any(page.strip() for page in pages):
+                raise ValueError("No extractable text found in PDF.")
+
+            chunks = documents.chunk_pages(pages)
+            if not chunks:
+                raise ValueError("No extractable text found in PDF.")
+
+            # Offload heavy embedding model inference to threadpool
+            embeddings = await run_in_threadpool(documents.embed_texts, [chunk["text"] for chunk in chunks])
+            if len(embeddings) != len(chunks):
+                raise ValueError("Failed to embed document chunks.")
+
+            chunk_records = []
+            for chunk, embedding in zip(chunks, embeddings):
+                chunk_records.append({
+                    "document_id": doc["id"],
+                    "conversation_id": conversation_id,
+                    "user_id": user_id,
+                    "chunk_index": chunk["chunk_index"],
+                    "page_number": chunk["page_number"],
+                    "text": chunk["text"],
+                    "embedding": embedding,
+                })
+
+            await storage.add_document_chunks(conversation_id, user_id, chunk_records)
+            doc = await storage.update_document(
+                conversation_id,
+                doc["id"],
+                user_id,
+                status="ready",
+                page_count=len(pages),
+                error_message=None
+            )
+        except Exception as e:
+            doc = await storage.update_document(
+                conversation_id,
+                doc["id"],
+                user_id,
+                status="failed",
+                error_message=str(e)
+            )
+        uploaded_documents.append(doc)
+
+    return {"documents": uploaded_documents, "errors": errors}
+
+
+@app.delete("/api/conversations/{conversation_id}/documents/{document_id}")
+async def delete_document(
+    conversation_id: str,
+    document_id: str,
+    user_id: str = Depends(auth.get_current_user_id)
+):
+    conversation = await storage.get_conversation(conversation_id, user_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    try:
+        await storage.delete_document(conversation_id, document_id, user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"status": "success"}
+
+
 @app.post("/api/conversations/{conversation_id}/message", dependencies=[Depends(security.rate_limiter(requests_limit=20, time_window=60, scope="chat"))])
 async def send_message(
     conversation_id: str,
@@ -275,11 +436,19 @@ async def send_message(
     # Append current user message
     history.append({"role": "user", "content": request.content})
 
+    retrieval_context, citations = await retrieval.build_retrieval_context(
+        conversation_id,
+        user_id,
+        request.content
+    )
+
     stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
         history,
         framework=framework,
         council_models=council_models,
-        chairman_model=chairman_model
+        chairman_model=chairman_model,
+        retrieval_context=retrieval_context,
+        retrieval_citations=citations
     )
 
     # Add assistant message with all stages
@@ -288,7 +457,8 @@ async def send_message(
         user_id,
         stage1_results,
         stage2_results,
-        stage3_result
+        stage3_result,
+        metadata
     )
 
     # Return the complete response with metadata
@@ -343,6 +513,12 @@ async def send_message_stream(
             # Append current user message
             history.append({"role": "user", "content": request.content})
 
+            retrieval_context, citations = await retrieval.build_retrieval_context(
+                conversation_id,
+                user_id,
+                request.content
+            )
+
             # Stage 1: Collect responses (incremental)
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
             
@@ -355,14 +531,18 @@ async def send_message_stream(
                 # For now, let's keep six_hats as batch if not refactored, or if user wants consistency, I should have refactored it.
                 # The prompt said "stage1_collect_responses". Let's check if I can wrap six_hats easily or if I should just await it.
                 # I'll just await it as before to avoid breaking it, but emit updates in batch.
-                stage1_results, stage1_errors = await stage1_collect_responses_six_hats(history, council_models)
+                stage1_results, stage1_errors = await stage1_collect_responses_six_hats(
+                    history,
+                    council_models,
+                    retrieval_context=retrieval_context
+                )
                 for error in stage1_errors:
                     yield f"data: {json.dumps({'type': 'stage1_error', 'data': error})}\n\n"
                 # Emit fake updates for consistency? Or just one complete.
                 yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
             else:
                 # Streaming stage 1
-                async for result in stage1_collect_responses(history, council_models):
+                async for result in stage1_collect_responses(history, council_models, retrieval_context=retrieval_context):
                     if result.get("error"):
                         stage1_errors.append(result)
                         yield f"data: {json.dumps({'type': 'stage1_error', 'data': result})}\n\n"
@@ -384,27 +564,46 @@ async def send_message_stream(
             stage2_results = []
             aggregate_rankings = []
             label_to_model = {}
+            retrieval_meta = {"retrieval": {"citations": citations}}
 
             if framework == "ensemble":
                 # Ensemble: Skip Stage 2
                 label_to_model = {f"Response {chr(65+i)}": r['model'] for i, r in enumerate(stage1_results)}
-                yield f"data: {json.dumps({'type': 'stage2_skipped', 'metadata': {'label_to_model': label_to_model}})}\n\n"
+                yield f"data: {json.dumps({'type': 'stage2_skipped', 'metadata': {'label_to_model': label_to_model, **retrieval_meta}})}\n\n"
             
             elif framework == "debate":
                  # Debate: Stage 2 is Critiques
-                 stage2_results, label_to_model = await stage2_collect_critiques(request.content, stage1_results, council_models)
-                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'mode': 'debate'}})}\n\n"
+                 stage2_results, label_to_model = await stage2_collect_critiques(
+                     request.content,
+                     stage1_results,
+                     council_models,
+                     retrieval_context=retrieval_context
+                 )
+                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'mode': 'debate', **retrieval_meta}})}\n\n"
 
             else: # standard and six_hats both use ranking for Stage 2
-                 stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results, council_models, chairman_model)
+                 stage2_results, label_to_model = await stage2_collect_rankings(
+                     request.content,
+                     stage1_results,
+                     council_models,
+                     chairman_model,
+                     retrieval_context=retrieval_context
+                 )
                  aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
-                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
+                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, **retrieval_meta}})}\n\n"
 
             # Stage 3: Synthesize final answer (Streaming)
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
             
             full_stage3_response = ""
-            async for token in stage3_synthesize_final(request.content, stage1_results, stage2_results, chairman_model=chairman_model, mode=framework):
+            async for token in stage3_synthesize_final(
+                request.content,
+                stage1_results,
+                stage2_results,
+                chairman_model=chairman_model,
+                mode=framework,
+                retrieval_context=retrieval_context
+            ):
                 full_stage3_response += token
                 yield f"data: {json.dumps({'type': 'stage3_token', 'data': token})}\n\n"
             
@@ -421,12 +620,22 @@ async def send_message_stream(
                  yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
             # Save complete assistant message
+            metadata = {
+                "framework": framework,
+                "council_models": [r['model'] for r in stage1_results],
+                "chairman_model": chairman_model or "google/gemini-3-pro-preview",
+                "label_to_model": label_to_model,
+                "aggregate_rankings": aggregate_rankings,
+                "stage1_errors": stage1_errors,
+                **retrieval_meta
+            }
             await storage.add_assistant_message(
                 conversation_id,
                 user_id,
                 stage1_results,
                 stage2_results,
-                stage3_result
+                stage3_result,
+                metadata
             )
 
             # Send completion event

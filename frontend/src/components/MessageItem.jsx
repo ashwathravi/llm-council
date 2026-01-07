@@ -65,7 +65,12 @@ const MessageItem = memo(({ msg }) => {
               <span>Running Stage 3: Final synthesis...</span>
             </div>
           )}
-          {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
+          {msg.stage3 && (
+            <Stage3
+              finalResponse={msg.stage3}
+              citations={msg.metadata?.retrieval?.citations}
+            />
+          )}
         </div>
       )}
     </div>

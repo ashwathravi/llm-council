@@ -108,6 +108,8 @@ def get_current_user_id(authorization: str = Header(None)) -> str:
         return user_id
         
     except (ValueError, jwt.PyJWTError):
+        # ValueError: from split() if header is malformed
+        # PyJWTError: from jwt.decode() if token is invalid
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",

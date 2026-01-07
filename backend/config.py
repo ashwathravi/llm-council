@@ -42,8 +42,25 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Data directory for conversation storage
 DATA_DIR = "data/conversations"
 
+# Data directory for extracted document storage
+DOCUMENTS_DIR = "data/documents"
+
 # Database Configuration
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+# PDF upload limits
+PDF_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
+PDF_MAX_FILES_PER_CONVERSATION = 5
+
+# Chunking + retrieval config
+CHUNK_WORDS = 200
+CHUNK_OVERLAP_WORDS = 40
+RETRIEVAL_TOP_K = 5
+RETRIEVAL_MAX_TOTAL_CHARS = 4000
+RETRIEVAL_MAX_CHARS_PER_CHUNK = 1000
+
+# Embedding model
+EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 # Origin Detection
 if os.getenv("RENDER"):

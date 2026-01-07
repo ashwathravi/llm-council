@@ -210,7 +210,7 @@ const Sidebar = memo(({
               className="delete-btn"
               onClick={(e) => handleDelete(e, conv.id)}
               title="Delete conversation"
-              aria-label="Delete conversation"
+              aria-label={`Delete conversation: ${conv.title}`}
             >
               ×
             </button>
@@ -250,7 +250,7 @@ const Sidebar = memo(({
                       className="delete-btn"
                       onClick={(e) => handleDelete(e, conv.id)}
                       title="Delete conversation"
-                      aria-label="Delete conversation"
+                      aria-label={`Delete conversation: ${conv.title}`}
                     >
                       ×
                     </button>

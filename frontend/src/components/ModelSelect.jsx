@@ -17,6 +17,7 @@ const ModelSelect = ({
     const triggerRef = useRef(null);
     const tooltipRef = useRef(null);
     const isDropdownOpen = isOpen && !disabled;
+    const searchInputRef = useRef(null);
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -53,6 +54,16 @@ const ModelSelect = ({
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             setIsOpen(!isOpen);
+        } else if (e.key === 'Escape' && isOpen) {
+            e.preventDefault();
+            closeDropdown();
+        }
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            closeDropdown();
         }
     };
 
@@ -140,18 +151,36 @@ const ModelSelect = ({
             )}
 
             {isDropdownOpen && (
-                <div className="model-select-dropdown">
-                    <input
-                        type="text"
-                        className="model-search"
-                        placeholder="Search models..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        autoFocus
-                        disabled={disabled}
-                        aria-label="Filter models"
-                    />
+                <div className="model-select-dropdown" onKeyDown={handleKeyDown}>
+                    <div className="search-container">
+                        <input
+                            ref={searchInputRef}
+                            type="text"
+                            className="model-search"
+                            placeholder="Search models..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            autoFocus
+                            disabled={disabled}
+                            aria-label="Filter models"
+                        />
+                        {search && (
+                            <button
+                                type="button"
+                                className="clear-search-btn"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSearch('');
+                                    searchInputRef.current?.focus();
+                                }}
+                                aria-label="Clear search"
+                                title="Clear search"
+                            >
+                                ×
+                            </button>
+                        )}
+                    </div>
                     <div className="model-options" role="listbox">
                         {filteredOptions.length > 0 ? (
                             filteredOptions.map(option => (
@@ -165,6 +194,7 @@ const ModelSelect = ({
                                     // Actually the issue is it persists when closed.
                                     // Let's keep onMouseLeave but ALSO clear on close.
                                     onMouseLeave={() => setHoveredModel(null)}
+                                    onFocus={() => setHoveredModel(option)}
                                     role="option"
                                     aria-selected={isSelected(option)}
                                     tabIndex={0}

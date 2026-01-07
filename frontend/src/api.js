@@ -227,4 +227,74 @@ export const api = {
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   },
+
+  /**
+   * List documents for a conversation.
+   */
+  async listDocuments(conversationId) {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/documents`,
+      { headers: getAuthHeaders() }
+    );
+    if (!response.ok) {
+      throw new Error('Failed to list documents');
+    }
+    return response.json();
+  },
+
+  /**
+   * Upload PDF documents with progress callback.
+   */
+  uploadDocuments(conversationId, files, onProgress) {
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/api/conversations/${conversationId}/documents`);
+
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          onProgress(event.loaded / event.total);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch (e) {
+            reject(new Error('Failed to parse upload response'));
+          }
+        } else {
+          reject(new Error('Failed to upload documents'));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Failed to upload documents'));
+      xhr.send(formData);
+    });
+  },
+
+  /**
+   * Delete a document from a conversation.
+   */
+  async deleteDocument(conversationId, documentId) {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/documents/${documentId}`,
+      {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      }
+    );
+    if (!response.ok) {
+      throw new Error('Failed to delete document');
+    }
+    return response.json();
+  },
 };

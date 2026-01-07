@@ -1,9 +1,39 @@
 
 import httpx
+import logging
 from typing import List, Dict, Any, Optional
 from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
 
 DEFAULT_REFERER = "https://llm-council.local"
+logger = logging.getLogger(__name__)
+
+def _get_request_id(response: httpx.Response) -> str | None:
+    return (
+        response.headers.get("x-request-id")
+        or response.headers.get("x-openrouter-request-id")
+        or response.headers.get("openai-request-id")
+    )
+
+def _get_provider(response: httpx.Response) -> str | None:
+    return response.headers.get("x-openrouter-provider")
+
+def _normalize_message_content(message: Dict[str, Any]) -> str:
+    content = message.get("content")
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, dict):
+                    text = text.get("value") or text.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+        content = "\n".join(parts)
+    elif content is None:
+        content = ""
+    elif not isinstance(content, str):
+        content = str(content)
+    return content.strip()
 
 
 def _extract_error_message(response: httpx.Response) -> str:
@@ -114,10 +144,65 @@ async def query_model(
             response.raise_for_status()
 
             data = response.json()
-            message = data['choices'][0]['message']
+            if isinstance(data, dict) and data.get("error"):
+                error_message = _extract_error_message(response)
+                logger.error(
+                    "OpenRouter error payload: model=%s status=%s request_id=%s provider=%s error=%s",
+                    model,
+                    response.status_code,
+                    _get_request_id(response),
+                    _get_provider(response),
+                    error_message
+                )
+                return {
+                    "content": None,
+                    "reasoning_details": None,
+                    "error": error_message,
+                    "status_code": response.status_code,
+                }
+
+            choices = data.get("choices") if isinstance(data, dict) else None
+            if not choices:
+                logger.error(
+                    "OpenRouter missing choices: model=%s status=%s request_id=%s provider=%s keys=%s",
+                    model,
+                    response.status_code,
+                    _get_request_id(response),
+                    _get_provider(response),
+                    list(data.keys()) if isinstance(data, dict) else type(data).__name__,
+                )
+                return {
+                    "content": None,
+                    "reasoning_details": None,
+                    "error": "Model returned no choices.",
+                    "status_code": response.status_code,
+                }
+
+            choice = choices[0]
+            message = choice.get("message", {})
+
+            content = _normalize_message_content(message)
+            if not content:
+                logger.warning(
+                    "OpenRouter returned empty content: model=%s status=%s request_id=%s provider=%s finish_reason=%s content_type=%s message_keys=%s usage=%s",
+                    model,
+                    response.status_code,
+                    _get_request_id(response),
+                    _get_provider(response),
+                    choice.get("finish_reason"),
+                    type(message.get("content")).__name__,
+                    list(message.keys()),
+                    data.get("usage") if isinstance(data, dict) else None
+                )
+                return {
+                    "content": None,
+                    "reasoning_details": message.get("reasoning_details"),
+                    "error": "Model returned an empty response.",
+                    "status_code": response.status_code,
+                }
 
             return {
-                "content": message.get("content"),
+                "content": content,
                 "reasoning_details": message.get("reasoning_details"),
                 "error": None,
                 "status_code": None,
@@ -126,7 +211,7 @@ async def query_model(
     except httpx.HTTPStatusError as e:
         message = _extract_error_message(e.response)
         error_message = f"{e.response.status_code}: {message}"
-        print(f"Error querying model {model}: {error_message}")
+        logger.error("Error querying model %s: %s", model, error_message)
         return {
             "content": None,
             "reasoning_details": None,
@@ -134,7 +219,7 @@ async def query_model(
             "status_code": e.response.status_code,
         }
     except Exception as e:
-        print(f"Error querying model {model}: {e}")
+        logger.exception("Error querying model %s", model)
         return {
             "content": None,
             "reasoning_details": None,
@@ -179,7 +264,7 @@ async def query_model_stream(
     Yields content chunks (strings).
     """
     if not OPENROUTER_API_KEY:
-        print("Error querying model stream: OPENROUTER_API_KEY is not configured.")
+        logger.error("Error querying model stream: OPENROUTER_API_KEY is not configured.")
         return
 
     headers = {
@@ -220,7 +305,7 @@ async def query_model_stream(
                             continue
                             
     except Exception as e:
-        print(f"Error querying model stream {model}: {e}")
+        logger.exception("Error querying model stream %s", model)
         # Yield error message as content so UI sees something went wrong, 
         # or handle differently? unique error chunk?
         # For now, let's just log it. The generator will stop.

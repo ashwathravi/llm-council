@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
-import Login from './components/Login';
 import { api } from './api';
+
+const Login = lazy(() => import('./components/Login'));
 import { useAuth } from './contexts/AuthContext';
 import './App.css';
 
@@ -20,9 +21,9 @@ function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  const toggleTheme = () => {
+  const toggleTheme = useCallback(() => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
+  }, []);
 
   const mobileBreakpoint = 900;
   const [isMobile, setIsMobile] = useState(window.innerWidth < mobileBreakpoint);
@@ -135,7 +136,7 @@ function App() {
     setIsSidebarOpen(false);
   }, []);
 
-  const handleSendMessage = async (content) => {
+  const handleSendMessage = useCallback(async (content) => {
     if (!currentConversationId) return;
 
     setIsLoading(true);
@@ -353,10 +354,16 @@ function App() {
       }));
       setIsLoading(false);
     }
-  };
+  }, [currentConversationId, loadConversations]);
 
   if (authLoading) return <div className="loading">Loading...</div>;
-  if (!user) return <Login />;
+  if (!user) {
+    return (
+      <Suspense fallback={<div className="loading">Loading login...</div>}>
+        <Login />
+      </Suspense>
+    );
+  }
 
   return (
     <div className="app">

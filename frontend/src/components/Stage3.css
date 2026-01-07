@@ -28,3 +28,59 @@
   line-height: 1.7;
   font-size: 15px;
 }
+
+.citation-panel {
+  margin-top: 16px;
+  background: var(--md-sys-color-surface);
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.citation-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.citation-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.citation-item {
+  background: var(--md-sys-color-surface-container-high);
+  border-radius: 10px;
+  padding: 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.citation-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.citation-name {
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface);
+}
+
+.citation-page {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.citation-snippet {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface);
+  line-height: 1.5;
+}
