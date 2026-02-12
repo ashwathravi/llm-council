@@ -2,13 +2,37 @@
 
 from typing import List, Dict, Any, Tuple, Optional
 from .openrouter import query_models_parallel, query_model, query_model_stream
-from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
+from .config import (
+    COUNCIL_MODELS,
+    CHAIRMAN_MODEL,
+    MAX_MODELS_PER_REQUEST,
+    MODEL_TIMEOUT_SECONDS,
+    STREAM_TIMEOUT_SECONDS,
+    TITLE_TIMEOUT_SECONDS,
+    FAST_LOCAL_TITLE,
+    TITLE_MODEL,
+)
 
 
 def _apply_retrieval_context(messages: List[Dict[str, str]], retrieval_context: Optional[str]) -> List[Dict[str, str]]:
     if not retrieval_context:
         return messages
     return [{"role": "system", "content": retrieval_context}] + list(messages)
+
+
+def _limit_models(models: List[str]) -> List[str]:
+    if not models:
+        return models
+    return models[:MAX_MODELS_PER_REQUEST]
+
+
+def _fallback_title_from_query(user_query: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in user_query).strip()
+    words = [w for w in cleaned.split() if w]
+    if not words:
+        return "New Conversation"
+    title = " ".join(words[:5])
+    return title[:50].strip() or "New Conversation"
 
 
 async def stage1_collect_responses(
@@ -21,13 +45,14 @@ async def stage1_collect_responses(
     Yields dicts with 'model' and 'response' keys as they complete.
     """
     active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
+    active_models = _limit_models(active_models)
     import asyncio
 
     messages_with_context = _apply_retrieval_context(messages, retrieval_context)
 
     # Wrapper to attach model name to the task result
     async def query_with_name(model_name, msgs):
-        response = await query_model(model_name, msgs)
+        response = await query_model(model_name, msgs, timeout=MODEL_TIMEOUT_SECONDS)
         return model_name, response
 
     # Create tasks
@@ -68,6 +93,7 @@ async def stage2_collect_rankings(
         Tuple of (rankings list, label_to_model mapping)
     """
     active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
+    active_models = _limit_models(active_models)
     # Create anonymized labels for responses (Response A, Response B, etc.)
     labels = [chr(65 + i) for i in range(len(stage1_results))]  # A, B, C, ...
 
@@ -123,7 +149,7 @@ Now provide your evaluation and ranking:"""
     messages = [{"role": "user", "content": ranking_prompt}]
 
     # Get rankings from all council models in parallel
-    responses = await query_models_parallel(active_models, messages)
+    responses = await query_models_parallel(active_models, messages, timeout=MODEL_TIMEOUT_SECONDS)
 
     # Format results
     stage2_results = []
@@ -240,14 +266,17 @@ Title:"""
 
     messages = [{"role": "user", "content": title_prompt}]
 
-    # Use xiaomi/mimo-v2-flash:free for title generation
-    response = await query_model("xiaomi/mimo-v2-flash:free", messages, timeout=30.0)
+    fallback = _fallback_title_from_query(user_query)
+    if FAST_LOCAL_TITLE:
+        return fallback
+
+    response = await query_model(TITLE_MODEL, messages, timeout=TITLE_TIMEOUT_SECONDS)
 
     if response is None or response.get("error"):
         # Fallback to a generic title
-        return "New Conversation"
+        return fallback
 
-    title = response.get('content', 'New Conversation').strip()
+    title = response.get('content', fallback).strip()
 
     # Clean up the title - remove quotes, limit length
     title = title.strip('"\'')
@@ -256,7 +285,7 @@ Title:"""
     if len(title) > 50:
         title = title[:47] + "..."
 
-    return title
+    return title or fallback
 
 
 async def run_full_council(
@@ -276,6 +305,7 @@ async def run_full_council(
 
     # Use provided models or fallback to config defaults
     active_council_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
+    active_council_models = _limit_models(active_council_models)
     active_chairman_model = chairman_model if chairman_model else CHAIRMAN_MODEL
 
     # Stage 1: Collect responses
@@ -496,6 +526,7 @@ async def stage1_collect_responses_six_hats(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Stage 1 for Six Hats: Assign prompts to models."""
     active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
+    active_models = _limit_models(active_models)
     hats = [
         ("White Hat", "Focus on available data and facts. Be neutral and objective."),
         ("Red Hat", "Focus on intuition, feelings, and hunches. No need to justify them."),
@@ -523,7 +554,7 @@ async def stage1_collect_responses_six_hats(
         # We need to query models individually since they have different prompts
         # But we can still run them in parallel if we restructure query_models_parallel
         # For now, let's use a gathered list of coroutines
-        model_tasks.append(query_model(model, current_messages))
+        model_tasks.append(query_model(model, current_messages, timeout=MODEL_TIMEOUT_SECONDS))
         assigned_hats.append(hat_name)
 
     import asyncio
@@ -558,6 +589,7 @@ async def stage2_collect_critiques(
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """Stage 2 for Debate: Critiques instead of rankings."""
     active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
+    active_models = _limit_models(active_models)
     labels = [chr(65 + i) for i in range(len(stage1_results))]
     label_to_model = {f"Response {label}": result['model'] for label, result in zip(labels, stage1_results)}
 
@@ -586,7 +618,7 @@ Provide your critique for each response."""
 
     messages = [{"role": "user", "content": critique_prompt}]
     
-    responses = await query_models_parallel(active_models, messages)
+    responses = await query_models_parallel(active_models, messages, timeout=MODEL_TIMEOUT_SECONDS)
     
     results = []
     for model, response in responses.items():
@@ -662,5 +694,5 @@ Provide a clear, well-reasoned final answer:"""
     messages = [{"role": "user", "content": chairman_prompt}]
 
     # Stream the response
-    async for chunk in query_model_stream(active_chairman_model, messages):
+    async for chunk in query_model_stream(active_chairman_model, messages, timeout=STREAM_TIMEOUT_SECONDS):
         yield chunk
