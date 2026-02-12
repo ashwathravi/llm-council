@@ -1,4 +1,3 @@
-
 import { useState, useEffect, memo } from 'react';
 import { api } from '../api';
 import { Button } from "@/components/ui/button";
@@ -9,250 +8,419 @@ import { Trash2, Plus, History, Settings, PanelLeftClose, PanelLeftOpen, Users }
 import CouncilConfigDialog from './CouncilConfigDialog';
 import { cn } from "@/lib/utils";
 
+const FRAMEWORK_LABELS = {
+  standard: 'Standard Council',
+  debate: 'Chain of Debate',
+  six_hats: 'Six Thinking Hats',
+  ensemble: 'Ensemble (Fast)',
+};
+
+const clampSelectionLimit = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 5;
+  return Math.max(1, Math.min(10, Math.floor(parsed)));
+};
+
+const readSavedPresets = () => {
+  const savedPresets = localStorage.getItem('council_presets');
+  if (!savedPresets) return [];
+  try {
+    const parsed = JSON.parse(savedPresets);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('Failed to parse presets', error);
+    return [];
+  }
+};
+
+const readFavoriteModels = () => {
+  const savedFavorites = localStorage.getItem('favorite_models');
+  if (!savedFavorites) return [];
+  try {
+    const parsed = JSON.parse(savedFavorites);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id) => typeof id === 'string');
+  } catch (error) {
+    console.error('Failed to parse favorite models', error);
+    return [];
+  }
+};
+
+const readMaxCouncilModels = () => {
+  const savedMax = localStorage.getItem('council_max_models');
+  return savedMax ? clampSelectionLimit(savedMax) : 5;
+};
+
+const normalizeModelList = (models) => {
+  if (!Array.isArray(models)) return [];
+  return [...new Set(models)].sort();
+};
+
+const sameConfig = (left, right) => {
+  const leftModels = normalizeModelList(left.councilModels);
+  const rightModels = normalizeModelList(right.councilModels);
+
+  if (left.framework !== right.framework) return false;
+  if ((left.chairmanModel || '') !== (right.chairmanModel || '')) return false;
+  if (leftModels.length !== rightModels.length) return false;
+
+  return leftModels.every((modelId, index) => modelId === rightModels[index]);
+};
+
 const CouncilSidebar = memo(({
-    conversations,
-    currentConversationId,
-    onSelectConversation,
-    onNewConversation,
-    isMobile,
-    isOpen,
-    onClose,
+  conversations,
+  currentConversation,
+  currentConversationId,
+  onSelectConversation,
+  onNewConversation,
+  isMobile,
+  isOpen,
+  onClose,
 }) => {
-    // Config State
-    const [selectedFramework, setSelectedFramework] = useState('standard');
-    const [models, setModels] = useState([]);
-    const [chairmanModel, setChairmanModel] = useState('');
-    const [councilModels, setCouncilModels] = useState([]);
+  const [selectedFramework, setSelectedFramework] = useState('standard');
+  const [models, setModels] = useState([]);
+  const [chairmanModel, setChairmanModel] = useState('');
+  const [councilModels, setCouncilModels] = useState([]);
 
-    const [presets, setPresets] = useState([]);
-    const [showConfigDialog, setShowConfigDialog] = useState(false);
+  const [presets, setPresets] = useState(readSavedPresets);
+  const [favoriteModels, setFavoriteModels] = useState(readFavoriteModels);
+  const [maxCouncilModels, setMaxCouncilModels] = useState(readMaxCouncilModels);
 
-    // Sidebar State
-    const [isCollapsed, setIsCollapsed] = useState(false);
+  const [showConfigDialog, setShowConfigDialog] = useState(false);
+  const [configDialogView, setConfigDialogView] = useState('new_config');
+  const [configDialogMode, setConfigDialogMode] = useState('create');
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
 
-    // Filter conversations
-    const recentConversations = conversations.slice(0, 5);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
-    useEffect(() => {
-        const loadInitialData = async () => {
-            try {
-                const data = await api.getModels();
-                setModels(data);
-                if (data.length > 0) {
-                    setChairmanModel((current) => current || data[0].id);
-                }
-            } catch (error) {
-                console.error("Failed to load models", error);
-            }
+  const recentConversations = conversations.slice(0, 5);
 
-            const saved = localStorage.getItem('council_presets');
-            if (saved) {
-                try {
-                    setPresets(JSON.parse(saved));
-                } catch (error) {
-                    console.error("Failed to parse presets", error);
-                }
-            }
-        };
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const data = await api.getModels();
+        setModels(data);
 
-        loadInitialData();
-    }, []);
+        const availableModelIds = new Set(data.map((model) => model.id));
 
-    const saveNewPreset = (name) => {
-        const newPreset = {
-            id: Date.now().toString(),
-            name: name,
-            description: `Custom preset created on ${new Date().toLocaleDateString()}`,
-            framework: selectedFramework,
-            chairmanModel,
-            councilModels
-        };
-        const updated = [...presets, newPreset];
-        setPresets(updated);
-        localStorage.setItem('council_presets', JSON.stringify(updated));
+        setFavoriteModels((currentFavorites) =>
+          currentFavorites.filter((modelId) => availableModelIds.has(modelId))
+        );
+
+        setChairmanModel((currentChairman) => {
+          if (!currentChairman) return '';
+          return availableModelIds.has(currentChairman) ? currentChairman : '';
+        });
+
+        setCouncilModels((currentCouncilModels) =>
+          currentCouncilModels
+            .filter((modelId) => availableModelIds.has(modelId))
+        );
+      } catch (error) {
+        console.error('Failed to load models', error);
+      }
     };
 
-    const handleNewChat = () => {
-        onNewConversation(selectedFramework, councilModels, chairmanModel);
-        if (isMobile) onClose();
+    loadModels();
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('favorite_models', JSON.stringify(favoriteModels));
+  }, [favoriteModels]);
+
+  useEffect(() => {
+    localStorage.setItem('council_max_models', String(maxCouncilModels));
+  }, [maxCouncilModels]);
+
+  const getModelName = (modelId) => models.find((model) => model.id === modelId)?.name || modelId;
+
+  const buildDefaultPresetName = () => {
+    const councilTypeName = FRAMEWORK_LABELS[selectedFramework] || selectedFramework;
+    const memberCount = councilModels.length;
+    const chairmanName = models.find((model) => model.id === chairmanModel)?.name || chairmanModel;
+
+    if (chairmanModel) {
+      return `${councilTypeName} - ${memberCount} members - ${chairmanName}`;
+    }
+
+    return `${councilTypeName} - ${memberCount} members`;
+  };
+
+  const saveNewPreset = () => {
+    const configToSave = {
+      framework: selectedFramework,
+      councilModels,
+      chairmanModel,
     };
 
-    const handleDelete = async (e, id) => {
-        e.stopPropagation();
-        if (!confirm("Delete this conversation?")) return;
-        try {
-            await api.deleteConversation(id);
-            // Parent should reload or we wait for prop update
-            window.location.reload(); // Temporary fix for state sync
-        } catch {
-            alert("Failed to delete conversation");
-        }
+    const alreadySaved = presets.some((preset) => sameConfig(preset, configToSave));
+    if (alreadySaved) {
+      alert('This configuration is already saved.');
+      return;
+    }
+
+    const defaultName = buildDefaultPresetName();
+    const proposedName = prompt('Enter a name for this config:', defaultName);
+    if (proposedName === null) return;
+
+    const name = proposedName.trim() || defaultName;
+
+    const newPreset = {
+      id: Date.now().toString(),
+      name,
+      description: `Saved on ${new Date().toLocaleDateString()}`,
+      framework: selectedFramework,
+      chairmanModel,
+      councilModels,
     };
 
-    // Derived state for display
-    const activeChairmanName = models.find(m => m.id === chairmanModel)?.name || "Auto";
-    const activeMemberCount = councilModels.length || "All";
+    const updatedPresets = [...presets, newPreset];
+    setPresets(updatedPresets);
+    localStorage.setItem('council_presets', JSON.stringify(updatedPresets));
+  };
 
-    return (
-        <>
-            <div className={cn(
-                "fixed inset-y-0 left-0 z-50 transform border-r bg-background transition-all duration-300 ease-in-out flex flex-col",
-                isOpen ? "translate-x-0" : "-translate-x-full",
-                "md:relative md:translate-x-0",
-                isCollapsed ? "w-16" : "w-80"
-            )}>
-                {/* Header */}
-                <div className={cn("p-4 border-b flex items-center", isCollapsed ? "justify-center" : "justify-between")}>
-                    {!isCollapsed && (
-                        <div className="flex items-center gap-2 overflow-hidden">
-                            <div className="h-8 w-8 rounded bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg">
-                                L
-                            </div>
-                            <div className="truncate">
-                                <h2 className="font-bold tracking-tight text-sm">LLM Council</h2>
-                                <p className="text-xs text-muted-foreground">AI Workspace</p>
-                            </div>
-                        </div>
-                    )}
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setIsCollapsed(!isCollapsed)}
-                        className="h-8 w-8 ml-auto"
-                        title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-                    >
-                        {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-                    </Button>
-                </div>
+  const handleMaxCouncilModelsChange = (nextMaxValue) => {
+    const normalizedMax = clampSelectionLimit(nextMaxValue);
+    setMaxCouncilModels(normalizedMax);
 
-                {/* Actions */}
-                <div className="p-3">
-                    <Button
-                        className={cn("w-full justify-start", isCollapsed && "justify-center px-0")}
-                        onClick={handleNewChat}
-                        variant={isCollapsed ? "outline" : "default"}
-                    >
-                        <Plus className={cn("h-4 w-4", !isCollapsed && "mr-2")} />
-                        {!isCollapsed && "New Session"}
-                    </Button>
-                </div>
+    if (councilModels.length <= normalizedMax) {
+      return;
+    }
 
-                <Separator />
+    let trimmedCouncilModels = councilModels.slice(0, normalizedMax);
+    const chairmanWasSelected = chairmanModel ? councilModels.includes(chairmanModel) : false;
 
-                <ScrollArea className="flex-1">
-                    <div className="p-3 space-y-6">
-                        {/* Council Config Trigger */}
-                        <div className="space-y-2">
-                            {!isCollapsed && (
-                                <h3 className="text-xs font-semibold text-muted-foreground px-2">
-                                    Council Members
-                                </h3>
-                            )}
-                            <Button
-                                variant="outline"
-                                className={cn("w-full justify-start relative", isCollapsed && "justify-center px-0 h-10")}
-                                onClick={() => setShowConfigDialog(true)}
-                            >
-                                <Users className={cn("h-4 w-4", !isCollapsed && "mr-2")} />
-                                {!isCollapsed && (
-                                    <div className="flex flex-col items-start text-xs truncate">
-                                        <span>Manage Council</span>
-                                        <span className="font-normal text-muted-foreground text-[10px]">
-                                            {activeMemberCount} Members • {activeChairmanName}
-                                        </span>
-                                    </div>
-                                )}
-                            </Button>
-                        </div>
+    if (chairmanWasSelected && chairmanModel && !trimmedCouncilModels.includes(chairmanModel) && normalizedMax > 0) {
+      trimmedCouncilModels = [
+        ...trimmedCouncilModels.slice(0, normalizedMax - 1),
+        chairmanModel,
+      ];
+    }
 
-                        {/* Recent History */}
-                        <div className="space-y-1">
-                            {!isCollapsed && (
-                                <h3 className="text-xs font-semibold text-muted-foreground px-2 flex items-center mb-2">
-                                    Recent Sessions
-                                </h3>
-                            )}
+    let nextChairmanModel = chairmanModel;
+    if (chairmanWasSelected && nextChairmanModel && !trimmedCouncilModels.includes(nextChairmanModel)) {
+      nextChairmanModel = trimmedCouncilModels[0] || '';
+    }
 
-                            {/* Render History Items */}
-                            {recentConversations.map(conv => (
-                                <TooltipProvider key={conv.id} delayDuration={0}>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <div
-                                                className={cn(
-                                                    "group flex items-center rounded-md px-2 py-2 text-sm hover:bg-accent/50 cursor-pointer relative",
-                                                    currentConversationId === conv.id ? 'bg-accent text-accent-foreground font-medium' : '',
-                                                    isCollapsed ? "justify-center" : "justify-between"
-                                                )}
-                                                onClick={() => onSelectConversation(conv.id)}
-                                            >
-                                                {isCollapsed ? (
-                                                    <History className="h-4 w-4 text-muted-foreground" />
-                                                ) : (
-                                                    <div className="flex items-center gap-2 truncate pr-6 w-full">
-                                                        <History className="h-4 w-4 text-muted-foreground shrink-0" />
-                                                        <span className="truncate">{conv.title}</span>
-                                                    </div>
-                                                )}
+    setCouncilModels(trimmedCouncilModels);
+    setChairmanModel(nextChairmanModel);
+  };
 
-                                                {/* Delete Button - Fixed Visibility */}
-                                                {!isCollapsed && (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-6 w-6 absolute right-1 opacity-50 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
-                                                        onClick={(e) => handleDelete(e, conv.id)}
-                                                    >
-                                                        <Trash2 className="h-3 w-3" />
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        </TooltipTrigger>
-                                        {isCollapsed && <TooltipContent side="right">{conv.title}</TooltipContent>}
-                                    </Tooltip>
-                                </TooltipProvider>
-                            ))}
-                        </div>
-                    </div>
-                </ScrollArea>
+  const openCreateConfigDialog = (view) => {
+    setConfigDialogMode('create');
+    setConfigDialogView(view);
+    setShowConfigDialog(true);
+  };
 
-                {/* Settings Footer */}
-                <div className="p-3 border-t">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className={cn("w-full justify-start", isCollapsed && "justify-center px-0")}
-                    >
-                        <Settings className={cn("h-4 w-4", !isCollapsed && "mr-2")} />
-                        {!isCollapsed && "Settings"}
-                    </Button>
-                </div>
+  const openReadOnlyDialog = () => {
+    if (!currentConversation) return;
+    setConfigDialogMode('read_only');
+    setShowConfigDialog(true);
+  };
+
+  const handleDialogOpenChange = (open) => {
+    setShowConfigDialog(open);
+    if (!open) {
+      setIsCreatingSession(false);
+    }
+  };
+
+  const handleStartSession = async () => {
+    setIsCreatingSession(true);
+    try {
+      await onNewConversation(selectedFramework, councilModels, chairmanModel || null);
+      setShowConfigDialog(false);
+      if (isMobile) onClose();
+    } catch (error) {
+      console.error('Failed to create conversation', error);
+      alert('Failed to start a new session. Please try again.');
+    } finally {
+      setIsCreatingSession(false);
+    }
+  };
+
+  const handleDelete = async (event, id) => {
+    event.stopPropagation();
+    if (!confirm('Delete this conversation?')) return;
+    try {
+      await api.deleteConversation(id);
+      window.location.reload();
+    } catch {
+      alert('Failed to delete conversation');
+    }
+  };
+
+  const activeConversationFramework = currentConversation?.framework;
+  const activeFrameworkLabel = activeConversationFramework
+    ? (FRAMEWORK_LABELS[activeConversationFramework] || activeConversationFramework)
+    : 'No active conversation';
+  const activeConversationModels = Array.isArray(currentConversation?.council_models)
+    ? currentConversation.council_models
+    : [];
+  const activeConversationChairman = currentConversation?.chairman_model || '';
+  const activeChairmanName = activeConversationChairman ? getModelName(activeConversationChairman) : 'Auto';
+
+  return (
+    <>
+      <div
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 transform border-r bg-background transition-all duration-300 ease-in-out flex flex-col',
+          isOpen ? 'translate-x-0' : '-translate-x-full',
+          'md:relative md:translate-x-0',
+          isCollapsed ? 'w-16' : 'w-80'
+        )}
+      >
+        <div className={cn('p-4 border-b flex items-center', isCollapsed ? 'justify-center' : 'justify-between')}>
+          {!isCollapsed && (
+            <div className="flex items-center gap-2 overflow-hidden">
+              <div className="h-8 w-8 rounded bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg">
+                L
+              </div>
+              <div className="truncate">
+                <h2 className="font-bold tracking-tight text-sm">LLM Council</h2>
+                <p className="text-xs text-muted-foreground">AI Workspace</p>
+              </div>
+            </div>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="h-8 w-8 ml-auto"
+            title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+          >
+            {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </Button>
+        </div>
+
+        <div className="p-3">
+          <Button
+            className={cn('w-full justify-start', isCollapsed && 'justify-center px-0')}
+            onClick={() => openCreateConfigDialog('new_config')}
+            variant={isCollapsed ? 'outline' : 'default'}
+          >
+            <Plus className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
+            {!isCollapsed && 'New Session'}
+          </Button>
+        </div>
+
+        <Separator />
+
+        <ScrollArea className="flex-1">
+          <div className="p-3 space-y-6">
+            <div className="space-y-2">
+              {!isCollapsed && <h3 className="text-xs font-semibold text-muted-foreground px-2">Council Members</h3>}
+              <Button
+                variant="outline"
+                className={cn('w-full justify-start relative', isCollapsed && 'justify-center px-0 h-10')}
+                onClick={openReadOnlyDialog}
+                disabled={!currentConversation}
+              >
+                <Users className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
+                {!isCollapsed && (
+                  <div className="flex flex-col items-start text-xs truncate">
+                    <span>Manage Council</span>
+                    <span className="font-normal text-muted-foreground text-[10px] truncate max-w-[210px]">
+                      {activeFrameworkLabel}
+                    </span>
+                    <span className="font-normal text-muted-foreground text-[10px]">
+                      {activeConversationModels.length} Members • {activeChairmanName}
+                    </span>
+                  </div>
+                )}
+              </Button>
             </div>
 
-            {/* Config Dialog */}
-            <CouncilConfigDialog
-                open={showConfigDialog}
-                onOpenChange={setShowConfigDialog}
-                models={models}
-                selectedFramework={selectedFramework}
-                setSelectedFramework={setSelectedFramework}
-                councilModels={councilModels}
-                setCouncilModels={setCouncilModels}
-                chairmanModel={chairmanModel}
-                setChairmanModel={setChairmanModel}
-                presets={presets}
-                onSavePreset={() => {
-                    // Prompt for name in the dialog is managed inside? 
-                    // Wait, the dialog I wrote triggers onSave which triggers logic.
-                    // The dialog has its own prompt? No, I implemented "Save Current Config" button which likely needs to open a prompt or the dialog handles it.
-                    // Let's check CouncilConfigDialog again. It has a button "Save Current Config as Type" which calls onSavePreset.
-                    // It does NOT have a prompt inside. I should move the prompt logic inside CouncilConfigDialog or handle it here via a secondary dialog/prompt.
-                    const name = prompt("Enter a name for this preset:");
-                    if (name) saveNewPreset(name);
-                }}
-            />
-        </>
-    );
+            <div className="space-y-1">
+              {!isCollapsed && (
+                <h3 className="text-xs font-semibold text-muted-foreground px-2 flex items-center mb-2">
+                  Recent Sessions
+                </h3>
+              )}
+
+              {recentConversations.map((conversation) => (
+                <TooltipProvider key={conversation.id} delayDuration={0}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        className={cn(
+                          'group flex items-center rounded-md px-2 py-2 text-sm hover:bg-accent/50 cursor-pointer relative',
+                          currentConversationId === conversation.id ? 'bg-accent text-accent-foreground font-medium' : '',
+                          isCollapsed ? 'justify-center' : 'justify-between'
+                        )}
+                        onClick={() => onSelectConversation(conversation.id)}
+                      >
+                        {isCollapsed ? (
+                          <History className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <div className="flex items-center gap-2 truncate pr-6 w-full">
+                            <History className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <span className="truncate">{conversation.title}</span>
+                          </div>
+                        )}
+
+                        {!isCollapsed && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 absolute right-1 opacity-50 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
+                            onClick={(event) => handleDelete(event, conversation.id)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </TooltipTrigger>
+                    {isCollapsed && <TooltipContent side="right">{conversation.title}</TooltipContent>}
+                  </Tooltip>
+                </TooltipProvider>
+              ))}
+            </div>
+          </div>
+        </ScrollArea>
+
+        <div className="p-3 border-t">
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn('w-full justify-start', isCollapsed && 'justify-center px-0')}
+            onClick={() => openCreateConfigDialog('settings')}
+          >
+            <Settings className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
+            {!isCollapsed && 'Settings'}
+          </Button>
+        </div>
+      </div>
+
+      <CouncilConfigDialog
+        open={showConfigDialog}
+        onOpenChange={handleDialogOpenChange}
+        mode={configDialogMode}
+        readOnlyConfig={{
+          framework: currentConversation?.framework,
+          councilModels: Array.isArray(currentConversation?.council_models) ? currentConversation.council_models : [],
+          chairmanModel: currentConversation?.chairman_model || '',
+        }}
+        onStartSession={handleStartSession}
+        isStartingSession={isCreatingSession}
+        models={models}
+        selectedFramework={selectedFramework}
+        setSelectedFramework={setSelectedFramework}
+        councilModels={councilModels}
+        setCouncilModels={setCouncilModels}
+        chairmanModel={chairmanModel}
+        setChairmanModel={setChairmanModel}
+        presets={presets}
+        onSavePreset={saveNewPreset}
+        activeView={configDialogView}
+        setActiveView={setConfigDialogView}
+        favoriteModels={favoriteModels}
+        setFavoriteModels={setFavoriteModels}
+        maxCouncilModels={maxCouncilModels}
+        setMaxCouncilModels={handleMaxCouncilModelsChange}
+      />
+    </>
+  );
 });
 
 export default CouncilSidebar;

@@ -57,7 +57,7 @@ else:
 CHAIRMAN_MODEL = os.getenv("CHAIRMAN_MODEL", "x-ai/grok-4.1-fast")
 
 # Performance profile
-MAX_MODELS_PER_REQUEST = max(1, _env_int("MAX_MODELS_PER_REQUEST", 3))
+MAX_MODELS_PER_REQUEST = max(1, _env_int("MAX_MODELS_PER_REQUEST", 10))
 MODEL_TIMEOUT_SECONDS = max(5.0, _env_float("MODEL_TIMEOUT_SECONDS", 25.0))
 STREAM_TIMEOUT_SECONDS = max(5.0, _env_float("STREAM_TIMEOUT_SECONDS", 45.0))
 TITLE_TIMEOUT_SECONDS = max(3.0, _env_float("TITLE_TIMEOUT_SECONDS", 8.0))

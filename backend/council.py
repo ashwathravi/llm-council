@@ -25,6 +25,10 @@ def _limit_models(models: List[str]) -> List[str]:
         return models
     return models[:MAX_MODELS_PER_REQUEST]
 
+def resolve_active_models(council_models: Optional[List[str]] = None) -> List[str]:
+    selected_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
+    return _limit_models(selected_models)
+
 
 def _fallback_title_from_query(user_query: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in user_query).strip()
@@ -44,8 +48,7 @@ async def stage1_collect_responses(
     Stage 1: Collect individual responses from all council models.
     Yields dicts with 'model' and 'response' keys as they complete.
     """
-    active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
-    active_models = _limit_models(active_models)
+    active_models = resolve_active_models(council_models)
     import asyncio
 
     messages_with_context = _apply_retrieval_context(messages, retrieval_context)
@@ -92,8 +95,7 @@ async def stage2_collect_rankings(
     Returns:
         Tuple of (rankings list, label_to_model mapping)
     """
-    active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
-    active_models = _limit_models(active_models)
+    active_models = resolve_active_models(council_models)
     # Create anonymized labels for responses (Response A, Response B, etc.)
     labels = [chr(65 + i) for i in range(len(stage1_results))]  # A, B, C, ...
 
@@ -304,8 +306,8 @@ async def run_full_council(
     latest_query = messages[-1]['content'] if messages and messages[-1]['role'] == 'user' else "Unknown Query"
 
     # Use provided models or fallback to config defaults
-    active_council_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
-    active_council_models = _limit_models(active_council_models)
+    requested_council_models = list(council_models) if council_models else []
+    active_council_models = resolve_active_models(council_models)
     active_chairman_model = chairman_model if chairman_model else CHAIRMAN_MODEL
 
     # Stage 1: Collect responses
@@ -365,18 +367,28 @@ async def run_full_council(
         aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
 
     # Stage 3: Synthesize
-    stage3_result = await stage3_synthesize_final(
-        latest_query, 
-        stage1_results, 
-        stage2_results, 
-        active_chairman_model, # Pass chairman model
+    stage3_text = ""
+    async for chunk in stage3_synthesize_final(
+        latest_query,
+        stage1_results,
+        stage2_results,
+        active_chairman_model,
         mode=framework,
         retrieval_context=retrieval_context
-    )
+    ):
+        stage3_text += chunk
+
+    stage3_result = {
+        "model": active_chairman_model,
+        "response": stage3_text,
+    }
 
     metadata = {
         "framework": framework,
-        "council_models": [r['model'] for r in stage1_results], # Actual models that responded
+        "requested_council_models": requested_council_models,
+        "effective_council_models": active_council_models,
+        "responded_council_models": [r['model'] for r in stage1_results],
+        "council_models": [r['model'] for r in stage1_results],
         "chairman_model": active_chairman_model,
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
@@ -525,8 +537,7 @@ async def stage1_collect_responses_six_hats(
     retrieval_context: Optional[str] = None
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Stage 1 for Six Hats: Assign prompts to models."""
-    active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
-    active_models = _limit_models(active_models)
+    active_models = resolve_active_models(council_models)
     hats = [
         ("White Hat", "Focus on available data and facts. Be neutral and objective."),
         ("Red Hat", "Focus on intuition, feelings, and hunches. No need to justify them."),
@@ -588,8 +599,7 @@ async def stage2_collect_critiques(
     retrieval_context: Optional[str] = None
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """Stage 2 for Debate: Critiques instead of rankings."""
-    active_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
-    active_models = _limit_models(active_models)
+    active_models = resolve_active_models(council_models)
     labels = [chr(65 + i) for i in range(len(stage1_results))]
     label_to_model = {f"Response {label}": result['model'] for label, result in zip(labels, stage1_results)}
 

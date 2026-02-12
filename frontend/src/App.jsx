@@ -116,8 +116,13 @@ function App() {
       const data = await api.createConversation(framework, councilModels, chairmanModel);
       setConversations(prev => [data, ...prev]);
       setCurrentConversationId(data.id);
+      setCurrentConversation(data);
+      const newUrl = `?c=${data.id}`;
+      window.history.pushState({ path: newUrl }, '', newUrl);
+      return data;
     } catch (error) {
       console.error('Failed to create conversation:', error);
+      throw error;
     } finally {
       setIsLoading(false);
     }
@@ -205,6 +210,10 @@ function App() {
               const lastIndex = messages.length - 1;
               const lastMsg = { ...messages[lastIndex] };
               lastMsg.stage1 = event.data;
+              lastMsg.metadata = {
+                ...(lastMsg.metadata || {}),
+                ...(event.metadata || {}),
+              };
               lastMsg.loading = { ...lastMsg.loading, stage1: false };
               messages[lastIndex] = lastMsg;
               return { ...prev, messages };
@@ -226,7 +235,10 @@ function App() {
               const lastIndex = messages.length - 1;
               const lastMsg = { ...messages[lastIndex] };
               lastMsg.stage2 = event.data;
-              lastMsg.metadata = event.metadata;
+              lastMsg.metadata = {
+                ...(lastMsg.metadata || {}),
+                ...(event.metadata || {}),
+              };
               lastMsg.loading = { ...lastMsg.loading, stage2: false };
               messages[lastIndex] = lastMsg;
               return { ...prev, messages };
@@ -289,6 +301,7 @@ function App() {
                 model: 'system',
                 error: event.error || 'Unknown error',
               }];
+              lastMsg.loading = { stage1: false, stage2: false, stage3: false };
               messages[lastIndex] = lastMsg;
               return { ...prev, messages };
             });
@@ -300,7 +313,10 @@ function App() {
               const lastIndex = messages.length - 1;
               const lastMsg = { ...messages[lastIndex] };
               lastMsg.stage2 = [];
-              lastMsg.metadata = event.metadata;
+              lastMsg.metadata = {
+                ...(lastMsg.metadata || {}),
+                ...(event.metadata || {}),
+              };
               lastMsg.loading = { ...lastMsg.loading, stage2: false };
               messages[lastIndex] = lastMsg;
               return { ...prev, messages };
@@ -343,6 +359,7 @@ function App() {
         isOpen={isSidebarOpen}
         onClose={handleSidebarClose}
         conversations={conversations}
+        currentConversation={currentConversation}
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}

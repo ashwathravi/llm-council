@@ -1,5 +1,6 @@
 
 import httpx
+import json
 import logging
 from typing import List, Dict, Any, Optional
 from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
@@ -290,25 +291,48 @@ async def query_model_stream(
                 json=payload
             ) as response:
                 response.raise_for_status()
-                
+
+                saw_done = False
                 async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data_str = line[6:].strip()
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            import json
-                            data = json.loads(data_str)
-                            delta = data['choices'][0]['delta']
-                            content = delta.get('content')
-                            if content:
-                                yield content
-                        except Exception:
-                            continue
-                            
+                    if not line or not line.startswith("data: "):
+                        continue
+
+                    data_str = line[6:].strip()
+                    if not data_str:
+                        continue
+                    if data_str == "[DONE]":
+                        saw_done = True
+                        break
+
+                    try:
+                        data = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        logger.warning("Malformed OpenRouter stream event for %s: %s", model, data_str[:200])
+                        continue
+
+                    stream_error = data.get("error") if isinstance(data, dict) else None
+                    if stream_error:
+                        if isinstance(stream_error, dict):
+                            message = stream_error.get("message") or str(stream_error)
+                        else:
+                            message = str(stream_error)
+                        raise RuntimeError(f"OpenRouter stream error for {model}: {message}")
+
+                    choices = data.get("choices") if isinstance(data, dict) else None
+                    if not choices:
+                        continue
+
+                    delta = choices[0].get("delta", {})
+                    if not isinstance(delta, dict):
+                        continue
+
+                    content = delta.get("content")
+                    if content:
+                        yield content
+
+                if not saw_done:
+                    logger.warning("OpenRouter stream for %s closed without [DONE] marker.", model)
+
     except Exception as e:
         logger.exception("Error querying model stream %s", model)
-        # Yield error message as content so UI sees something went wrong, 
-        # or handle differently? unique error chunk?
-        # For now, let's just log it. The generator will stop.
-        pass
+        raise RuntimeError(f"Streaming failed for model {model}: {e}") from e

@@ -37,6 +37,9 @@ export default function ChatInterface({
       <ChatHeader
         title={conversation.title}
         conversationId={conversation.id}
+        framework={conversation.framework}
+        councilModels={conversation.council_models}
+        chairmanModel={conversation.chairman_model}
       />
 
       {/* Messages Area - Using overflow-y-auto for better scroll-to-bottom behavior vs ScrollArea */}

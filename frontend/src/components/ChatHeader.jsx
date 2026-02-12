@@ -2,6 +2,7 @@
 import React, { memo } from 'react';
 import { api } from '../api';
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Download, Link as LinkIcon, FileText, Check } from "lucide-react";
 import {
   Tooltip,
@@ -11,9 +12,19 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
 
-const ChatHeader = memo(({ title, conversationId }) => {
+const FRAMEWORK_LABELS = {
+  standard: 'Standard Council',
+  debate: 'Chain of Debate',
+  six_hats: 'Six Thinking Hats',
+  ensemble: 'Ensemble (Fast)',
+};
+
+const ChatHeader = memo(({ title, conversationId, framework, councilModels, chairmanModel }) => {
   const { toast } = useToast();
   const [copied, setCopied] = React.useState(false);
+  const selectedCount = Array.isArray(councilModels) ? councilModels.length : 0;
+  const frameworkLabel = FRAMEWORK_LABELS[framework] || framework || 'Standard Council';
+  const chairmanLabel = chairmanModel || 'Auto';
 
   const handleExport = async (format) => {
     if (!conversationId) return;
@@ -54,8 +65,13 @@ const ChatHeader = memo(({ title, conversationId }) => {
 
   return (
     <div className="flex items-center justify-between px-6 py-4 border-b bg-background/50 backdrop-blur-sm sticky top-0 z-10">
-      <div>
+      <div className="space-y-2 min-w-0">
         <h3 className="font-semibold text-lg leading-none tracking-tight">{title || 'New Conversation'}</h3>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="secondary" className="text-xs">{frameworkLabel}</Badge>
+          <Badge variant="outline" className="text-xs">{selectedCount} models</Badge>
+          <Badge variant="outline" className="text-xs">Chairman: {chairmanLabel}</Badge>
+        </div>
       </div>
       <div className="flex items-center gap-1">
         <TooltipProvider>
