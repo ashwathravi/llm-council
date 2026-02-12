@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
 
-const ChatHeader = memo(({ title, framework, conversationId }) => {
+const ChatHeader = memo(({ title, conversationId }) => {
   const { toast } = useToast();
   const [copied, setCopied] = React.useState(false);
 

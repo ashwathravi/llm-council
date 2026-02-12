@@ -10,7 +10,6 @@ import { Paperclip, Send, X, FileText, Loader2 } from "lucide-react";
 const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
   const [input, setInput] = useState('');
   const [documents, setDocuments] = useState([]);
-  const [documentsLoading, setDocumentsLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
@@ -33,19 +32,15 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
     setUploadProgress(0);
     if (!conversationId) {
       setDocuments([]);
-      setDocumentsLoading(false);
       return;
     }
 
     const loadDocuments = async () => {
-      setDocumentsLoading(true);
       try {
         const docs = await api.listDocuments(conversationId);
         setDocuments(docs);
       } catch (error) {
         console.error('Failed to load documents:', error);
-      } finally {
-        setDocumentsLoading(false);
       }
     };
 
@@ -124,7 +119,7 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
       await api.deleteDocument(conversationId, documentId);
       const updatedDocuments = await api.listDocuments(conversationId);
       setDocuments(updatedDocuments);
-    } catch (error) {
+    } catch {
       setUploadError('Failed to remove document.');
     }
   };

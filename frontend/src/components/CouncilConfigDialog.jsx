@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -74,16 +74,6 @@ const CouncilConfigDialog = ({
             setCouncilModels([...councilModels, modelId]);
         }
     };
-
-    const isModelActive = (modelId) => councilModels.includes(modelId) || (councilModels.length === 0 && DEFAULT_PRESETS[0].id === 'full-council'); // If empty, typically means ALL or Default. Let's make it explicit for this UI.
-    // Actually, "Select active agents" implies explicit selection. 
-    // If councilModels is empty, existing logic implies "Default set". 
-    // Let's assume for this UI we want explicit visual toggles.
-    // If data comes in empty, we should probably pre-fill it with "All/Default" IDs for UI consistency, or handle "empty means all" logic.
-    // For now, let's treat empty as "All" for initial render? Or state.
-
-    // Helper to get simple name
-    const getModelName = (modelId) => modelId.split('/').pop();
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>

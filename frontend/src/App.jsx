@@ -355,10 +355,7 @@ function App() {
               <Menu className="h-5 w-5" />
             </Button>
           )}
-          <div className="flex-1">
-            {/* Breadcrumbs or Title could go here */}
-            <span className="font-semibold">{currentConversation ? currentConversation.title : 'New Session'}</span>
-          </div>
+          <div className="flex-1" />
 
           <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle Theme">
             {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}

@@ -268,7 +268,7 @@ export const api = {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             resolve(JSON.parse(xhr.responseText));
-          } catch (e) {
+          } catch {
             reject(new Error('Failed to parse upload response'));
           }
         } else {

@@ -1,11 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlertTriangle, Trophy, Crown, User, BrainCircuit } from "lucide-react";
+import { AlertTriangle, Trophy, Crown, BrainCircuit } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const MarkdownContent = ({ content }) => (
@@ -28,23 +27,15 @@ const CouncilMessageBlock = ({ message }) => {
     // Then: Rankings (if Stage 2 present)
     // Then: Individual Models (Stage 1)
 
-    // If only stage 1 is running, default to first model or "thinking"
-    useEffect(() => {
-        if (hasStage3) {
-            setActiveTab("consensus");
-        } else if (hasStage1 && !hasStage3 && activeTab === 'consensus') {
-            // If stage 3 not started but stage 1 has items, maybe show first model?
-            // Or keep 'consensus' as a placeholder for "Thinking..."
-        }
-    }, [hasStage3, hasStage1]);
+    const displayedActiveTab = hasStage3 ? "consensus" : activeTab;
 
     const aggregateRankings = metadata?.aggregate_rankings || [];
 
     return (
         <Card className="w-full border-2 border-transparent data-[state=chairman]:border-chairman/20 overflow-hidden">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <div className="bg-muted/50 border-b px-4 py-2 flex items-center justify-between flex-wrap gap-2">
-                    <TabsList className="h-9 bg-background/50">
+            <Tabs value={displayedActiveTab} onValueChange={setActiveTab} className="w-full">
+                <div className="bg-muted border-b px-4 py-2 flex items-center justify-between flex-wrap gap-2">
+                    <TabsList className="h-9 bg-background/80">
                         <TabsTrigger value="consensus" className="gap-2">
                             <Crown className="h-3.5 w-3.5 text-chairman" />
                             Consensus

@@ -3,7 +3,6 @@ import { useEffect, useRef } from 'react';
 import MessageItem from './MessageItem';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { BrainCircuit } from "lucide-react";
 
 export default function ChatInterface({
@@ -12,7 +11,6 @@ export default function ChatInterface({
   isLoading,
 }) {
   const messagesEndRef = useRef(null);
-  const scrollAreaRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -38,7 +36,6 @@ export default function ChatInterface({
     <div className="flex flex-col h-full bg-background relative">
       <ChatHeader
         title={conversation.title}
-        framework={conversation.framework}
         conversationId={conversation.id}
       />
 

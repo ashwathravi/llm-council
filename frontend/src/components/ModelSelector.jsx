@@ -25,7 +25,6 @@ const ModelSelector = ({
 }) => {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState("");
-    const [hoveredModel, setHoveredModel] = useState(null);
 
     const filteredOptions = options.filter((option) =>
         option.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -109,7 +108,6 @@ const ModelSelector = ({
                                             isSelected(option.id) && "bg-accent text-accent-foreground"
                                         )}
                                         onClick={() => handleSelect(option.id)}
-                                        onMouseEnter={() => setHoveredModel(option)}
                                     >
                                         <Check
                                             className={cn(

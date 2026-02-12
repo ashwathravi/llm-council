@@ -1,10 +1,9 @@
 
-import React, { useState, useEffect, memo } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { api } from '../api';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Trash2, Plus, History, Settings, PanelLeftClose, PanelLeftOpen, Users } from "lucide-react";
 import CouncilConfigDialog from './CouncilConfigDialog';
@@ -24,63 +23,40 @@ const CouncilSidebar = memo(({
     const [models, setModels] = useState([]);
     const [chairmanModel, setChairmanModel] = useState('');
     const [councilModels, setCouncilModels] = useState([]);
-    const [loadingModels, setLoadingModels] = useState(false);
 
-    // Status & Presets
-    const [status, setStatus] = useState(null);
     const [presets, setPresets] = useState([]);
     const [showConfigDialog, setShowConfigDialog] = useState(false);
 
     // Sidebar State
     const [isCollapsed, setIsCollapsed] = useState(false);
-    const [showAllHistory, setShowAllHistory] = useState(false);
 
     // Filter conversations
     const recentConversations = conversations.slice(0, 5);
-    const olderConversations = conversations.slice(5);
 
     useEffect(() => {
-        loadModels();
-        loadStatus();
-        loadPresets();
-    }, []);
-
-    const loadStatus = async () => {
-        try {
-            const s = await api.getStatus();
-            setStatus(s);
-        } catch (e) { console.error("Failed to load status", e); }
-    };
-
-    const loadModels = async () => {
-        setLoadingModels(true);
-        try {
-            const data = await api.getModels();
-            setModels(data);
-            // Default chairman if empty
-            if (data.length > 0 && !chairmanModel) {
-                setChairmanModel(data[0].id);
-            }
-        } catch (error) {
-            console.error("Failed to load models", error);
-        } finally {
-            setLoadingModels(false);
-        }
-    };
-
-    const loadPresets = () => {
-        const saved = localStorage.getItem('council_presets');
-        if (saved) {
+        const loadInitialData = async () => {
             try {
-                setPresets(JSON.parse(saved));
-            } catch (e) { console.error("Failed to parse presets", e); }
-        }
-    };
+                const data = await api.getModels();
+                setModels(data);
+                if (data.length > 0) {
+                    setChairmanModel((current) => current || data[0].id);
+                }
+            } catch (error) {
+                console.error("Failed to load models", error);
+            }
 
-    const handleSavePreset = () => {
-        // This is now triggered from within the Dialog mostly, but if we need a direct save:
-        // Identify name? The dialog handles the logic now. We just pass the callback.
-    };
+            const saved = localStorage.getItem('council_presets');
+            if (saved) {
+                try {
+                    setPresets(JSON.parse(saved));
+                } catch (error) {
+                    console.error("Failed to parse presets", error);
+                }
+            }
+        };
+
+        loadInitialData();
+    }, []);
 
     const saveNewPreset = (name) => {
         const newPreset = {
@@ -108,7 +84,7 @@ const CouncilSidebar = memo(({
             await api.deleteConversation(id);
             // Parent should reload or we wait for prop update
             window.location.reload(); // Temporary fix for state sync
-        } catch (err) {
+        } catch {
             alert("Failed to delete conversation");
         }
     };
@@ -280,4 +256,3 @@ const CouncilSidebar = memo(({
 });
 
 export default CouncilSidebar;
-
