@@ -2,7 +2,7 @@
 import React, { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import CouncilMessageBlock from './CouncilMessageBlock';
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { User } from "lucide-react";
 
 const MessageItem = memo(({ msg }) => {
@@ -11,12 +11,12 @@ const MessageItem = memo(({ msg }) => {
       <div className="flex justify-end mb-6">
         <div className="flex max-w-[80%] gap-3 flex-row-reverse">
           <Avatar className="h-8 w-8 mt-1">
-            <AvatarFallback className="bg-primary text-primary-foreground">
+            <AvatarFallback className="bg-slate-900 text-slate-50 dark:bg-slate-800 dark:text-slate-100">
               <User className="h-4 w-4" />
             </AvatarFallback>
           </Avatar>
-          <div className="bg-primary text-primary-foreground px-4 py-3 rounded-2xl rounded-tr-sm">
-            <div className="prose prose-sm prose-invert max-w-none break-words">
+          <div className="bg-slate-900 text-slate-50 dark:bg-slate-800 dark:text-slate-100 px-4 py-3 rounded-2xl rounded-tr-sm">
+            <div className="prose prose-sm max-w-none break-words [&_*]:text-inherit">
               <ReactMarkdown>{msg.content}</ReactMarkdown>
             </div>
           </div>

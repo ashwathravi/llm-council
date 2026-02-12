@@ -312,18 +312,21 @@ const CouncilSidebar = memo(({
               {!isCollapsed && <h3 className="text-xs font-semibold text-muted-foreground px-2">Council Members</h3>}
               <Button
                 variant="outline"
-                className={cn('w-full justify-start relative', isCollapsed && 'justify-center px-0 h-10')}
+                className={cn(
+                  'w-full justify-start relative',
+                  isCollapsed ? 'justify-center px-0 h-10' : 'h-auto py-2'
+                )}
                 onClick={openReadOnlyDialog}
                 disabled={!currentConversation}
               >
                 <Users className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
                 {!isCollapsed && (
-                  <div className="flex flex-col items-start text-xs truncate">
-                    <span>Manage Council</span>
-                    <span className="font-normal text-muted-foreground text-[10px] truncate max-w-[210px]">
+                  <div className="flex min-w-0 flex-1 flex-col items-start text-left text-xs">
+                    <span className="w-full truncate">Manage Council</span>
+                    <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
                       {activeFrameworkLabel}
                     </span>
-                    <span className="font-normal text-muted-foreground text-[10px]">
+                    <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
                       {activeConversationModels.length} Members • {activeChairmanName}
                     </span>
                   </div>
