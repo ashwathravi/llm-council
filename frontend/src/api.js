@@ -159,44 +159,86 @@ export const api = {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to send message');
+      let detail = 'Failed to send message';
+      try {
+        const data = await response.json();
+        detail = data.detail || data.error || detail;
+      } catch {
+        const text = await response.text();
+        if (text) detail = text;
+      }
+      throw new Error(detail);
+    }
+
+    if (!response.body) {
+      onEvent('error', { type: 'error', error: 'No streaming body returned by server.' });
+      return;
     }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let receivedTerminalEvent = false;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
 
-      // Keep the last part in the buffer as it might be incomplete
-      buffer = lines.pop();
+        // Keep the last part in the buffer as it might be incomplete
+        buffer = lines.pop();
 
-      for (const line of lines) {
-        if (line.trim().startsWith('data: ')) {
-          const data = line.trim().slice(6);
-          try {
-            const event = JSON.parse(data);
-            onEvent(event.type, event);
-          } catch (e) {
-            console.error('Failed to parse SSE event:', e);
+        for (const line of lines) {
+          if (line.trim().startsWith('data: ')) {
+            const data = line.trim().slice(6);
+            try {
+              const event = JSON.parse(data);
+              if (event.type === 'complete' || event.type === 'error') {
+                receivedTerminalEvent = true;
+              }
+              onEvent(event.type, event);
+            } catch (e) {
+              console.error('Failed to parse SSE event:', e);
+            }
           }
         }
       }
+
+      // Process any remaining buffer if it looks like a complete line (though usually streams end with newline)
+      if (buffer && buffer.trim().startsWith('data: ')) {
+        try {
+          const event = JSON.parse(buffer.trim().slice(6));
+          if (event.type === 'complete' || event.type === 'error') {
+            receivedTerminalEvent = true;
+          }
+          onEvent(event.type, event);
+        } catch (e) {
+          console.error('Failed to parse (final) SSE event:', e);
+        }
+      }
+    } catch (error) {
+      console.error('SSE stream failed:', error);
+      if (!receivedTerminalEvent) {
+        onEvent('error', {
+          type: 'error',
+          error: error instanceof Error ? error.message : 'Streaming connection failed.',
+        });
+        receivedTerminalEvent = true;
+      }
+      return;
+    } finally {
+      reader.releaseLock();
     }
 
-    // Process any remaining buffer if it looks like a complete line (though usually streams end with newline)
-    if (buffer && buffer.trim().startsWith('data: ')) {
-      try {
-        const event = JSON.parse(buffer.trim().slice(6));
-        onEvent(event.type, event);
-      } catch (e) {
-        console.error('Failed to parse (final) SSE event:', e);
-      }
+    if (!receivedTerminalEvent) {
+      onEvent('error', {
+        type: 'error',
+        error: 'Stream closed before completion. Please retry.',
+      });
+      return;
     }
   },
 

@@ -1,5 +1,6 @@
 
 import httpx
+import json
 import logging
 from typing import List, Dict, Any, Optional
 from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
@@ -7,14 +8,14 @@ from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
 DEFAULT_REFERER = "https://llm-council.local"
 logger = logging.getLogger(__name__)
 
-def _get_request_id(response: httpx.Response) -> str | None:
+def _get_request_id(response: httpx.Response) -> Optional[str]:
     return (
         response.headers.get("x-request-id")
         or response.headers.get("x-openrouter-request-id")
         or response.headers.get("openai-request-id")
     )
 
-def _get_provider(response: httpx.Response) -> str | None:
+def _get_provider(response: httpx.Response) -> Optional[str]:
     return response.headers.get("x-openrouter-provider")
 
 def _normalize_message_content(message: Dict[str, Any]) -> str:
@@ -230,7 +231,8 @@ async def query_model(
 
 async def query_models_parallel(
     models: List[str],
-    messages: List[Dict[str, str]]
+    messages: List[Dict[str, str]],
+    timeout: float = 120.0
 ) -> Dict[str, Optional[Dict[str, Any]]]:
     """
     Query multiple models in parallel.
@@ -238,6 +240,7 @@ async def query_models_parallel(
     Args:
         models: List of OpenRouter model identifiers
         messages: List of message dicts to send to each model
+        timeout: Per-model timeout in seconds
 
     Returns:
         Dict mapping model identifier to response dict (or None if failed)
@@ -245,7 +248,7 @@ async def query_models_parallel(
     import asyncio
 
     # Create tasks for all models
-    tasks = [query_model(model, messages) for model in models]
+    tasks = [query_model(model, messages, timeout=timeout) for model in models]
 
     # Wait for all to complete
     responses = await asyncio.gather(*tasks)
@@ -288,25 +291,48 @@ async def query_model_stream(
                 json=payload
             ) as response:
                 response.raise_for_status()
-                
+
+                saw_done = False
                 async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data_str = line[6:].strip()
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            import json
-                            data = json.loads(data_str)
-                            delta = data['choices'][0]['delta']
-                            content = delta.get('content')
-                            if content:
-                                yield content
-                        except Exception:
-                            continue
-                            
+                    if not line or not line.startswith("data: "):
+                        continue
+
+                    data_str = line[6:].strip()
+                    if not data_str:
+                        continue
+                    if data_str == "[DONE]":
+                        saw_done = True
+                        break
+
+                    try:
+                        data = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        logger.warning("Malformed OpenRouter stream event for %s: %s", model, data_str[:200])
+                        continue
+
+                    stream_error = data.get("error") if isinstance(data, dict) else None
+                    if stream_error:
+                        if isinstance(stream_error, dict):
+                            message = stream_error.get("message") or str(stream_error)
+                        else:
+                            message = str(stream_error)
+                        raise RuntimeError(f"OpenRouter stream error for {model}: {message}")
+
+                    choices = data.get("choices") if isinstance(data, dict) else None
+                    if not choices:
+                        continue
+
+                    delta = choices[0].get("delta", {})
+                    if not isinstance(delta, dict):
+                        continue
+
+                    content = delta.get("content")
+                    if content:
+                        yield content
+
+                if not saw_done:
+                    logger.warning("OpenRouter stream for %s closed without [DONE] marker.", model)
+
     except Exception as e:
         logger.exception("Error querying model stream %s", model)
-        # Yield error message as content so UI sees something went wrong, 
-        # or handle differently? unique error chunk?
-        # For now, let's just log it. The generator will stop.
-        pass
+        raise RuntimeError(f"Streaming failed for model {model}: {e}") from e

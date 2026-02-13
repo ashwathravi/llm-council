@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+python-multipart
+pyjwt
+requests
+httpx
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+pydantic
+openai
+pypdf
+reportlab

@@ -483,7 +483,7 @@ async def add_user_message(conversation_id: str, user_id: str, content: str):
         conv["messages"].append({"role": "user", "content": content})
         file_save_conversation(conv)
 
-async def add_assistant_message(conversation_id: str, user_id: str, stage1, stage2, stage3, metadata: Dict[str, Any] | None = None):
+async def add_assistant_message(conversation_id: str, user_id: str, stage1, stage2, stage3, metadata: Optional[Dict[str, Any]] = None):
     message = {
         "role": "assistant",
         "stage1": stage1,

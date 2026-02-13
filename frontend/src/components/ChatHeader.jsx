@@ -1,93 +1,112 @@
-import React, { memo, useState, useEffect } from 'react';
+
+import React, { memo } from 'react';
 import { api } from '../api';
-import './ChatInterface.css';
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Download, Link as LinkIcon, FileText, Check } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useToast } from "@/components/ui/use-toast";
 
-const ChatHeader = memo(({ title, framework, conversationId }) => {
-  const [copySuccess, setCopySuccess] = useState(false);
+const FRAMEWORK_LABELS = {
+  standard: 'Standard Council',
+  debate: 'Chain of Debate',
+  six_hats: 'Six Thinking Hats',
+  ensemble: 'Ensemble (Fast)',
+};
 
-  useEffect(() => {
-    let timeout;
-    if (copySuccess) {
-      timeout = setTimeout(() => {
-        setCopySuccess(false);
-      }, 2000);
-    }
-    return () => clearTimeout(timeout);
-  }, [copySuccess]);
+const ChatHeader = memo(({ title, conversationId, framework, councilModels, chairmanModel }) => {
+  const { toast } = useToast();
+  const [copied, setCopied] = React.useState(false);
+  const selectedCount = Array.isArray(councilModels) ? councilModels.length : 0;
+  const frameworkLabel = FRAMEWORK_LABELS[framework] || framework || 'Standard Council';
+  const chairmanLabel = chairmanModel || 'Auto';
 
   const handleExport = async (format) => {
     if (!conversationId) return;
     try {
       await api.exportConversation(conversationId, format);
+      toast({
+        title: "Export Started",
+        description: `Exporting conversation to ${format.toUpperCase()}...`,
+      });
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Failed to export conversation');
+      toast({
+        variant: "destructive",
+        title: "Export Failed",
+        description: "Could not export conversation.",
+      });
     }
   };
 
   const handleCopyLink = () => {
     const url = window.location.href;
     navigator.clipboard.writeText(url).then(() => {
-      setCopySuccess(true);
+      setCopied(true);
+      toast({
+        title: "Link Copied",
+        description: "Conversation link copied to clipboard.",
+      });
+      setTimeout(() => setCopied(false), 2000);
     }).catch(err => {
       console.error('Failed to copy link:', err);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to copy link.",
+      });
     });
   };
 
   return (
-    <div className="chat-header">
-      <div className="header-info">
-        <h3>{title || 'New Conversation'}</h3>
-        <span className="model-info">{framework}</span>
+    <div className="flex items-center justify-between px-6 py-4 border-b bg-background/50 backdrop-blur-sm sticky top-0 z-10">
+      <div className="space-y-2 min-w-0">
+        <h3 className="font-semibold text-lg leading-none tracking-tight">{title || 'New Conversation'}</h3>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="secondary" className="text-xs">{frameworkLabel}</Badge>
+          <Badge variant="outline" className="text-xs">{selectedCount} models</Badge>
+          <Badge variant="outline" className="text-xs">Chairman: {chairmanLabel}</Badge>
+        </div>
       </div>
-      <div className="header-actions">
-        <button
-          className="export-btn icon-btn"
-          onClick={() => handleExport('md')}
-          title="Export to Markdown"
-          aria-label="Export conversation to Markdown"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <path d="M12 18v-6"></path>
-            <path d="M9 15l3 3 3-3"></path>
-          </svg>
-        </button>
-        <button
-          className="export-btn icon-btn"
-          onClick={() => handleExport('pdf')}
-          title="Export to PDF"
-          aria-label="Export conversation to PDF"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <path d="M16 13H8"></path>
-            <path d="M16 17H8"></path>
-            <path d="M10 9H8"></path>
-          </svg>
-        </button>
-        <button
-          className={`export-btn icon-btn ${copySuccess ? 'success' : ''}`}
-          onClick={handleCopyLink}
-          title={copySuccess ? "Copied!" : "Copy Link to Chat"}
-          aria-label={copySuccess ? "Link copied to clipboard" : "Copy link to chat"}
-        >
-          {copySuccess ? (
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="green" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-            </svg>
-          )}
-        </button>
+      <div className="flex items-center gap-1">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" onClick={() => handleExport('md')}>
+                <FileText className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Export to Markdown</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" onClick={() => handleExport('pdf')}>
+                <Download className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Export to PDF</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" onClick={handleCopyLink}>
+                {copied ? <Check className="h-4 w-4 text-green-500" /> : <LinkIcon className="h-4 w-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Copy Link</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
     </div>
   );
 });
+
+ChatHeader.displayName = 'ChatHeader';
 
 export default ChatHeader;

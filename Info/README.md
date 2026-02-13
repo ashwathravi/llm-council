@@ -1,3 +1,4 @@
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ashwathravi/llm-council)
 # LLM Council
 
 ![llmcouncil](header.jpg)

@@ -5,6 +5,27 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
 # OpenRouter API key
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
@@ -19,22 +40,29 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # # Chairman model - synthesizes final response
 # CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
 
-# Council members - list of OpenRouter model identifiers
-COUNCIL_MODELS = [
-    "nvidia/nemotron-3-nano-30b-a3b:free",
-    "xiaomi/mimo-v2-flash:free",
-    "mistralai/devstral-2512:free",
-    "nex-agi/deepseek-v3.1-nex-n1:free",
-    "anthropic/claude-opus-4.5",
+# Council members - list of OpenRouter model identifiers.
+# Defaults favor fast, currently active models (override with COUNCIL_MODELS env if needed).
+_DEFAULT_COUNCIL_MODELS = [
     "x-ai/grok-4.1-fast",
+    "google/gemini-3-pro-preview",
     "openai/gpt-5.2",
-    "google/gemini-3-pro-preview"
- #   "google/gemini-3-flash-preview"
 ]
+_models_raw = os.getenv("COUNCIL_MODELS")
+if _models_raw:
+    COUNCIL_MODELS = [m.strip() for m in _models_raw.split(",") if m.strip()]
+else:
+    COUNCIL_MODELS = list(_DEFAULT_COUNCIL_MODELS)
 
 # Chairman model - synthesizes final response
-CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
-#CHAIRMAN_MODEL = "google/gemini-3-flash-preview"
+CHAIRMAN_MODEL = os.getenv("CHAIRMAN_MODEL", "x-ai/grok-4.1-fast")
+
+# Performance profile
+MAX_MODELS_PER_REQUEST = max(1, _env_int("MAX_MODELS_PER_REQUEST", 10))
+MODEL_TIMEOUT_SECONDS = max(5.0, _env_float("MODEL_TIMEOUT_SECONDS", 25.0))
+STREAM_TIMEOUT_SECONDS = max(5.0, _env_float("STREAM_TIMEOUT_SECONDS", 45.0))
+TITLE_TIMEOUT_SECONDS = max(3.0, _env_float("TITLE_TIMEOUT_SECONDS", 8.0))
+FAST_LOCAL_TITLE = _env_bool("FAST_LOCAL_TITLE", True)
+TITLE_MODEL = os.getenv("TITLE_MODEL", CHAIRMAN_MODEL)
 
 # OpenRouter API endpoint
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"

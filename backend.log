@@ -1,0 +1,14 @@
+/Users/ashwath/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+JWT_SECRET_KEY is not set. Using insecure default key.
+WARNING: JWT_SECRET_KEY is not set. Using insecure default key. This is unsafe for production!
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/runpy.py", line 197, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "/Users/ashwath/LocalRepo/GitHub/llm-council/backend/main.py", line 18, in <module>
+    from . import storage, auth, openrouter, security, documents, retrieval, config
+  File "/Users/ashwath/LocalRepo/GitHub/llm-council/backend/openrouter.py", line 10, in <module>
+    def _get_request_id(response: httpx.Response) -> str | None:
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'

@@ -6,12 +6,13 @@ from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import uuid
 import json
 import asyncio
 import os
 import io
+import time
 import requests
 from contextlib import asynccontextmanager
 
@@ -21,7 +22,7 @@ from .council import (
     run_full_council, generate_conversation_title,
     stage1_collect_responses, stage1_collect_responses_six_hats,
     stage2_collect_rankings, stage2_collect_critiques,
-    stage3_synthesize_final, calculate_aggregate_rankings
+    stage3_synthesize_final, calculate_aggregate_rankings, resolve_active_models
 )
 from . import export
 
@@ -58,7 +59,7 @@ class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
     framework: str = "standard"
     council_models: List[str] = Field(default=[], max_length=10)
-    chairman_model: str | None = None
+    chairman_model: Optional[str] = None
 
     @field_validator("framework")
     @classmethod
@@ -98,8 +99,8 @@ class Conversation(BaseModel):
     created_at: str
     title: str
     framework: str = "standard"
-    council_models: List[str] | None = None
-    chairman_model: str | None = None
+    council_models: Optional[List[str]] = None
+    chairman_model: Optional[str] = None
     messages: List[Dict[str, Any]]
 
 
@@ -114,10 +115,10 @@ class DocumentMetadata(BaseModel):
     filename: str
     size_bytes: int
     status: str
-    page_count: int | None = None
-    error_message: str | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
+    page_count: Optional[int] = None
+    error_message: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 class DocumentUploadError(BaseModel):
     filename: str
@@ -489,10 +490,12 @@ async def send_message_stream(
     framework = conversation.get("framework", "standard")
     council_models = conversation.get("council_models", [])
     chairman_model = conversation.get("chairman_model")
+    requested_council_models = list(council_models) if council_models else []
+    effective_council_models = resolve_active_models(council_models)
 
     async def event_generator():
+        overall_start = time.monotonic()
         try:
-
             # Add user message
             await storage.add_user_message(conversation_id, user_id, request.content)
 
@@ -519,40 +522,49 @@ async def send_message_stream(
                 request.content
             )
 
+            print(
+                f"[stream] conversation={conversation_id} framework={framework} "
+                f"requested_models={requested_council_models} effective_models={effective_council_models} "
+                f"chairman={chairman_model or config.CHAIRMAN_MODEL}"
+            )
+
             # Stage 1: Collect responses (incremental)
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-            
+            stage1_start = time.monotonic()
             stage1_results = []
             stage1_errors = []
+
             if framework == "six_hats":
-                # Only six_hats helper was left gathering, we need to refactor it too OR just await it if we didn't touch it.
-                # Assuming I didn't touch six_hats in the previous step (I only touched stage1_collect_responses). 
-                # Ideally, six_hats should also stream. 
-                # For now, let's keep six_hats as batch if not refactored, or if user wants consistency, I should have refactored it.
-                # The prompt said "stage1_collect_responses". Let's check if I can wrap six_hats easily or if I should just await it.
-                # I'll just await it as before to avoid breaking it, but emit updates in batch.
                 stage1_results, stage1_errors = await stage1_collect_responses_six_hats(
                     history,
-                    council_models,
+                    effective_council_models,
                     retrieval_context=retrieval_context
                 )
                 for error in stage1_errors:
                     yield f"data: {json.dumps({'type': 'stage1_error', 'data': error})}\n\n"
-                # Emit fake updates for consistency? Or just one complete.
-                yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
             else:
-                # Streaming stage 1
-                async for result in stage1_collect_responses(history, council_models, retrieval_context=retrieval_context):
+                async for result in stage1_collect_responses(history, effective_council_models, retrieval_context=retrieval_context):
                     if result.get("error"):
                         stage1_errors.append(result)
                         yield f"data: {json.dumps({'type': 'stage1_error', 'data': result})}\n\n"
                     else:
                         stage1_results.append(result)
-                        # Send incremental update
                         yield f"data: {json.dumps({'type': 'stage1_update', 'data': result})}\n\n"
-                
-                # Send complete array at end (optional, but good for consistency)
-                yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+
+            stage1_duration = round(time.monotonic() - stage1_start, 3)
+            responded_council_models = [result["model"] for result in stage1_results]
+            stage1_meta = {
+                "requested_council_models": requested_council_models,
+                "effective_council_models": effective_council_models,
+                "responded_council_models": responded_council_models,
+                "stage1_errors": stage1_errors,
+                "stage1_duration_seconds": stage1_duration,
+            }
+            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results, 'metadata': stage1_meta})}\n\n"
+            print(
+                f"[stream] conversation={conversation_id} stage1_complete duration={stage1_duration}s "
+                f"responded={responded_council_models} errors={len(stage1_errors)}"
+            )
 
             if not stage1_results:
                 yield f"data: {json.dumps({'type': 'error', 'error': 'All selected models failed to respond. Please check your OpenRouter permissions or model availability.'})}\n\n"
@@ -560,41 +572,51 @@ async def send_message_stream(
 
             # Stage 2: Collect rankings/critiques (Batch for now)
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-            
+            stage2_start = time.monotonic()
             stage2_results = []
             aggregate_rankings = []
             label_to_model = {}
             retrieval_meta = {"retrieval": {"citations": citations}}
+            config_meta = {
+                "requested_council_models": requested_council_models,
+                "effective_council_models": effective_council_models,
+                "responded_council_models": responded_council_models,
+                "stage1_errors": stage1_errors,
+            }
 
             if framework == "ensemble":
-                # Ensemble: Skip Stage 2
                 label_to_model = {f"Response {chr(65+i)}": r['model'] for i, r in enumerate(stage1_results)}
-                yield f"data: {json.dumps({'type': 'stage2_skipped', 'metadata': {'label_to_model': label_to_model, **retrieval_meta}})}\n\n"
+                yield f"data: {json.dumps({'type': 'stage2_skipped', 'metadata': {'label_to_model': label_to_model, **config_meta, **retrieval_meta}})}\n\n"
             
             elif framework == "debate":
-                 # Debate: Stage 2 is Critiques
                  stage2_results, label_to_model = await stage2_collect_critiques(
                      request.content,
                      stage1_results,
-                     council_models,
+                     effective_council_models,
                      retrieval_context=retrieval_context
                  )
-                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'mode': 'debate', **retrieval_meta}})}\n\n"
+                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'mode': 'debate', **config_meta, **retrieval_meta}})}\n\n"
 
             else: # standard and six_hats both use ranking for Stage 2
                  stage2_results, label_to_model = await stage2_collect_rankings(
                      request.content,
                      stage1_results,
-                     council_models,
+                     effective_council_models,
                      chairman_model,
                      retrieval_context=retrieval_context
                  )
                  aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
-                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, **retrieval_meta}})}\n\n"
+                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, **config_meta, **retrieval_meta}})}\n\n"
+
+            stage2_duration = round(time.monotonic() - stage2_start, 3)
+            print(
+                f"[stream] conversation={conversation_id} stage2_complete duration={stage2_duration}s "
+                f"framework={framework}"
+            )
 
             # Stage 3: Synthesize final answer (Streaming)
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            
+            stage3_start = time.monotonic()
             full_stage3_response = ""
             async for token in stage3_synthesize_final(
                 request.content,
@@ -606,12 +628,17 @@ async def send_message_stream(
             ):
                 full_stage3_response += token
                 yield f"data: {json.dumps({'type': 'stage3_token', 'data': token})}\n\n"
+
+            if not full_stage3_response.strip():
+                raise RuntimeError("The chairman model returned an empty response.")
             
             stage3_result = {
-                "model": chairman_model or "google/gemini-3-pro-preview", # Fallback default
+                "model": chairman_model or config.CHAIRMAN_MODEL,
                 "response": full_stage3_response
             }
             yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+            stage3_duration = round(time.monotonic() - stage3_start, 3)
+            print(f"[stream] conversation={conversation_id} stage3_complete duration={stage3_duration}s")
 
             # Wait for title generation if it was started
             if title_task:
@@ -622,11 +649,20 @@ async def send_message_stream(
             # Save complete assistant message
             metadata = {
                 "framework": framework,
+                "requested_council_models": requested_council_models,
+                "effective_council_models": effective_council_models,
+                "responded_council_models": responded_council_models,
                 "council_models": [r['model'] for r in stage1_results],
-                "chairman_model": chairman_model or "google/gemini-3-pro-preview",
+                "chairman_model": chairman_model or config.CHAIRMAN_MODEL,
                 "label_to_model": label_to_model,
                 "aggregate_rankings": aggregate_rankings,
                 "stage1_errors": stage1_errors,
+                "timing": {
+                    "stage1_seconds": stage1_duration,
+                    "stage2_seconds": stage2_duration,
+                    "stage3_seconds": stage3_duration,
+                    "total_seconds": round(time.monotonic() - overall_start, 3),
+                },
                 **retrieval_meta
             }
             await storage.add_assistant_message(
@@ -640,6 +676,11 @@ async def send_message_stream(
 
             # Send completion event
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+            print(
+                f"[stream] conversation={conversation_id} complete total={metadata['timing']['total_seconds']}s "
+                f"requested={requested_council_models} effective={effective_council_models} "
+                f"responded={responded_council_models}"
+            )
 
         except Exception as e:
             import traceback

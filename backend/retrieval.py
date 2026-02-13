@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import List, Dict, Any, Tuple
+from starlette.concurrency import run_in_threadpool
 
 from . import storage, documents
 from .config import RETRIEVAL_TOP_K, RETRIEVAL_MAX_TOTAL_CHARS, RETRIEVAL_MAX_CHARS_PER_CHUNK
@@ -43,7 +44,8 @@ async def build_retrieval_context(
         documents_list = await storage.list_documents(conversation_id, user_id)
         document_name_map = {doc.get("id"): doc.get("filename") for doc in documents_list}
 
-        query_embedding = documents.embed_texts([query])[0]
+        # Offload embedding inference so retrieval does not block the async event loop.
+        query_embedding = (await run_in_threadpool(documents.embed_texts, [query]))[0]
         scored_chunks = []
         for chunk in chunks:
             embedding = chunk.get("embedding")
