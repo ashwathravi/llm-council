@@ -1,6 +1,8 @@
 
 import pytest
 from unittest.mock import patch, MagicMock
+from backend.main import app
+from backend import auth
 
 @pytest.mark.asyncio
 async def test_health_check(async_client):
@@ -25,9 +27,6 @@ async def test_list_models_mocked(async_client):
     with patch("backend.openrouter.fetch_models", new_callable=AsyncMock) as mock_fetch:
         mock_fetch.return_value = mock_models
         
-        from backend.main import app
-        from backend import auth
-        
         app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
         
         response = await async_client.get("/api/models")
@@ -44,8 +43,6 @@ async def test_conversations_empty(async_client):
         return []
 
     with patch("backend.storage.list_conversations", side_effect=mock_return_empty):
-        from backend.main import app
-        from backend import auth
         app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
         
         response = await async_client.get("/api/conversations")
@@ -53,3 +50,26 @@ async def test_conversations_empty(async_client):
         assert response.json() == []
         
         app.dependency_overrides = {}
+
+@pytest.mark.asyncio
+async def test_create_conversation_invalid_framework(async_client):
+    """Test that creating a conversation with an invalid framework returns 422."""
+
+    # Mock authentication
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+
+    response = await async_client.post(
+        "/api/conversations",
+        json={
+            "framework": "invalid_framework",
+            "council_models": ["model1"]
+        }
+    )
+
+    assert response.status_code == 422
+    # FastAPI/Pydantic returns detail about the validation error
+    data = response.json()
+    assert "detail" in data
+    assert any("framework" in error["loc"] for error in data["detail"])
+
+    app.dependency_overrides = {}
