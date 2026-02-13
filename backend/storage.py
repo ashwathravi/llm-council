@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from sqlalchemy.future import select
-from sqlalchemy import update, delete
+from sqlalchemy import update, delete, insert
 from sqlalchemy.orm.attributes import flag_modified
 from .config import DATA_DIR, APP_ORIGIN, DOCUMENTS_DIR
 from .database import AsyncSessionLocal, ConversationModel, DocumentModel, DocumentChunkModel, init_db
@@ -179,22 +179,27 @@ async def db_list_documents(conversation_id: str, user_id: str) -> List[Dict[str
 async def db_add_document_chunks(chunks: List[Dict[str, Any]]):
     if not chunks:
         return
+
+    # Pre-generate IDs and timestamps for bulk insertion
+    # Using execute(insert(Model), data) is significantly more efficient than add_all(models)
+    # for large bulk inserts as it avoids session object tracking overhead.
+    data = [
+        {
+            "id": str(uuid.uuid4()),
+            "document_id": chunk["document_id"],
+            "conversation_id": chunk["conversation_id"],
+            "user_id": chunk["user_id"],
+            "chunk_index": chunk["chunk_index"],
+            "page_number": chunk["page_number"],
+            "text": chunk["text"],
+            "embedding": chunk["embedding"],
+            "created_at": datetime.utcnow()
+        }
+        for chunk in chunks
+    ]
+
     async with AsyncSessionLocal() as session:
-        models = [
-            DocumentChunkModel(
-                id=str(uuid.uuid4()),
-                document_id=chunk["document_id"],
-                conversation_id=chunk["conversation_id"],
-                user_id=chunk["user_id"],
-                chunk_index=chunk["chunk_index"],
-                page_number=chunk["page_number"],
-                text=chunk["text"],
-                embedding=chunk["embedding"],
-                created_at=datetime.utcnow()
-            )
-            for chunk in chunks
-        ]
-        session.add_all(models)
+        await session.execute(insert(DocumentChunkModel), data)
         await session.commit()
 
 async def db_list_document_chunks(conversation_id: str, user_id: str) -> List[Dict[str, Any]]:
