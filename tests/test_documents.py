@@ -50,6 +50,31 @@ async def test_build_retrieval_context_orders_results():
 
 
 @pytest.mark.asyncio
+async def test_build_retrieval_context_offloads_embedding_to_threadpool():
+    chunks = [
+        {
+            "document_id": "doc-1",
+            "page_number": 1,
+            "text": "alpha",
+            "embedding": [1.0, 0.0],
+        }
+    ]
+
+    with patch("backend.storage.list_document_chunks", new_callable=AsyncMock) as mock_chunks, \
+         patch("backend.storage.list_documents", new_callable=AsyncMock) as mock_docs, \
+         patch("backend.retrieval.run_in_threadpool", new_callable=AsyncMock) as mock_threadpool:
+        mock_chunks.return_value = chunks
+        mock_docs.return_value = [{"id": "doc-1", "filename": "alpha.pdf"}]
+        mock_threadpool.return_value = [[1.0, 0.0]]
+
+        context, citations = await retrieval.build_retrieval_context("conv", "user", "query")
+
+        assert context is not None
+        assert citations[0]["filename"] == "alpha.pdf"
+        mock_threadpool.assert_awaited_once_with(documents.embed_texts, ["query"])
+
+
+@pytest.mark.asyncio
 async def test_upload_documents_endpoint(async_client, monkeypatch, tmp_path):
     from backend.main import app
     from backend import auth
