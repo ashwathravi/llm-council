@@ -9,3 +9,7 @@
 ## 2024-05-24 - Disabled Button Accessibility
 **Learning:** Standard `disabled` attributes remove elements from the tab order, preventing keyboard and screen reader users from discovering *why* an action is unavailable.
 **Action:** Replaced `disabled` attribute with `aria-disabled="true"` and custom CSS to maintain focusability. Added `aria-describedby` pointing to a tooltip that explains the constraint (e.g., "Start a conversation to attach files"), ensuring all users can understand the interface state. Also fixed `ModelSelect` keyboard navigation (Escape to close, focus tracking).
+
+## 2024-05-25 - Icon-Only Button Labels
+**Learning:** Icon-only buttons (like Trash, Plus, Settings) rely entirely on visual context and are invisible to screen readers without explicit labels. Tooltips (if hover-only) are insufficient.
+**Action:** Added `aria-label` to all icon-only buttons in `CouncilSidebar.jsx` (New Session, Manage Council, Settings, Delete, Collapse) ensuring they are announceable and accessible to all users.
