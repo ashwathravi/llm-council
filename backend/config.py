@@ -97,3 +97,15 @@ elif os.getenv("REPLIT_ID") or os.getenv("REPLIT_SLUG"):
     APP_ORIGIN = "replit"
 else:
     APP_ORIGIN = "local"
+
+# Auth: Allowed users (email)
+ALLOWED_USERS = set()
+_allowed_users_raw = os.getenv("ALLOWED_USERS")
+if _allowed_users_raw:
+    ALLOWED_USERS = {u.strip().lower() for u in _allowed_users_raw.split(",") if u.strip()}
+
+# Auth: Allowed domains
+ALLOWED_DOMAINS = set()
+_allowed_domains_raw = os.getenv("ALLOWED_DOMAINS")
+if _allowed_domains_raw:
+    ALLOWED_DOMAINS = {d.strip().lower() for d in _allowed_domains_raw.split(",") if d.strip()}

@@ -11,6 +11,7 @@ from google.auth.transport import requests
 from fastapi import HTTPException, status, Header, Depends
 from pydantic import BaseModel
 from .config import APP_ORIGIN
+from . import config
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -77,6 +78,42 @@ def create_access_token(data: Dict[str, Any]) -> str:
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+def validate_user_access(email: str):
+    """
+    Validate if the user email is allowed to access the application.
+    Checks against ALLOWED_USERS and ALLOWED_DOMAINS in config.
+    """
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email not provided"
+        )
+
+    email = email.lower()
+
+    # If no allowlists are configured, allow everyone (backward compatibility)
+    if not config.ALLOWED_USERS and not config.ALLOWED_DOMAINS:
+        return
+
+    # Check specific users
+    if email in config.ALLOWED_USERS:
+        return
+
+    # Check domain
+    try:
+        domain = email.split("@")[1]
+        if domain in config.ALLOWED_DOMAINS:
+            return
+    except IndexError:
+        pass # Invalid email format handled elsewhere or treated as not matching domain
+
+    logger.warning(f"Access denied for user: {email}")
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access denied. User not in allowlist."
+    )
 
 
 def get_current_user_id(authorization: str = Header(None)) -> str:

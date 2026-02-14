@@ -143,6 +143,12 @@ async def login(request: auth.GoogleLoginRequest):
     # Verify Google token
     google_user = auth.verify_google_token(request.id_token)
     
+    # Security: Validate user access against allowlists
+    email = google_user.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email not provided in token")
+    auth.validate_user_access(email)
+
     # Create session token
     user_id = google_user["sub"]
     access_token = auth.create_access_token(data={"sub": user_id})
