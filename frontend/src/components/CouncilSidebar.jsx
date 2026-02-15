@@ -69,7 +69,7 @@ const sameConfig = (left, right) => {
 
 const CouncilSidebar = memo(({
   conversations,
-  currentConversation,
+  activeConversationMetadata,
   currentConversationId,
   onSelectConversation,
   onNewConversation,
@@ -213,7 +213,7 @@ const CouncilSidebar = memo(({
   };
 
   const openReadOnlyDialog = () => {
-    if (!currentConversation) return;
+    if (!activeConversationMetadata) return;
     setConfigDialogMode('read_only');
     setShowConfigDialog(true);
   };
@@ -250,14 +250,14 @@ const CouncilSidebar = memo(({
     }
   };
 
-  const activeConversationFramework = currentConversation?.framework;
+  const activeConversationFramework = activeConversationMetadata?.framework;
   const activeFrameworkLabel = activeConversationFramework
     ? (FRAMEWORK_LABELS[activeConversationFramework] || activeConversationFramework)
     : 'No active conversation';
-  const activeConversationModels = Array.isArray(currentConversation?.council_models)
-    ? currentConversation.council_models
+  const activeConversationModels = Array.isArray(activeConversationMetadata?.council_models)
+    ? activeConversationMetadata.council_models
     : [];
-  const activeConversationChairman = currentConversation?.chairman_model || '';
+  const activeConversationChairman = activeConversationMetadata?.chairman_model || '';
   const activeChairmanName = activeConversationChairman ? getModelName(activeConversationChairman) : 'Auto';
 
   return (
@@ -317,7 +317,7 @@ const CouncilSidebar = memo(({
                   isCollapsed ? 'justify-center px-0 h-10' : 'h-auto py-2'
                 )}
                 onClick={openReadOnlyDialog}
-                disabled={!currentConversation}
+                disabled={!activeConversationMetadata}
               >
                 <Users className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
                 {!isCollapsed && (
@@ -400,9 +400,9 @@ const CouncilSidebar = memo(({
         onOpenChange={handleDialogOpenChange}
         mode={configDialogMode}
         readOnlyConfig={{
-          framework: currentConversation?.framework,
-          councilModels: Array.isArray(currentConversation?.council_models) ? currentConversation.council_models : [],
-          chairmanModel: currentConversation?.chairman_model || '',
+          framework: activeConversationMetadata?.framework,
+          councilModels: Array.isArray(activeConversationMetadata?.council_models) ? activeConversationMetadata.council_models : [],
+          chairmanModel: activeConversationMetadata?.chairman_model || '',
         }}
         onStartSession={handleStartSession}
         isStartingSession={isCreatingSession}
