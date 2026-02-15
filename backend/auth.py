@@ -41,8 +41,11 @@ else:
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
-# Google Client ID from environment or hardcoded fallback (for dev)
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "154618380883-hlmnd78sufsgvrmvk39ht872brk4o32r.apps.googleusercontent.com")
+# Google Client ID from environment
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+
+if not GOOGLE_CLIENT_ID:
+    logger.warning("GOOGLE_CLIENT_ID is not set. Google Sign-In will be unavailable.")
 
 
 class Token(BaseModel):
@@ -57,6 +60,12 @@ class GoogleLoginRequest(BaseModel):
 
 def verify_google_token(token: str) -> Dict[str, Any]:
     """Verify Google ID token and return user info."""
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Server misconfigured: GOOGLE_CLIENT_ID is missing."
+        )
+
     try:
         id_info = id_token.verify_oauth2_token(
             token, requests.Request(), GOOGLE_CLIENT_ID
