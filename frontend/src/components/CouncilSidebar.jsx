@@ -288,6 +288,7 @@ const CouncilSidebar = memo(({
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="h-8 w-8 ml-auto"
             title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+            aria-label={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
           >
             {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </Button>
@@ -298,6 +299,7 @@ const CouncilSidebar = memo(({
             className={cn('w-full justify-start', isCollapsed && 'justify-center px-0')}
             onClick={() => openCreateConfigDialog('new_config')}
             variant={isCollapsed ? 'outline' : 'default'}
+            aria-label={isCollapsed ? 'New Session' : undefined}
           >
             <Plus className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
             {!isCollapsed && 'New Session'}
@@ -318,6 +320,7 @@ const CouncilSidebar = memo(({
                 )}
                 onClick={openReadOnlyDialog}
                 disabled={!currentConversation}
+                aria-label={isCollapsed ? 'Manage Council' : undefined}
               >
                 <Users className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
                 {!isCollapsed && (
@@ -346,12 +349,21 @@ const CouncilSidebar = memo(({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Select conversation: ${conversation.title}`}
                         className={cn(
                           'group flex items-center rounded-md px-2 py-2 text-sm hover:bg-accent/50 cursor-pointer relative',
                           currentConversationId === conversation.id ? 'bg-accent text-accent-foreground font-medium' : '',
                           isCollapsed ? 'justify-center' : 'justify-between'
                         )}
                         onClick={() => onSelectConversation(conversation.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onSelectConversation(conversation.id);
+                          }
+                        }}
                       >
                         {isCollapsed ? (
                           <History className="h-4 w-4 text-muted-foreground" />
@@ -368,6 +380,7 @@ const CouncilSidebar = memo(({
                             size="icon"
                             className="h-6 w-6 absolute right-1 opacity-50 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
                             onClick={(event) => handleDelete(event, conversation.id)}
+                            aria-label="Delete conversation"
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
@@ -388,6 +401,7 @@ const CouncilSidebar = memo(({
             size="sm"
             className={cn('w-full justify-start', isCollapsed && 'justify-center px-0')}
             onClick={() => openCreateConfigDialog('settings')}
+            aria-label={isCollapsed ? 'Settings' : undefined}
           >
             <Settings className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
             {!isCollapsed && 'Settings'}
