@@ -66,6 +66,40 @@ AsyncSessionLocal = None
 
 from sqlalchemy.engine.url import make_url
 
+def configure_ssl_context(query_params: dict):
+    """
+    Configure SSL context based on sslmode query parameter.
+    Returns (connect_args_dict, updated_query_params).
+    """
+    connect_args = {}
+    if "sslmode" in query_params:
+        ssl_mode = query_params.pop("sslmode")
+
+        # Verify-Full: Strict verification (Certificate + Hostname)
+        if ssl_mode == "verify-full":
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = True
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+            connect_args["ssl"] = ssl_context
+
+        # Verify-CA: Verify Certificate only (No hostname check)
+        elif ssl_mode == "verify-ca":
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+            connect_args["ssl"] = ssl_context
+
+        # Require: Encryption required, but verification optional (Legacy/Compat)
+        elif ssl_mode == "require":
+            # Create a custom SSL context to avoid certificate verification errors
+            # which are common in some deployment environments (e.g. Render, self-signed)
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            connect_args["ssl"] = ssl_context
+
+    return connect_args, query_params
+
 if DATABASE_URL:
     # Handle Render's postgres:// format
     if DATABASE_URL.startswith("postgres://"):
@@ -77,20 +111,12 @@ if DATABASE_URL:
     url_obj = make_url(DATABASE_URL)
     
     # Clean up sslmode in query params (asyncpg doesn't support it in DSN)
-    query_params = dict(url_obj.query)
+    # Extract SSL context setup to a helper for cleaner code and testing
+    ssl_connect_args, query_params = configure_ssl_context(dict(url_obj.query))
     
     # Disable prepared statement caching for connection poolers (PgBouncer/Supabase)
     connect_args = {"statement_cache_size": 0}
-    
-    if "sslmode" in query_params:
-        ssl_mode = query_params.pop("sslmode")
-        if ssl_mode == "require" or ssl_mode == "verify-full":
-            # Create a custom SSL context to avoid certificate verification errors
-            # which are common in some deployment environments
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-            connect_args["ssl"] = ssl_context
+    connect_args.update(ssl_connect_args)
     
     # Reconstruct URL without the incompatible query params
     url_obj = url_obj._replace(query=query_params)
