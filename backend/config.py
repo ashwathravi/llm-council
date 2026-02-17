@@ -102,7 +102,7 @@ else:
 # If set, only users in ALLOWED_USERS or domains in ALLOWED_DOMAINS can log in.
 # If both are empty (default), all users with a valid Google account can log in.
 _allowed_users_raw = os.getenv("ALLOWED_USERS", "")
-ALLOWED_USERS = {u.strip() for u in _allowed_users_raw.split(",") if u.strip()}
+ALLOWED_USERS = {u.strip().lower() for u in _allowed_users_raw.split(",") if u.strip()}
 
 _allowed_domains_raw = os.getenv("ALLOWED_DOMAINS", "")
-ALLOWED_DOMAINS = {d.strip() for d in _allowed_domains_raw.split(",") if d.strip()}
+ALLOWED_DOMAINS = {d.strip().lower() for d in _allowed_domains_raw.split(",") if d.strip()}

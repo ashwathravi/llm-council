@@ -144,24 +144,10 @@ async def login(request: auth.GoogleLoginRequest):
     google_user = auth.verify_google_token(request.id_token)
     email = google_user.get("email")
 
-    # Security: Authorization Allowlist Check
-    # If allowlists are configured, user must match one of them.
-    if config.ALLOWED_USERS or config.ALLOWED_DOMAINS:
-        is_allowed = False
-        if email and email in config.ALLOWED_USERS:
-            is_allowed = True
-        elif email:
-            domain = email.split("@")[-1]
-            if domain in config.ALLOWED_DOMAINS:
-                is_allowed = True
-
-        if not is_allowed:
-            # Do not leak detailed reason for denial (e.g., "not in allowlist") to generic attackers
-            # But for legitimate users who are confused, "Access denied" is appropriate.
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: User not authorized."
-            )
+    # Security: Validate user access against allowlists.
+    if not email:
+        raise HTTPException(status_code=400, detail="Email not provided in token")
+    auth.validate_user_access(email)
 
     # Create session token
     user_id = google_user["sub"]
