@@ -2,11 +2,7 @@
 > frontend@0.0.0 dev
 > vite
 
-
-  VITE v7.2.4  ready in 688 ms
+  VITE v7.2.4  ready in 516 ms
 
   ➜  Local:   http://localhost:5173/
   ➜  Network: use --host to expose
-11:34:14 PM [vite] (client) hmr update /src/components/ModelSelect.jsx
-11:34:23 PM [vite] (client) hmr update /src/components/ModelSelect.css
-11:40:08 PM [vite] (client) hmr update /src/components/ModelSelect.jsx

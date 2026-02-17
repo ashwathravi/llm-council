@@ -7,3 +7,8 @@
 **Vulnerability:** The `backend/auth.py` module contained a hardcoded fallback value for `GOOGLE_CLIENT_ID`.
 **Learning:** Hardcoding third-party client IDs binds the application to a specific developer's account and can mask configuration errors in production.
 **Prevention:** Require explicit configuration of all external service credentials and identifiers via environment variables. Fail fast with a clear error if missing.
+
+## 2024-05-23 - Insecure SSL Context Configuration
+**Vulnerability:** The backend database connection logic explicitly disabled hostname checking and certificate verification (`ssl.CERT_NONE`) even when `sslmode=verify-full` was requested.
+**Learning:** Checking for a security flag (like `verify-full`) is not enough; the implementation must actually enforce the security checks. Legacy code or "quick fixes" for local dev/self-signed certs can silently undermine security in production if they override strict modes.
+**Prevention:** Use a dedicated helper function (like `configure_ssl_context`) to map configuration flags to explicit security settings. Ensure "strict" modes like `verify-full` use secure defaults (`ssl.create_default_context()`).

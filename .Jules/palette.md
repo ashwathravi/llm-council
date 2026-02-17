@@ -9,3 +9,11 @@
 ## 2024-05-24 - Disabled Button Accessibility
 **Learning:** Standard `disabled` attributes remove elements from the tab order, preventing keyboard and screen reader users from discovering *why* an action is unavailable.
 **Action:** Replaced `disabled` attribute with `aria-disabled="true"` and custom CSS to maintain focusability. Added `aria-describedby` pointing to a tooltip that explains the constraint (e.g., "Start a conversation to attach files"), ensuring all users can understand the interface state. Also fixed `ModelSelect` keyboard navigation (Escape to close, focus tracking).
+
+## 2024-05-25 - Icon-Only Button Labels
+**Learning:** Icon-only buttons (like Trash, Plus, Settings) rely entirely on visual context and are invisible to screen readers without explicit labels. Tooltips (if hover-only) are insufficient.
+**Action:** Added `aria-label` to all icon-only buttons in `CouncilSidebar.jsx` (New Session, Manage Council, Settings, Delete, Collapse) ensuring they are announceable and accessible to all users.
+
+## 2024-05-24 - Accessible Interactive Cards
+**Learning:** Interactive cards that act as radio buttons or links must implement `role="button"`, `tabIndex="0"`, and `onKeyDown` (Enter/Space) to be accessible. Simply adding `onClick` to a `div` is insufficient for keyboard users.
+**Action:** When creating selection grids, ensure interactive containers have proper ARIA roles and keyboard event handlers. Always add visible focus indicators (`focus-visible:ring`) to these custom interactive elements.
