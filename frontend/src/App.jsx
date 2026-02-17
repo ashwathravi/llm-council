@@ -16,6 +16,25 @@ function App() {
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
+
+  const activeConversationMetadata = useMemo(() => {
+    if (!currentConversation) return null;
+    return {
+      id: currentConversation.id,
+      title: currentConversation.title,
+      framework: currentConversation.framework,
+      council_models: currentConversation.council_models,
+      chairman_model: currentConversation.chairman_model,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    currentConversation?.id,
+    currentConversation?.title,
+    currentConversation?.framework,
+    currentConversation?.council_models,
+    currentConversation?.chairman_model,
+  ]);
+
   const [isLoading, setIsLoading] = useState(false);
   // Theme State
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
