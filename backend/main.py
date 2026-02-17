@@ -1,6 +1,6 @@
 """FastAPI backend for LLM Council."""
 
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -142,7 +142,13 @@ async def login(request: auth.GoogleLoginRequest):
     """
     # Verify Google token
     google_user = auth.verify_google_token(request.id_token)
-    
+    email = google_user.get("email")
+
+    # Security: Validate user access against allowlists.
+    if not email:
+        raise HTTPException(status_code=400, detail="Email not provided in token")
+    auth.validate_user_access(email)
+
     # Create session token
     user_id = google_user["sub"]
     access_token = auth.create_access_token(data={"sub": user_id})
