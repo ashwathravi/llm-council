@@ -16,6 +16,7 @@ function App() {
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
+
   const [isLoading, setIsLoading] = useState(false);
   // Theme State
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
@@ -140,6 +141,31 @@ function App() {
   const handleSidebarClose = useCallback(() => {
     setIsSidebarOpen(false);
   }, []);
+
+  // Optimize Sidebar re-renders by extracting only necessary metadata
+  // We extract properties first so they can be stable dependencies for useMemo
+  const conversationId = currentConversation?.id;
+  const conversationTitle = currentConversation?.title;
+  const conversationFramework = currentConversation?.framework;
+  const conversationCouncilModels = currentConversation?.council_models;
+  const conversationChairmanModel = currentConversation?.chairman_model;
+
+  const activeConversationMetadata = useMemo(() => {
+    if (!conversationId) return null;
+    return {
+      id: conversationId,
+      title: conversationTitle,
+      framework: conversationFramework,
+      council_models: conversationCouncilModels,
+      chairman_model: conversationChairmanModel,
+    };
+  }, [
+    conversationId,
+    conversationTitle,
+    conversationFramework,
+    conversationCouncilModels,
+    conversationChairmanModel
+  ]);
 
   // ... (Keep handleSendMessage logic exactly as is, it's complex) ...
   const handleSendMessage = useCallback(async (content) => {
@@ -336,25 +362,6 @@ function App() {
     }
   }, [currentConversationId, loadConversations]);
 
-  // Optimization: Extract stable metadata to prevent CouncilSidebar re-renders during message streaming
-  const activeConversationMetadata = useMemo(() => {
-    if (!currentConversation) return null;
-    return {
-      id: currentConversation.id,
-      title: currentConversation.title,
-      framework: currentConversation.framework,
-      council_models: currentConversation.council_models,
-      chairman_model: currentConversation.chairman_model,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    currentConversation?.id,
-    currentConversation?.title,
-    currentConversation?.framework,
-    currentConversation?.council_models,
-    currentConversation?.chairman_model
-  ]);
-
   if (authLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
   if (!user) {
     return (
@@ -378,7 +385,7 @@ function App() {
         isOpen={isSidebarOpen}
         onClose={handleSidebarClose}
         conversations={conversations}
-        currentConversation={activeConversationMetadata}
+        activeConversationMetadata={activeConversationMetadata}
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
