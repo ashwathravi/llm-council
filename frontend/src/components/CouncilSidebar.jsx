@@ -288,6 +288,7 @@ const CouncilSidebar = memo(({
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="h-8 w-8 ml-auto"
             title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+            aria-label={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
           >
             {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </Button>
@@ -298,6 +299,7 @@ const CouncilSidebar = memo(({
             className={cn('w-full justify-start', isCollapsed && 'justify-center px-0')}
             onClick={() => openCreateConfigDialog('new_config')}
             variant={isCollapsed ? 'outline' : 'default'}
+            aria-label="Start New Session"
           >
             <Plus className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
             {!isCollapsed && 'New Session'}
@@ -318,6 +320,7 @@ const CouncilSidebar = memo(({
                 )}
                 onClick={openReadOnlyDialog}
                 disabled={!activeConversationMetadata}
+                aria-label="Manage Council Configuration"
               >
                 <Users className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
                 {!isCollapsed && (
@@ -370,7 +373,8 @@ const CouncilSidebar = memo(({
                             size="icon"
                             className="h-6 w-6 absolute right-1 opacity-50 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
                             onClick={(event) => handleDelete(event, conversation.id)}
-                            aria-label="Delete conversation"
+                            aria-label={`Delete conversation: ${conversation.title}`}
+                            title="Delete conversation"
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
@@ -391,6 +395,7 @@ const CouncilSidebar = memo(({
             size="sm"
             className={cn('w-full justify-start', isCollapsed && 'justify-center px-0')}
             onClick={() => openCreateConfigDialog('settings')}
+            aria-label="Open Settings"
           >
             <Settings className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
             {!isCollapsed && 'Settings'}
