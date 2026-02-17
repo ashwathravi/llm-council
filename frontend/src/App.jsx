@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense, useMemo } from 'react';
 // import Sidebar from './components/Sidebar';
 import CouncilSidebar from './components/CouncilSidebar';
 import ChatInterface from './components/ChatInterface';
@@ -140,6 +140,31 @@ function App() {
   const handleSidebarClose = useCallback(() => {
     setIsSidebarOpen(false);
   }, []);
+
+  // Optimize Sidebar re-renders by extracting only necessary metadata
+  // We extract properties first so they can be stable dependencies for useMemo
+  const conversationId = currentConversation?.id;
+  const conversationTitle = currentConversation?.title;
+  const conversationFramework = currentConversation?.framework;
+  const conversationCouncilModels = currentConversation?.council_models;
+  const conversationChairmanModel = currentConversation?.chairman_model;
+
+  const activeConversationMetadata = useMemo(() => {
+    if (!conversationId) return null;
+    return {
+      id: conversationId,
+      title: conversationTitle,
+      framework: conversationFramework,
+      council_models: conversationCouncilModels,
+      chairman_model: conversationChairmanModel,
+    };
+  }, [
+    conversationId,
+    conversationTitle,
+    conversationFramework,
+    conversationCouncilModels,
+    conversationChairmanModel
+  ]);
 
   // ... (Keep handleSendMessage logic exactly as is, it's complex) ...
   const handleSendMessage = useCallback(async (content) => {
@@ -359,7 +384,7 @@ function App() {
         isOpen={isSidebarOpen}
         onClose={handleSidebarClose}
         conversations={conversations}
-        currentConversation={currentConversation}
+        activeConversationMetadata={activeConversationMetadata}
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
