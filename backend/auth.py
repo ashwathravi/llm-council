@@ -45,6 +45,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 # Google Client ID from environment
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
+if not GOOGLE_CLIENT_ID:
+    logger.warning("GOOGLE_CLIENT_ID is not set. Google Sign-In will be unavailable.")
+
 
 class Token(BaseModel):
     access_token: str
