@@ -121,7 +121,7 @@ def validate_user_access(email: str):
     logger.warning(f"Access denied for user: {email}")
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Access denied. User not in allowlist."
+        detail="Access denied: User not authorized."
     )
 
 
