@@ -69,7 +69,7 @@ const sameConfig = (left, right) => {
 
 const CouncilSidebar = memo(({
   conversations,
-  currentConversation,
+  activeConversationMetadata,
   currentConversationId,
   onSelectConversation,
   onNewConversation,
@@ -213,7 +213,7 @@ const CouncilSidebar = memo(({
   };
 
   const openReadOnlyDialog = () => {
-    if (!currentConversation) return;
+    if (!activeConversationMetadata) return;
     setConfigDialogMode('read_only');
     setShowConfigDialog(true);
   };
@@ -250,14 +250,14 @@ const CouncilSidebar = memo(({
     }
   };
 
-  const activeConversationFramework = currentConversation?.framework;
+  const activeConversationFramework = activeConversationMetadata?.framework;
   const activeFrameworkLabel = activeConversationFramework
     ? (FRAMEWORK_LABELS[activeConversationFramework] || activeConversationFramework)
     : 'No active conversation';
-  const activeConversationModels = Array.isArray(currentConversation?.council_models)
-    ? currentConversation.council_models
+  const activeConversationModels = Array.isArray(activeConversationMetadata?.council_models)
+    ? activeConversationMetadata.council_models
     : [];
-  const activeConversationChairman = currentConversation?.chairman_model || '';
+  const activeConversationChairman = activeConversationMetadata?.chairman_model || '';
   const activeChairmanName = activeConversationChairman ? getModelName(activeConversationChairman) : 'Auto';
 
   return (
@@ -317,7 +317,7 @@ const CouncilSidebar = memo(({
                   isCollapsed ? 'justify-center px-0 h-10' : 'h-auto py-2'
                 )}
                 onClick={openReadOnlyDialog}
-                disabled={!currentConversation}
+                disabled={!activeConversationMetadata}
               >
                 <Users className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
                 {!isCollapsed && (
@@ -347,20 +347,22 @@ const CouncilSidebar = memo(({
                     <TooltipTrigger asChild>
                       <div
                         className={cn(
-                          'group flex items-center rounded-md px-2 py-2 text-sm hover:bg-accent/50 cursor-pointer relative',
+                          'group flex items-center rounded-md px-2 py-2 text-sm hover:bg-accent/50 relative',
                           currentConversationId === conversation.id ? 'bg-accent text-accent-foreground font-medium' : '',
                           isCollapsed ? 'justify-center' : 'justify-between'
                         )}
-                        onClick={() => onSelectConversation(conversation.id)}
                       >
-                        {isCollapsed ? (
-                          <History className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <div className="flex items-center gap-2 truncate pr-6 w-full">
-                            <History className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <span className="truncate">{conversation.title}</span>
-                          </div>
-                        )}
+                        <button
+                          className={cn(
+                            "flex items-center gap-2 truncate w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm",
+                            !isCollapsed && "pr-6"
+                          )}
+                          onClick={() => onSelectConversation(conversation.id)}
+                          title={conversation.title}
+                        >
+                          <History className="h-4 w-4 text-muted-foreground shrink-0" />
+                          {!isCollapsed && <span className="truncate">{conversation.title}</span>}
+                        </button>
 
                         {!isCollapsed && (
                           <Button
@@ -368,6 +370,7 @@ const CouncilSidebar = memo(({
                             size="icon"
                             className="h-6 w-6 absolute right-1 opacity-50 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
                             onClick={(event) => handleDelete(event, conversation.id)}
+                            aria-label="Delete conversation"
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
@@ -400,9 +403,9 @@ const CouncilSidebar = memo(({
         onOpenChange={handleDialogOpenChange}
         mode={configDialogMode}
         readOnlyConfig={{
-          framework: currentConversation?.framework,
-          councilModels: Array.isArray(currentConversation?.council_models) ? currentConversation.council_models : [],
-          chairmanModel: currentConversation?.chairman_model || '',
+          framework: activeConversationMetadata?.framework,
+          councilModels: Array.isArray(activeConversationMetadata?.council_models) ? activeConversationMetadata.council_models : [],
+          chairmanModel: activeConversationMetadata?.chairman_model || '',
         }}
         onStartSession={handleStartSession}
         isStartingSession={isCreatingSession}
