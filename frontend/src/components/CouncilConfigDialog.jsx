@@ -276,8 +276,18 @@ const CouncilConfigDialog = ({
               {COUNCIL_TYPES.map((type) => (
                 <Card
                   key={type.id}
+                  role="button"
+                  aria-pressed={selectedFramework === type.framework}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedFramework(type.framework);
+                      setActivePresetId(null);
+                    }
+                  }}
                   className={cn(
-                    'cursor-pointer hover:bg-accent/50 transition-colors relative',
+                    'cursor-pointer hover:bg-accent/50 transition-colors relative focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none',
                     selectedFramework === type.framework ? 'border-primary bg-accent/20' : ''
                   )}
                   onClick={() => {
@@ -358,8 +368,17 @@ const CouncilConfigDialog = ({
                 {presets.map((preset) => (
                   <Card
                     key={preset.id}
+                    role="button"
+                    aria-pressed={activePresetId === preset.id}
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        applySavedPreset(preset);
+                      }
+                    }}
                     className={cn(
-                      'cursor-pointer hover:bg-accent/50 transition-colors relative',
+                      'cursor-pointer hover:bg-accent/50 transition-colors relative focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none',
                       activePresetId === preset.id ? 'border-primary bg-accent/20' : ''
                     )}
                     onClick={() => applySavedPreset(preset)}

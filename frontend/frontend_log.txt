@@ -2,10 +2,7 @@
 > frontend@0.0.0 dev
 > vite
 
-
-  VITE v7.2.4  ready in 292 ms
+  VITE v7.2.4  ready in 516 ms
 
   ➜  Local:   http://localhost:5173/
   ➜  Network: use --host to expose
-4:12:07 AM [vite] (client) hmr update /src/index.css
-4:12:32 AM [vite] (client) hmr update /src/components/CouncilSidebar.jsx, /src/index.css

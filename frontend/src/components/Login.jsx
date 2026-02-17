@@ -6,7 +6,7 @@ import { api } from '../api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { BrainCircuit } from "lucide-react";
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "154618380883-hlmnd78sufsgvrmvk39ht872brk4o32r.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 export default function Login() {
     const { handleLoginSuccess } = useAuth();
@@ -33,6 +33,29 @@ export default function Login() {
             setIsLoading(false);
         }
     };
+
+    if (!GOOGLE_CLIENT_ID) {
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+                <Card className="w-full max-w-md shadow-lg border-destructive/20 bg-card/95 backdrop-blur">
+                    <CardHeader className="text-center space-y-4 pb-8">
+                        <div className="mx-auto bg-destructive/10 p-4 rounded-full w-fit">
+                            <BrainCircuit className="h-10 w-10 text-destructive" />
+                        </div>
+                        <div className="space-y-2">
+                            <CardTitle className="text-2xl font-bold text-destructive">Configuration Error</CardTitle>
+                            <CardDescription>
+                                Google Sign-In is not configured.
+                            </CardDescription>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="text-center text-sm text-muted-foreground">
+                        Please set VITE_GOOGLE_CLIENT_ID in your environment variables.
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
 
     return (
         <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
