@@ -380,6 +380,25 @@ function App() {
     }
   }, [currentConversationId, loadConversations]);
 
+  // Extract stable metadata to prevent sidebar re-renders on every message token
+  const activeConversationMetadata = useMemo(() => {
+    if (!currentConversation) return null;
+    return {
+      id: currentConversation.id,
+      title: currentConversation.title,
+      framework: currentConversation.framework,
+      council_models: currentConversation.council_models,
+      chairman_model: currentConversation.chairman_model,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    currentConversation?.id,
+    currentConversation?.title,
+    currentConversation?.framework,
+    currentConversation?.council_models,
+    currentConversation?.chairman_model,
+  ]);
+
   if (authLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
   if (!user) {
     return (
