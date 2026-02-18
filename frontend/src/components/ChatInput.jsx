@@ -134,28 +134,36 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
 
         {/* Document List */}
         {(documents.length > 0 || uploading) && (
-          <div className="flex flex-wrap gap-2">
-            {documents.map((doc) => (
-              <Badge key={doc.id} variant="secondary" className="pl-2 pr-1 py-1 gap-2 h-7 font-normal">
-                <FileText className="h-3 w-3 text-muted-foreground" />
-                <span className="truncate max-w-[150px]">{doc.filename}</span>
-                <span className="text-xs text-muted-foreground ml-1">{formatBytes(doc.size_bytes)}</span>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteDocument(doc.id)}
-                  className="ml-1 rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
-            ))}
+          <TooltipProvider>
+            <div className="flex flex-wrap gap-2">
+              {documents.map((doc) => (
+                <Badge key={doc.id} variant="secondary" className="pl-2 pr-1 py-1 gap-2 h-7 font-normal">
+                  <FileText className="h-3 w-3 text-muted-foreground" />
+                  <span className="truncate max-w-[150px]">{doc.filename}</span>
+                  <span className="text-xs text-muted-foreground ml-1">{formatBytes(doc.size_bytes)}</span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteDocument(doc.id)}
+                        className="ml-1 rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-label={`Remove ${doc.filename}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Remove document</TooltipContent>
+                  </Tooltip>
+                </Badge>
+              ))}
 
-            {uploading && (
-              <Badge variant="outline" className="animate-pulse">
-                Uploading... {uploadProgress}%
-              </Badge>
-            )}
-          </div>
+              {uploading && (
+                <Badge variant="outline" className="animate-pulse">
+                  Uploading... {uploadProgress}%
+                </Badge>
+              )}
+            </div>
+          </TooltipProvider>
         )}
 
         {/* Input Area */}
