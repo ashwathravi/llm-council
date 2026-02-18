@@ -310,10 +310,24 @@ function App() {
             });
             break;
           case 'title_complete':
-            loadConversations();
+            // ⚡ Bolt: Optimize by updating local state instead of re-fetching entire list
+            if (event.data?.title) {
+              const newTitle = event.data.title;
+              setConversations((prev) =>
+                prev.map((c) =>
+                  c.id === currentConversationId ? { ...c, title: newTitle } : c
+                )
+              );
+              // Only update current conversation if it matches the one that generated the title
+              setCurrentConversation((prev) =>
+                (prev && prev.id === currentConversationId)
+                  ? { ...prev, title: newTitle }
+                  : prev
+              );
+            }
             break;
           case 'complete':
-            loadConversations();
+            // ⚡ Bolt: Removed redundant loadConversations() - list order/metadata doesn't change on completion
             setIsLoading(false);
             break;
           case 'error':
@@ -360,7 +374,7 @@ function App() {
       }));
       setIsLoading(false);
     }
-  }, [currentConversationId, loadConversations]);
+  }, [currentConversationId]);
 
   if (authLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
   if (!user) {
