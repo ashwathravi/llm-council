@@ -1,7 +1,7 @@
 
 import pytest
 from pydantic import ValidationError
-from backend.main import CreateConversationRequest
+from backend.main import CreateConversationRequest, SendMessageRequest
 
 def test_valid_frameworks():
     """Test that all allowed frameworks are accepted."""
@@ -43,3 +43,17 @@ def test_default_values():
     assert req.framework == "standard"
     assert req.council_models == []
     assert req.chairman_model is None
+
+def test_message_content_length_limit():
+    """Test that message content exceeding 50KB raises a ValidationError."""
+    large_content = "a" * 50001
+    with pytest.raises(ValidationError) as excinfo:
+        SendMessageRequest(content=large_content)
+    assert "String should have at most 50000 characters" in str(excinfo.value)
+
+def test_chairman_model_length_limit():
+    """Test that chairman_model exceeding 100 characters raises a ValidationError."""
+    long_model = "a" * 101
+    with pytest.raises(ValidationError) as excinfo:
+        CreateConversationRequest(chairman_model=long_model)
+    assert "String should have at most 100 characters" in str(excinfo.value)
