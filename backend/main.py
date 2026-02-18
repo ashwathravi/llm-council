@@ -59,7 +59,7 @@ class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
     framework: str = "standard"
     council_models: List[str] = Field(default=[], max_length=10)
-    chairman_model: Optional[str] = None
+    chairman_model: Optional[str] = Field(None, max_length=100)
 
     @field_validator("framework")
     @classmethod
@@ -82,7 +82,7 @@ class CreateConversationRequest(BaseModel):
 
 class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
-    content: str
+    content: str = Field(..., max_length=50000)
 
 
 class ConversationMetadata(BaseModel):
