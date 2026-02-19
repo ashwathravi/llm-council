@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List, Optional, Any, Dict
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, DateTime, JSON, text, Integer, Text
+from sqlalchemy import String, DateTime, JSON, text, Integer, Text, Index
 from .config import DATABASE_URL
 
 # --- Database Setup ---
@@ -31,6 +31,10 @@ class ConversationModel(Base):
     
     # Origin tracking
     origin: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    __table_args__ = (
+        Index("idx_user_created_at", "user_id", "created_at"),
+    )
 
 class DocumentModel(Base):
     __tablename__ = "documents"
