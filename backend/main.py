@@ -234,7 +234,8 @@ async def list_models(user_id: str = Depends(auth.get_current_user_id)):
         return models
     except Exception as e:
         print(f"Error fetching models: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Security: Do not leak internal error details to client
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/api/status")
 async def get_status():
@@ -692,7 +693,8 @@ async def send_message_stream(
             import traceback
             traceback.print_exc()
             print(f"Streaming error: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+            # Security: Do not leak internal error details to client
+            yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred.'})}\n\n"
 
     return StreamingResponse(
         event_generator(),

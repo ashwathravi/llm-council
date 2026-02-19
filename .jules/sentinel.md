@@ -12,3 +12,8 @@
 **Vulnerability:** The backend database connection logic explicitly disabled hostname checking and certificate verification (`ssl.CERT_NONE`) even when `sslmode=verify-full` was requested.
 **Learning:** Checking for a security flag (like `verify-full`) is not enough; the implementation must actually enforce the security checks. Legacy code or "quick fixes" for local dev/self-signed certs can silently undermine security in production if they override strict modes.
 **Prevention:** Use a dedicated helper function (like `configure_ssl_context`) to map configuration flags to explicit security settings. Ensure "strict" modes like `verify-full` use secure defaults (`ssl.create_default_context()`).
+
+## 2024-05-27 - Information Leakage in Error Responses
+**Vulnerability:** The backend API leaked internal exception details (including potential secrets or stack traces) directly to the client in `list_models` and `send_message_stream` endpoints.
+**Learning:** Catch-all exception handlers that return `str(e)` to the client are a common source of information leakage. While convenient for debugging, they expose internal state and potential vulnerabilities to attackers.
+**Prevention:** Implement a global exception handler or specific try/except blocks that log the detailed error internally but return a generic "Internal Server Error" message to the client.
