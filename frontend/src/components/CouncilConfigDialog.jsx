@@ -157,6 +157,7 @@ const CouncilConfigDialog = ({
             <Switch
               checked={isActive}
               onCheckedChange={() => toggleModel(model.id)}
+              aria-label={`Select ${model.name}`}
             />
             <div className="min-w-0">
               <div className="text-sm font-medium flex items-center gap-2">
@@ -180,6 +181,7 @@ const CouncilConfigDialog = ({
                 className="h-7 w-7"
                 onClick={() => toggleFavorite(model.id)}
                 title={isFavorite ? 'Remove from favorites' : 'Mark as favorite'}
+                aria-label={isFavorite ? `Remove ${model.name} from favorites` : `Mark ${model.name} as favorite`}
               >
                 <Star className={cn('h-4 w-4', isFavorite ? 'text-amber-500 fill-amber-500' : 'text-muted-foreground')} />
               </Button>
@@ -194,6 +196,7 @@ const CouncilConfigDialog = ({
                 setChairmanModel(model.id);
                 setActivePresetId(null);
               }}
+              aria-label={isChairman ? `${model.name} is Chairman` : `Set ${model.name} as Chairman`}
             >
               {isChairman ? 'Chairman' : 'Set Chair'}
             </Button>
