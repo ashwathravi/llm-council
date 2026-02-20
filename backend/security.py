@@ -9,6 +9,37 @@ from typing import Callable, Coroutine, Any
 # Map: scope -> IP -> list of timestamps
 _limiter_store = defaultdict(lambda: defaultdict(list))
 
+# Maximum number of IPs to track per scope to prevent memory exhaustion
+MAX_STORE_SIZE = 10000
+
+def _cleanup_stale_entries(scope: str, time_window: int):
+    """
+    Remove IPs from the store that have no requests within the time window.
+    """
+    current_time = time.time()
+    store = _limiter_store[scope]
+
+    # Identify keys to remove
+    to_remove = []
+    for ip, history in list(store.items()):
+        # Remove expired timestamps
+        while history and history[0] < current_time - time_window:
+            history.pop(0)
+
+        # If history is empty, mark for removal
+        if not history:
+            to_remove.append(ip)
+
+    # Remove empty keys
+    for ip in to_remove:
+        del store[ip]
+
+    # Emergency cleanup if still over capacity
+    if len(store) > MAX_STORE_SIZE:
+        # Clear the entire store to prevent OOM
+        # This resets limits for active users, but ensures availability
+        store.clear()
+
 def rate_limiter(requests_limit: int = 5, time_window: int = 60, scope: str = "default") -> Callable[[Request], Coroutine[Any, Any, bool]]:
     """
     Dependency factory for rate limiting.
@@ -33,10 +64,15 @@ def rate_limiter(requests_limit: int = 5, time_window: int = 60, scope: str = "d
 
         current_time = time.time()
 
+        # Check store size and cleanup if necessary
+        # We check before inserting to prevent growth beyond limit
+        if len(_limiter_store[scope]) >= MAX_STORE_SIZE:
+             _cleanup_stale_entries(scope, time_window)
+
         # Get history for this scope and IP
         history = _limiter_store[scope][client_ip]
 
-        # Filter out old requests (cleanup)
+        # Filter out old requests (cleanup for active user)
         # We modify the list in place
         while history and history[0] < current_time - time_window:
             history.pop(0)
