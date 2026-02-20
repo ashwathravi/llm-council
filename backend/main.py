@@ -30,7 +30,11 @@ from . import export
 async def lifespan(app: FastAPI):
     # Initialize DB (create tables) on startup
     await init_db()
+    # Initialize shared HTTP client
+    await openrouter.init_client()
     yield
+    # Close shared HTTP client
+    await openrouter.close_client()
 
 app = FastAPI(title="LLM Council API", lifespan=lifespan)
 
