@@ -25,3 +25,7 @@
 ## 2024-05-25 - Sidebar Tooltip Consistency
 **Learning:** Collapsible sidebars often hide text labels, relying on icons. While `aria-label` provides accessibility, sighted users may struggle to recall icon meanings without visible text.
 **Action:** Implemented tooltips that appear only when the sidebar is collapsed (for text-hidden items) or always (for icon-only items). Used `TooltipProvider` to manage delay and ensure consistent behavior across all sidebar actions.
+
+## 2024-05-26 - Switch Label Accessibility
+**Learning:** Toggle switches (like `Switch` components) often lack explicit text labels when used in a list context, relying on adjacent text that isn't programmatically associated.
+**Action:** Added dynamic `aria-label` attributes to `Switch` components (e.g., `aria-label="Select [Model Name]"`) to ensure screen readers announce the purpose of the control, even without an explicit `<label>` element. Applied the same pattern to associated action buttons (Favorites, Chairman) to disambiguate controls in a repetitive list.
