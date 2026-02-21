@@ -29,3 +29,7 @@
 ## 2024-05-26 - Switch Label Accessibility
 **Learning:** Toggle switches (like `Switch` components) often lack explicit text labels when used in a list context, relying on adjacent text that isn't programmatically associated.
 **Action:** Added dynamic `aria-label` attributes to `Switch` components (e.g., `aria-label="Select [Model Name]"`) to ensure screen readers announce the purpose of the control, even without an explicit `<label>` element. Applied the same pattern to associated action buttons (Favorites, Chairman) to disambiguate controls in a repetitive list.
+
+## 2024-03-24 - Search in Long Lists
+**Learning:** Users with many options (e.g., >10 models) struggle to find specific items in scrollable lists.
+**Action:** Implemented a real-time search filter with `aria-label` for accessibility in the configuration dialog. When presenting long lists, always include a filter input to improve efficiency and keyboard accessibility.
