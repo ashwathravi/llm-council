@@ -17,3 +17,8 @@
 **Vulnerability:** The backend API leaked internal exception details (including potential secrets or stack traces) directly to the client in `list_models` and `send_message_stream` endpoints.
 **Learning:** Catch-all exception handlers that return `str(e)` to the client are a common source of information leakage. While convenient for debugging, they expose internal state and potential vulnerabilities to attackers.
 **Prevention:** Implement a global exception handler or specific try/except blocks that log the detailed error internally but return a generic "Internal Server Error" message to the client.
+
+## 2024-05-28 - Rate Limit Bypass via Store Flooding
+**Vulnerability:** The in-memory rate limiter's cleanup strategy was to `clear()` the entire store when full, allowing attackers to reset everyone's rate limits by flooding the store with unique IPs.
+**Learning:** "Fail Open" error handling (like clearing security state on error/full) can be weaponized to bypass security controls. Simple in-memory caches need bounded eviction strategies.
+**Prevention:** Implement robust eviction policies (like FIFO/LRU) that degrade gracefully (e.g., evict oldest entries) instead of resetting global state.
