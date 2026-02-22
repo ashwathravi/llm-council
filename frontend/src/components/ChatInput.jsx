@@ -1,6 +1,7 @@
 
 import React, { memo, useState, useEffect, useRef } from 'react';
 import { api } from '../api';
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -176,15 +177,30 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
-                  onClick={handleUploadClick}
-                  disabled={!conversationId || uploading}
+                  className={cn(
+                    "h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground",
+                    (!conversationId || uploading) && "opacity-50 cursor-not-allowed"
+                  )}
+                  onClick={(e) => {
+                    if (!conversationId || uploading) {
+                      e.preventDefault();
+                      return;
+                    }
+                    handleUploadClick();
+                  }}
+                  aria-disabled={!conversationId || uploading}
                 >
                   <Paperclip className="h-4 w-4" />
                   <span className="sr-only">Attach PDF</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Attach PDF (Max 5)</TooltipContent>
+              <TooltipContent>
+                {!conversationId
+                  ? "Start a conversation to attach files"
+                  : uploading
+                    ? "Uploading..."
+                    : "Attach PDF (Max 5)"}
+              </TooltipContent>
             </Tooltip>
           </TooltipProvider>
 
@@ -205,6 +221,7 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Message the Council..."
+            aria-label="Message input"
             spellCheck={false}
             className="min-h-[44px] w-full resize-none border-0 bg-transparent py-3 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
             disabled={isLoading}
