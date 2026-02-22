@@ -35,10 +35,12 @@ def _cleanup_stale_entries(scope: str, time_window: int):
         del store[ip]
 
     # Emergency cleanup if still over capacity
-    if len(store) > MAX_STORE_SIZE:
-        # Clear the entire store to prevent OOM
-        # This resets limits for active users, but ensures availability
-        store.clear()
+    # Evict oldest entries until we are back under the limit
+    # This prevents a total reset of all rate limits
+    while len(store) > MAX_STORE_SIZE:
+        # Remove the oldest inserted item (FIFO eviction)
+        # In Python 3.7+, dicts preserve insertion order, so next(iter(store)) is the first key
+        del store[next(iter(store))]
 
 def rate_limiter(requests_limit: int = 5, time_window: int = 60, scope: str = "default") -> Callable[[Request], Coroutine[Any, Any, bool]]:
     """
