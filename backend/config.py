@@ -98,6 +98,20 @@ elif os.getenv("REPLIT_ID") or os.getenv("REPLIT_SLUG"):
 else:
     APP_ORIGIN = "local"
 
+# CORS Configuration
+# Comma-separated list of allowed origins.
+# If not set, defaults to local development origins.
+_cors_origins_raw = os.getenv("CORS_ALLOWED_ORIGINS")
+if _cors_origins_raw:
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors_origins_raw.split(",") if origin.strip()]
+else:
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000"
+    ]
+
 # Security: Authorization Allowlist
 # If set, only users in ALLOWED_USERS or domains in ALLOWED_DOMAINS can log in.
 # If both are empty (default), all users with a valid Google account can log in.
