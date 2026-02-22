@@ -59,9 +59,8 @@ def test_config_parsing():
         # Reload config to pick up new env var
         import backend.config
         importlib.reload(backend.config)
-        assert "http://test1.com" in backend.config.CORS_ALLOWED_ORIGINS
-        assert "http://test2.com" in backend.config.CORS_ALLOWED_ORIGINS
-        assert len(backend.config.CORS_ALLOWED_ORIGINS) == 2
+        # Using exact equality to satisfy CodeQL's origin validation checks
+        assert backend.config.CORS_ALLOWED_ORIGINS == ["http://test1.com", "http://test2.com"]
 
     # Reset to default (or whatever is currently in env)
     importlib.reload(backend.config)
