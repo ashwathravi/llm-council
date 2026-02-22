@@ -61,7 +61,6 @@ const Sidebar = memo(({
 
   const handleNewChat = () => {
     // Pass selected models to parent
-    console.log("Sidebar: handleNewChat triggered", { selectedFramework, councilModels, chairmanModel });
     onNewConversation(selectedFramework, councilModels, chairmanModel);
   };
 
