@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -7,11 +7,58 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Trophy, Crown, BrainCircuit } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const MarkdownContent = ({ content }) => (
+// ⚡ Bolt: Memoize markdown rendering to prevent re-parsing on every parent re-render
+const MarkdownContent = memo(({ content }) => (
   <div className="prose prose-sm dark:prose-invert max-w-none break-words">
     <ReactMarkdown>{content}</ReactMarkdown>
   </div>
-);
+));
+
+MarkdownContent.displayName = 'MarkdownContent';
+
+// ⚡ Bolt: Extract and memoize Rankings tab content to prevent re-renders when Stage 3 is streaming
+const RankingsTabContent = memo(({ aggregateRankings }) => (
+  <div className="p-6">
+    <h3 className="font-semibold mb-4">Council Rankings</h3>
+    <div className="space-y-4">
+      {aggregateRankings.length > 0 ? (
+        aggregateRankings.map((rank, idx) => (
+          <div key={idx} className="flex items-center justify-between p-3 border rounded-lg bg-card/50">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted font-bold">
+                {idx + 1}
+              </div>
+              <div>
+                <div className="font-medium">{rank.model}</div>
+                <div className="text-xs text-muted-foreground">{rank.rankings_count} evaluations</div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="font-mono font-bold text-lg">{rank.average_rank}</div>
+              <div className="text-xs text-muted-foreground">Avg Rank</div>
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="text-muted-foreground italic">No rankings available for this session type.</div>
+      )}
+    </div>
+  </div>
+));
+
+RankingsTabContent.displayName = 'RankingsTabContent';
+
+// ⚡ Bolt: Extract and memoize Stage 1 tab content to keep individual responses stable during updates
+const Stage1TabContent = memo(({ res }) => (
+  <div className="p-6">
+    <div className="flex items-center gap-2 mb-4">
+      <Badge variant="outline">{res.model}</Badge>
+    </div>
+    <MarkdownContent content={res.response} />
+  </div>
+));
+
+Stage1TabContent.displayName = 'Stage1TabContent';
 
 const formatModelList = (models) => {
   if (!Array.isArray(models) || models.length === 0) {
@@ -152,42 +199,12 @@ const CouncilMessageBlock = ({ message }) => {
           </TabsContent>
 
           <TabsContent value="rankings" className="m-0 focus-visible:ring-0">
-            <div className="p-6">
-              <h3 className="font-semibold mb-4">Council Rankings</h3>
-              <div className="space-y-4">
-                {aggregateRankings.length > 0 ? (
-                  aggregateRankings.map((rank, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 border rounded-lg bg-card/50">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted font-bold">
-                          {idx + 1}
-                        </div>
-                        <div>
-                          <div className="font-medium">{rank.model}</div>
-                          <div className="text-xs text-muted-foreground">{rank.rankings_count} evaluations</div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-mono font-bold text-lg">{rank.average_rank}</div>
-                        <div className="text-xs text-muted-foreground">Avg Rank</div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-muted-foreground italic">No rankings available for this session type.</div>
-                )}
-              </div>
-            </div>
+            <RankingsTabContent aggregateRankings={aggregateRankings} />
           </TabsContent>
 
           {hasStage1 && stage1.map((res, idx) => (
             <TabsContent key={idx} value={`model-${idx}`} className="m-0 focus-visible:ring-0">
-              <div className="p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <Badge variant="outline">{res.model}</Badge>
-                </div>
-                <MarkdownContent content={res.response} />
-              </div>
+              <Stage1TabContent res={res} />
             </TabsContent>
           ))}
         </div>
