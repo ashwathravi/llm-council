@@ -50,6 +50,12 @@ class DocumentModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    __table_args__ = (
+        # Optimization: Composite index for list queries that filter by conversation/user and sort by created_at.
+        # Avoids Seq Scan + Sort (O(N log N)) by enabling Index Scan Backward (O(N)).
+        Index("idx_docs_conv_user_created", "conversation_id", "user_id", "created_at"),
+    )
+
 class DocumentChunkModel(Base):
     __tablename__ = "document_chunks"
 
