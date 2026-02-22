@@ -1,7 +1,6 @@
 
 import pytest
 import os
-import json
 import shutil
 from backend import storage, config
 
@@ -9,46 +8,29 @@ from backend import storage, config
 TEST_DATA_DIR = "tests/data_temp"
 
 @pytest.fixture(autouse=True)
-def setup_teardown_storage():
+def setup_teardown_storage(monkeypatch):
     """Setup and teardown test data directory."""
-    # Setup
-    original_data_dir = config.DATA_DIR
-    original_documents_dir = getattr(config, "DOCUMENTS_DIR", None)
-    original_db_url = config.DATABASE_URL
-    
     # Force file mode
-    config.DATA_DIR = TEST_DATA_DIR
-    config.DOCUMENTS_DIR = os.path.join(TEST_DATA_DIR, "documents")
-    config.DATABASE_URL = "" 
-    # Note: modifying config.DATABASE_URL at runtime might not switch `storage.py` logic 
-    # if `storage.py` imported `DATABASE_URL` directly using `from .config import DATABASE_URL`.
-    # Let's check storage.py imports.
-    # It does: `from .config import DATA_DIR, DATABASE_URL, APP_ORIGIN`
-    # So we need to patch `backend.storage.DATABASE_URL` directly.
+    monkeypatch.setenv("DATABASE_URL", "")
+
+    # Use monkeypatch.setattr for clean state management
+    monkeypatch.setattr(config, "DATA_DIR", TEST_DATA_DIR)
+    monkeypatch.setattr(config, "DOCUMENTS_DIR", os.path.join(TEST_DATA_DIR, "documents"))
+    monkeypatch.setattr(config, "DATABASE_URL", "")
     
-    storage.DATA_DIR = TEST_DATA_DIR
-    storage.DOCUMENTS_DIR = config.DOCUMENTS_DIR
-    storage.DATABASE_URL = ""
+    monkeypatch.setattr(storage, "DATA_DIR", TEST_DATA_DIR)
+    monkeypatch.setattr(storage, "DOCUMENTS_DIR", os.path.join(TEST_DATA_DIR, "documents"))
     
     if os.path.exists(TEST_DATA_DIR):
         shutil.rmtree(TEST_DATA_DIR)
     os.makedirs(TEST_DATA_DIR)
+    os.makedirs(os.path.join(TEST_DATA_DIR, "documents"))
     
     yield
     
     # Teardown
     if os.path.exists(TEST_DATA_DIR):
         shutil.rmtree(TEST_DATA_DIR)
-    
-    # Restore (optional if process dies anyway, but good practice)
-    config.DATA_DIR = original_data_dir
-    if original_documents_dir is not None:
-        config.DOCUMENTS_DIR = original_documents_dir
-    config.DATABASE_URL = original_db_url
-    storage.DATA_DIR = original_data_dir
-    if original_documents_dir is not None:
-        storage.DOCUMENTS_DIR = original_documents_dir
-    storage.DATABASE_URL = original_db_url
 
 @pytest.mark.asyncio
 async def test_create_and_get_conversation_file():
