@@ -97,3 +97,16 @@ elif os.getenv("REPLIT_ID") or os.getenv("REPLIT_SLUG"):
     APP_ORIGIN = "replit"
 else:
     APP_ORIGIN = "local"
+
+# CORS Configuration
+_CORS_ORIGINS_DEFAULT = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+]
+_cors_origins_raw = os.getenv("CORS_ALLOWED_ORIGINS")
+if _cors_origins_raw:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
+else:
+    CORS_ALLOWED_ORIGINS = _CORS_ORIGINS_DEFAULT
