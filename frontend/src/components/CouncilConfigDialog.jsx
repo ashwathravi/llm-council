@@ -6,7 +6,8 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, Crown, Save, Settings2, Star, Users } from "lucide-react";
+import { Check, Crown, Save, Settings2, Star, Users, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 const COUNCIL_TYPES = [
@@ -72,6 +73,7 @@ const CouncilConfigDialog = ({
 }) => {
   const [activePresetId, setActivePresetId] = useState(null);
   const [memberView, setMemberView] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const favoriteModelSet = useMemo(() => new Set(favoriteModels), [favoriteModels]);
 
@@ -79,6 +81,24 @@ const CouncilConfigDialog = ({
     () => models.filter((model) => favoriteModelSet.has(model.id)),
     [models, favoriteModelSet]
   );
+
+  const filteredModels = useMemo(() => {
+    if (!searchQuery) return models;
+    const lowerQuery = searchQuery.toLowerCase();
+    return models.filter(m =>
+      m.name.toLowerCase().includes(lowerQuery) ||
+      m.id.toLowerCase().includes(lowerQuery)
+    );
+  }, [models, searchQuery]);
+
+  const filteredFavoriteModels = useMemo(() => {
+    if (!searchQuery) return favoriteModelOptions;
+    const lowerQuery = searchQuery.toLowerCase();
+    return favoriteModelOptions.filter(m =>
+      m.name.toLowerCase().includes(lowerQuery) ||
+      m.id.toLowerCase().includes(lowerQuery)
+    );
+  }, [favoriteModelOptions, searchQuery]);
 
   const selectedChairman = useMemo(
     () => models.find((model) => model.id === chairmanModel) || null,
@@ -316,6 +336,17 @@ const CouncilConfigDialog = ({
               <div className="text-xs text-muted-foreground">{councilModels.length}/{maxCouncilModels} Active</div>
             </div>
 
+            <div className="relative">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search models..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8"
+                aria-label="Search models"
+              />
+            </div>
+
             <Tabs value={memberView} onValueChange={setMemberView} className="space-y-2">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="all">All Models</TabsTrigger>
@@ -324,13 +355,13 @@ const CouncilConfigDialog = ({
 
               <TabsContent value="all" className="mt-0">
                 <div className="rounded-md border bg-card">
-                  {renderModelRows(models, true)}
+                  {renderModelRows(filteredModels, true)}
                 </div>
               </TabsContent>
 
               <TabsContent value="favorites" className="mt-0">
                 <div className="rounded-md border bg-card">
-                  {renderModelRows(favoriteModelOptions, false)}
+                  {renderModelRows(filteredFavoriteModels, false)}
                 </div>
               </TabsContent>
             </Tabs>
