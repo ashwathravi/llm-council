@@ -363,28 +363,27 @@ const CouncilSidebar = memo(({
                   <TooltipTrigger asChild>
                     <div
                       className={cn(
-                        'group flex items-center rounded-md px-2 py-2 text-sm hover:bg-accent/50 relative',
+                        'group flex items-center rounded-md px-2 py-2 text-sm hover:bg-accent/50',
                         currentConversationId === conversation.id ? 'bg-accent text-accent-foreground font-medium' : '',
                         isCollapsed ? 'justify-center' : 'justify-between'
                       )}
                     >
                       <button
                         className={cn(
-                          "flex items-center gap-2 truncate w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm",
-                          !isCollapsed && "pr-6"
+                          "flex min-w-0 flex-1 items-center gap-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
                         )}
                         onClick={() => onSelectConversation(conversation.id)}
                         title={conversation.title}
                       >
                         <History className="h-4 w-4 text-muted-foreground shrink-0" />
-                        {!isCollapsed && <span className="truncate">{conversation.title}</span>}
+                        {!isCollapsed && <span className="truncate flex-1">{conversation.title}</span>}
                       </button>
 
                       {!isCollapsed && (
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6 absolute right-1 opacity-50 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
+                          className="ml-1 h-7 w-7 shrink-0 text-muted-foreground/80 hover:bg-destructive/10 hover:text-destructive opacity-70 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                           onClick={(event) => handleDelete(event, conversation.id)}
                           aria-label={`Delete conversation: ${conversation.title}`}
                           title="Delete conversation"

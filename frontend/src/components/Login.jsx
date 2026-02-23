@@ -6,24 +6,15 @@ import { api } from '../api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { BrainCircuit } from "lucide-react";
 
-const BUILD_GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
-
 export default function Login() {
     const { handleLoginSuccess } = useAuth();
     const [error, setError] = React.useState('');
     const [isLoading, setIsLoading] = React.useState(false);
-    const [googleClientId, setGoogleClientId] = React.useState(BUILD_GOOGLE_CLIENT_ID);
-    const [isConfigLoading, setIsConfigLoading] = React.useState(!BUILD_GOOGLE_CLIENT_ID);
+    const [googleClientId, setGoogleClientId] = React.useState('');
+    const [isConfigLoading, setIsConfigLoading] = React.useState(true);
 
     React.useEffect(() => {
         let isMounted = true;
-
-        if (BUILD_GOOGLE_CLIENT_ID) {
-            setIsConfigLoading(false);
-            return () => {
-                isMounted = false;
-            };
-        }
 
         const loadAuthConfig = async () => {
             try {
@@ -105,7 +96,7 @@ export default function Login() {
                         </div>
                     </CardHeader>
                     <CardContent className="text-center text-sm text-muted-foreground">
-                        Please set GOOGLE_CLIENT_ID (backend) or VITE_GOOGLE_CLIENT_ID (frontend build-time) in your environment variables.
+                        Please set GOOGLE_CLIENT_ID in your environment variables.
                     </CardContent>
                 </Card>
             </div>

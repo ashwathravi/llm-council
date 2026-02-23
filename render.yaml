@@ -20,8 +20,6 @@ services:
         sync: false # User must provide this
       - key: GOOGLE_CLIENT_ID
         sync: false # User must provide this (Google OAuth Client ID)
-      - key: VITE_GOOGLE_CLIENT_ID
-        sync: false # Same value as GOOGLE_CLIENT_ID (required at frontend build time)
       - key: DATABASE_URL
         sync: false # User must provide this (e.g. Supabase connection string)
       - key: JWT_SECRET_KEY

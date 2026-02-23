@@ -18,7 +18,7 @@ const MessageItem = memo(({ msg }) => {
           <div className="bg-slate-900 text-slate-50 dark:bg-slate-800 dark:text-slate-100 px-4 py-3 rounded-2xl rounded-tr-sm">
             <MarkdownRenderer
               content={msg.content}
-              className="[&_*]:text-inherit"
+              className="prose-invert prose-p:my-0 prose-headings:my-0 [&_*]:text-inherit"
             />
           </div>
         </div>
