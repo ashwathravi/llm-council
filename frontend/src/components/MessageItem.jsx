@@ -1,6 +1,6 @@
 
 import React, { memo } from 'react';
-import ReactMarkdown from 'react-markdown';
+import MarkdownRenderer from './MarkdownRenderer';
 import CouncilMessageBlock from './CouncilMessageBlock';
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { User } from "lucide-react";
@@ -16,9 +16,10 @@ const MessageItem = memo(({ msg }) => {
             </AvatarFallback>
           </Avatar>
           <div className="bg-slate-900 text-slate-50 dark:bg-slate-800 dark:text-slate-100 px-4 py-3 rounded-2xl rounded-tr-sm">
-            <div className="prose prose-sm max-w-none break-words [&_*]:text-inherit">
-              <ReactMarkdown>{msg.content}</ReactMarkdown>
-            </div>
+            <MarkdownRenderer
+              content={msg.content}
+              className="[&_*]:text-inherit"
+            />
           </div>
         </div>
       </div>
