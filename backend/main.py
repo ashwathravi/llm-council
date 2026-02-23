@@ -46,7 +46,21 @@ async def add_security_headers(request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    # Content-Security-Policy is complex for existing React apps, omitting for now to avoid breakage
+
+    # Content-Security-Policy
+    # Allow scripts from self, inline (needed for React/Vite), and Google Auth
+    # Allow images from self, data URIs, and Google user content (avatars)
+    csp = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https://*.googleusercontent.com; "
+        "connect-src 'self' https://accounts.google.com; "
+        "frame-src 'self' https://accounts.google.com; "
+        "object-src 'none'; "
+        "base-uri 'self';"
+    )
+    response.headers["Content-Security-Policy"] = csp
     return response
 
 # Enable CORS
@@ -211,19 +225,6 @@ async def export_conversation(
 async def list_conversations(user_id: str = Depends(auth.get_current_user_id)):
     """List conversations for the current user."""
     return await storage.list_conversations(user_id)
-
-
-@app.delete("/api/conversations/{conversation_id}")
-async def delete_conversation(conversation_id: str, user_id: str = Depends(auth.get_current_user_id)):
-    """Delete a conversation."""
-    try:
-        await storage.delete_conversation(conversation_id, user_id)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        print(f"Error deleting conversation: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.delete("/api/conversations/{conversation_id}")
