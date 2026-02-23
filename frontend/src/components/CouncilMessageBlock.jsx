@@ -1,6 +1,6 @@
 
 import { useMemo, useState, memo } from 'react';
-import ReactMarkdown from 'react-markdown';
+import MarkdownRenderer from './MarkdownRenderer';
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -9,9 +9,7 @@ import { cn } from "@/lib/utils";
 
 // ⚡ Bolt: Memoize markdown rendering to prevent re-parsing on every parent re-render
 const MarkdownContent = memo(({ content }) => (
-  <div className="prose prose-sm dark:prose-invert max-w-none break-words">
-    <ReactMarkdown>{content}</ReactMarkdown>
-  </div>
+  <MarkdownRenderer content={content} />
 ));
 
 MarkdownContent.displayName = 'MarkdownContent';
