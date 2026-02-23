@@ -6,12 +6,47 @@ import { api } from '../api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { BrainCircuit } from "lucide-react";
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const BUILD_GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 
 export default function Login() {
     const { handleLoginSuccess } = useAuth();
     const [error, setError] = React.useState('');
     const [isLoading, setIsLoading] = React.useState(false);
+    const [googleClientId, setGoogleClientId] = React.useState(BUILD_GOOGLE_CLIENT_ID);
+    const [isConfigLoading, setIsConfigLoading] = React.useState(!BUILD_GOOGLE_CLIENT_ID);
+
+    React.useEffect(() => {
+        let isMounted = true;
+
+        if (BUILD_GOOGLE_CLIENT_ID) {
+            setIsConfigLoading(false);
+            return () => {
+                isMounted = false;
+            };
+        }
+
+        const loadAuthConfig = async () => {
+            try {
+                const data = await api.getAuthConfig();
+                const runtimeClientId = (data?.google_client_id || '').trim();
+                if (isMounted && runtimeClientId) {
+                    setGoogleClientId(runtimeClientId);
+                }
+            } catch (err) {
+                console.error('Failed to load auth config:', err);
+            } finally {
+                if (isMounted) {
+                    setIsConfigLoading(false);
+                }
+            }
+        };
+
+        loadAuthConfig();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     const onSuccess = async (credentialResponse) => {
         try {
@@ -34,7 +69,27 @@ export default function Login() {
         }
     };
 
-    if (!GOOGLE_CLIENT_ID) {
+    if (isConfigLoading) {
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+                <Card className="w-full max-w-md shadow-lg border-primary/20 bg-card/95 backdrop-blur">
+                    <CardHeader className="text-center space-y-4 pb-8">
+                        <div className="mx-auto bg-primary/10 p-4 rounded-full w-fit">
+                            <BrainCircuit className="h-10 w-10 text-primary" />
+                        </div>
+                        <div className="space-y-2">
+                            <CardTitle className="text-2xl font-bold">Loading</CardTitle>
+                            <CardDescription>
+                                Fetching sign-in configuration...
+                            </CardDescription>
+                        </div>
+                    </CardHeader>
+                </Card>
+            </div>
+        );
+    }
+
+    if (!googleClientId) {
         return (
             <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
                 <Card className="w-full max-w-md shadow-lg border-destructive/20 bg-card/95 backdrop-blur">
@@ -50,7 +105,7 @@ export default function Login() {
                         </div>
                     </CardHeader>
                     <CardContent className="text-center text-sm text-muted-foreground">
-                        Please set VITE_GOOGLE_CLIENT_ID in your environment variables.
+                        Please set GOOGLE_CLIENT_ID (backend) or VITE_GOOGLE_CLIENT_ID (frontend build-time) in your environment variables.
                     </CardContent>
                 </Card>
             </div>
@@ -58,7 +113,7 @@ export default function Login() {
     }
 
     return (
-        <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+        <GoogleOAuthProvider clientId={googleClientId}>
             <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
                 <Card className="w-full max-w-md shadow-lg border-primary/20 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60">
                     <CardHeader className="text-center space-y-4 pb-8">

@@ -113,6 +113,9 @@ class LoginResponse(BaseModel):
     token_type: str
     user: Dict[str, Any]
 
+class AuthConfigResponse(BaseModel):
+    google_client_id: Optional[str] = None
+
 class DocumentMetadata(BaseModel):
     id: str
     conversation_id: str
@@ -167,6 +170,12 @@ async def login(request: auth.GoogleLoginRequest):
             "picture": google_user.get("picture")
         }
     }
+
+
+@app.get("/api/auth/config", response_model=AuthConfigResponse)
+async def get_auth_config():
+    """Public auth config needed by the login UI."""
+    return {"google_client_id": auth.GOOGLE_CLIENT_ID}
 
 
 @app.get("/api/conversations/{conversation_id}/export")
