@@ -89,7 +89,10 @@ The easiest way to deploy with the database is using **Blueprints**.
 5. **Configure**:
     - Render will read the `render.yaml` file.
     - It will show a formatted list of resources it will create (Web Service + Database).
-    - **Env Vars**: You will be prompted to enter your `OPENROUTER_API_KEY`. Paste it in.
+    - **Env Vars**: You will be prompted to enter:
+      - `OPENROUTER_API_KEY`
+      - `GOOGLE_CLIENT_ID` (Google OAuth Web Client ID)
+      - `VITE_GOOGLE_CLIENT_ID` (set this to the same value as `GOOGLE_CLIENT_ID`)
 6. **Deploy**:
     - Click **Apply**.
     - Render will spin up the PostgreSQL database first, then the Web Service.
