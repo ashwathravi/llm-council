@@ -69,7 +69,7 @@ const sameConfig = (left, right) => {
 
 const CouncilSidebar = memo(({
   conversations,
-  currentConversation,
+  activeConversationMetadata,
   currentConversationId,
   onSelectConversation,
   onNewConversation,
@@ -213,7 +213,7 @@ const CouncilSidebar = memo(({
   };
 
   const openReadOnlyDialog = () => {
-    if (!currentConversation) return;
+    if (!activeConversationMetadata) return;
     setConfigDialogMode('read_only');
     setShowConfigDialog(true);
   };
@@ -250,18 +250,18 @@ const CouncilSidebar = memo(({
     }
   };
 
-  const activeConversationFramework = currentConversation?.framework;
+  const activeConversationFramework = activeConversationMetadata?.framework;
   const activeFrameworkLabel = activeConversationFramework
     ? (FRAMEWORK_LABELS[activeConversationFramework] || activeConversationFramework)
     : 'No active conversation';
-  const activeConversationModels = Array.isArray(currentConversation?.council_models)
-    ? currentConversation.council_models
+  const activeConversationModels = Array.isArray(activeConversationMetadata?.council_models)
+    ? activeConversationMetadata.council_models
     : [];
-  const activeConversationChairman = currentConversation?.chairman_model || '';
+  const activeConversationChairman = activeConversationMetadata?.chairman_model || '';
   const activeChairmanName = activeConversationChairman ? getModelName(activeConversationChairman) : 'Auto';
 
   return (
-    <>
+    <TooltipProvider delayDuration={0}>
       <div
         className={cn(
           'fixed inset-y-0 left-0 z-50 transform border-r bg-background transition-all duration-300 ease-in-out flex flex-col',
@@ -282,56 +282,73 @@ const CouncilSidebar = memo(({
               </div>
             </div>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className="h-8 w-8 ml-auto"
-            title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-          >
-            {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                className="h-8 w-8 ml-auto"
+                aria-label={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+              >
+                {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">{isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}</TooltipContent>
+          </Tooltip>
         </div>
 
         <div className="p-3">
-          <Button
-            className={cn('w-full justify-start', isCollapsed && 'justify-center px-0')}
-            onClick={() => openCreateConfigDialog('new_config')}
-            variant={isCollapsed ? 'outline' : 'default'}
-          >
-            <Plus className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
-            {!isCollapsed && 'New Session'}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                className={cn('w-full justify-start', isCollapsed && 'justify-center px-0')}
+                onClick={() => openCreateConfigDialog('new_config')}
+                variant={isCollapsed ? 'outline' : 'default'}
+                aria-label="Start New Session"
+              >
+                <Plus className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
+                {!isCollapsed && 'New Session'}
+              </Button>
+            </TooltipTrigger>
+            {isCollapsed && <TooltipContent side="right">New Session</TooltipContent>}
+          </Tooltip>
         </div>
 
         <Separator />
 
         <ScrollArea className="flex-1">
-          <div className="p-3 space-y-6">
+          <div className="p-3 pr-5 space-y-6">
             <div className="space-y-2">
               {!isCollapsed && <h3 className="text-xs font-semibold text-muted-foreground px-2">Council Members</h3>}
-              <Button
-                variant="outline"
-                className={cn(
-                  'w-full justify-start relative',
-                  isCollapsed ? 'justify-center px-0 h-10' : 'h-auto py-2'
-                )}
-                onClick={openReadOnlyDialog}
-                disabled={!currentConversation}
-              >
-                <Users className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
-                {!isCollapsed && (
-                  <div className="flex min-w-0 flex-1 flex-col items-start text-left text-xs">
-                    <span className="w-full truncate">Manage Council</span>
-                    <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
-                      {activeFrameworkLabel}
-                    </span>
-                    <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
-                      {activeConversationModels.length} Members • {activeChairmanName}
-                    </span>
-                  </div>
-                )}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      'w-full justify-start relative',
+                      isCollapsed ? 'justify-center px-0 h-10' : 'h-auto py-2'
+                    )}
+                    onClick={openReadOnlyDialog}
+                    disabled={!activeConversationMetadata}
+                    aria-label="Manage Council Configuration"
+                  >
+                    <Users className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
+                    {!isCollapsed && (
+                      <div className="flex min-w-0 flex-1 flex-col items-start text-left text-xs">
+                        <span className="w-full truncate">Manage Council</span>
+                        <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
+                          {activeFrameworkLabel}
+                        </span>
+                        <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
+                          {activeConversationModels.length} Members • {activeChairmanName}
+                        </span>
+                      </div>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                {isCollapsed && <TooltipContent side="right">Manage Council</TooltipContent>}
+              </Tooltip>
             </div>
 
             <div className="space-y-1">
@@ -342,56 +359,63 @@ const CouncilSidebar = memo(({
               )}
 
               {recentConversations.map((conversation) => (
-                <TooltipProvider key={conversation.id} delayDuration={0}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div
+                <Tooltip key={conversation.id}>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={cn(
+                        'group flex items-center rounded-md px-2 py-2 text-sm hover:bg-accent/50',
+                        currentConversationId === conversation.id ? 'bg-accent text-accent-foreground font-medium' : '',
+                        isCollapsed ? 'justify-center' : 'justify-between'
+                      )}
+                    >
+                      <button
                         className={cn(
-                          'group flex items-center rounded-md px-2 py-2 text-sm hover:bg-accent/50 cursor-pointer relative',
-                          currentConversationId === conversation.id ? 'bg-accent text-accent-foreground font-medium' : '',
-                          isCollapsed ? 'justify-center' : 'justify-between'
+                          "flex min-w-0 flex-1 items-center gap-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
                         )}
                         onClick={() => onSelectConversation(conversation.id)}
+                        title={conversation.title}
                       >
-                        {isCollapsed ? (
-                          <History className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <div className="flex items-center gap-2 truncate pr-6 w-full">
-                            <History className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <span className="truncate">{conversation.title}</span>
-                          </div>
-                        )}
+                        <History className="h-4 w-4 text-muted-foreground shrink-0" />
+                        {!isCollapsed && <span className="truncate flex-1">{conversation.title}</span>}
+                      </button>
 
-                        {!isCollapsed && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 absolute right-1 opacity-50 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
-                            onClick={(event) => handleDelete(event, conversation.id)}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
-                    </TooltipTrigger>
-                    {isCollapsed && <TooltipContent side="right">{conversation.title}</TooltipContent>}
-                  </Tooltip>
-                </TooltipProvider>
+                      {!isCollapsed && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="ml-1 mr-1 h-7 w-7 shrink-0 text-muted-foreground/90 hover:bg-destructive/10 hover:text-destructive opacity-80 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                          onClick={(event) => handleDelete(event, conversation.id)}
+                          aria-label={`Delete conversation: ${conversation.title}`}
+                          title="Delete conversation"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  {isCollapsed && <TooltipContent side="right">{conversation.title}</TooltipContent>}
+                </Tooltip>
               ))}
             </div>
           </div>
         </ScrollArea>
 
         <div className="p-3 border-t">
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn('w-full justify-start', isCollapsed && 'justify-center px-0')}
-            onClick={() => openCreateConfigDialog('settings')}
-          >
-            <Settings className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
-            {!isCollapsed && 'Settings'}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn('w-full justify-start', isCollapsed && 'justify-center px-0')}
+                onClick={() => openCreateConfigDialog('settings')}
+                aria-label="Open Settings"
+              >
+                <Settings className={cn('h-4 w-4', !isCollapsed && 'mr-2')} />
+                {!isCollapsed && 'Settings'}
+              </Button>
+            </TooltipTrigger>
+            {isCollapsed && <TooltipContent side="right">Settings</TooltipContent>}
+          </Tooltip>
         </div>
       </div>
 
@@ -400,9 +424,9 @@ const CouncilSidebar = memo(({
         onOpenChange={handleDialogOpenChange}
         mode={configDialogMode}
         readOnlyConfig={{
-          framework: currentConversation?.framework,
-          councilModels: Array.isArray(currentConversation?.council_models) ? currentConversation.council_models : [],
-          chairmanModel: currentConversation?.chairman_model || '',
+          framework: activeConversationMetadata?.framework,
+          councilModels: Array.isArray(activeConversationMetadata?.council_models) ? activeConversationMetadata.council_models : [],
+          chairmanModel: activeConversationMetadata?.chairman_model || '',
         }}
         onStartSession={handleStartSession}
         isStartingSession={isCreatingSession}
@@ -422,7 +446,7 @@ const CouncilSidebar = memo(({
         maxCouncilModels={maxCouncilModels}
         setMaxCouncilModels={handleMaxCouncilModelsChange}
       />
-    </>
+    </TooltipProvider>
   );
 });
 

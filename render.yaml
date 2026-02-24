@@ -18,6 +18,8 @@ services:
         value: 3.10.0
       - key: OPENROUTER_API_KEY
         sync: false # User must provide this
+      - key: GOOGLE_CLIENT_ID
+        sync: false # User must provide this (Google OAuth Client ID)
       - key: DATABASE_URL
         sync: false # User must provide this (e.g. Supabase connection string)
       - key: JWT_SECRET_KEY

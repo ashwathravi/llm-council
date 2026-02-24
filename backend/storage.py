@@ -179,6 +179,25 @@ async def db_list_documents(conversation_id: str, user_id: str) -> List[Dict[str
 async def db_add_document_chunks(chunks: List[Dict[str, Any]]):
     if not chunks:
         return
+
+    # Pre-generate IDs and timestamps for bulk insertion
+    # Using execute(insert(Model), data) is significantly more efficient than add_all(models)
+    # for large bulk inserts as it avoids session object tracking overhead.
+    data = [
+        {
+            "id": str(uuid.uuid4()),
+            "document_id": chunk["document_id"],
+            "conversation_id": chunk["conversation_id"],
+            "user_id": chunk["user_id"],
+            "chunk_index": chunk["chunk_index"],
+            "page_number": chunk["page_number"],
+            "text": chunk["text"],
+            "embedding": chunk["embedding"],
+            "created_at": datetime.utcnow()
+        }
+        for chunk in chunks
+    ]
+
     async with AsyncSessionLocal() as session:
         data = [
             {
@@ -204,6 +223,46 @@ async def db_list_document_chunks(conversation_id: str, user_id: str) -> List[Di
             .where(DocumentChunkModel.conversation_id == conversation_id, DocumentChunkModel.user_id == user_id)
         )
         chunks = result.scalars().all()
+        return [_chunk_to_dict(chunk) for chunk in chunks]
+
+async def db_list_document_embeddings(conversation_id: str, user_id: str) -> List[Dict[str, Any]]:
+    async with AsyncSessionLocal() as session:
+        # Optimization: Fetch only ID and embedding (and minimal metadata) to avoid fetching large text fields.
+        # Using Core Select also bypasses ORM model instantiation overhead.
+        result = await session.execute(
+            select(
+                DocumentChunkModel.id,
+                DocumentChunkModel.document_id,
+                DocumentChunkModel.embedding,
+                DocumentChunkModel.page_number
+            )
+            .where(DocumentChunkModel.conversation_id == conversation_id, DocumentChunkModel.user_id == user_id)
+        )
+        return [
+            {
+                "id": row.id,
+                "document_id": row.document_id,
+                "embedding": row.embedding,
+                "page_number": row.page_number
+            }
+            for row in result.all()
+        ]
+
+async def db_get_document_chunks_by_ids(conversation_id: str, user_id: str, chunk_ids: List[str]) -> List[Dict[str, Any]]:
+    if not chunk_ids:
+        return []
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(DocumentChunkModel)
+            .where(
+                DocumentChunkModel.conversation_id == conversation_id,
+                DocumentChunkModel.user_id == user_id,
+                DocumentChunkModel.id.in_(chunk_ids)
+            )
+        )
+        chunks = result.scalars().all()
+        # Note: SQL IN clause does not guarantee order.
+        # The caller (retrieval) will re-sort or map by ID.
         return [_chunk_to_dict(chunk) for chunk in chunks]
 
 async def db_delete_document(conversation_id: str, document_id: str, user_id: str):
@@ -435,6 +494,27 @@ def file_list_document_chunks(conversation_id: str, user_id: str) -> List[Dict[s
         if chunk.get("user_id") == user_id
     ]
 
+def file_list_document_embeddings(conversation_id: str, user_id: str) -> List[Dict[str, Any]]:
+    bundle = load_documents_bundle(conversation_id)
+    return [
+        {
+            "id": chunk.get("id"),
+            "document_id": chunk.get("document_id"),
+            "embedding": chunk.get("embedding"),
+            "page_number": chunk.get("page_number")
+        }
+        for chunk in bundle.get("chunks", [])
+        if chunk.get("user_id") == user_id
+    ]
+
+def file_get_document_chunks_by_ids(conversation_id: str, user_id: str, chunk_ids: List[str]) -> List[Dict[str, Any]]:
+    bundle = load_documents_bundle(conversation_id)
+    chunk_ids_set = set(chunk_ids)
+    return [
+        chunk for chunk in bundle.get("chunks", [])
+        if chunk.get("user_id") == user_id and chunk.get("id") in chunk_ids_set
+    ]
+
 def file_delete_document(conversation_id: str, document_id: str, user_id: str):
     bundle = load_documents_bundle(conversation_id)
     documents = bundle.get("documents", [])
@@ -544,6 +624,18 @@ async def list_document_chunks(conversation_id: str, user_id: str):
         return await db_list_document_chunks(conversation_id, user_id)
     else:
         return file_list_document_chunks(conversation_id, user_id)
+
+async def list_document_embeddings(conversation_id: str, user_id: str):
+    if os.getenv("DATABASE_URL"):
+        return await db_list_document_embeddings(conversation_id, user_id)
+    else:
+        return file_list_document_embeddings(conversation_id, user_id)
+
+async def get_document_chunks_by_ids(conversation_id: str, user_id: str, chunk_ids: List[str]):
+    if os.getenv("DATABASE_URL"):
+        return await db_get_document_chunks_by_ids(conversation_id, user_id, chunk_ids)
+    else:
+        return file_get_document_chunks_by_ids(conversation_id, user_id, chunk_ids)
 
 async def delete_document(conversation_id: str, document_id: str, user_id: str):
     if os.getenv("DATABASE_URL"):

@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
+import numpy as np
 from typing import List, Dict, Any, Tuple
 from starlette.concurrency import run_in_threadpool
 
 from . import storage, documents
 from .config import RETRIEVAL_TOP_K, RETRIEVAL_MAX_TOTAL_CHARS, RETRIEVAL_MAX_CHARS_PER_CHUNK
-
-
-def _dot_similarity(vec_a: List[float], vec_b: List[float]) -> float:
-    return sum(a * b for a, b in zip(vec_a, vec_b))
 
 
 def _build_context(citations: List[Dict[str, Any]]) -> str:
@@ -37,8 +34,9 @@ async def build_retrieval_context(
         if not query.strip():
             return None, []
 
-        chunks = await storage.list_document_chunks(conversation_id, user_id)
-        if not chunks:
+        # ⚡ Bolt: Fetch minimal embedding data first to save bandwidth/memory
+        chunks_meta = await storage.list_document_embeddings(conversation_id, user_id)
+        if not chunks_meta:
             return None, []
 
         documents_list = await storage.list_documents(conversation_id, user_id)
@@ -46,19 +44,53 @@ async def build_retrieval_context(
 
         # Offload embedding inference so retrieval does not block the async event loop.
         query_embedding = (await run_in_threadpool(documents.embed_texts, [query]))[0]
-        scored_chunks = []
-        for chunk in chunks:
-            embedding = chunk.get("embedding")
-            if not embedding:
-                continue
-            score = _dot_similarity(query_embedding, embedding)
-            scored_chunks.append({**chunk, "score": score})
 
-        scored_chunks.sort(key=lambda x: x["score"], reverse=True)
+        # ⚡ Bolt: Use numpy for vectorized similarity calculation
+        # Convert list of embeddings to numpy matrix (N x D)
+        # Handle potential None or empty embeddings gracefully
+        valid_chunks = [c for c in chunks_meta if c.get("embedding")]
+        if not valid_chunks:
+            return None, []
+
+        embeddings_matrix = np.array([c["embedding"] for c in valid_chunks], dtype=np.float32)
+        query_vec = np.array(query_embedding, dtype=np.float32)
+
+        # Compute dot products (scores)
+        scores = np.dot(embeddings_matrix, query_vec)
+
+        # Get top K indices
+        # If we have many chunks, argpartition is O(N) vs sort O(N log N)
+        k = min(RETRIEVAL_TOP_K, len(scores))
+        if k == 0:
+             return None, []
+
+        if len(scores) > k:
+            top_indices = np.argpartition(scores, -k)[-k:]
+            # Sort the top k explicitly
+            top_indices = top_indices[np.argsort(scores[top_indices])[::-1]]
+        else:
+            top_indices = np.argsort(scores)[::-1]
+
+        # Get IDs of top chunks
+        top_chunks_meta = [valid_chunks[i] for i in top_indices]
+        top_scores = [float(scores[i]) for i in top_indices]
+
+        top_chunk_ids = [c["id"] for c in top_chunks_meta]
+
+        # Fetch full text for top chunks only
+        full_chunks = await storage.get_document_chunks_by_ids(conversation_id, user_id, top_chunk_ids)
+
+        # Re-attach scores and sort (as get_document_chunks_by_ids doesn't guarantee order)
+        chunk_map = {c["id"]: c for c in full_chunks}
+        scored_chunks = []
+        for meta, score in zip(top_chunks_meta, top_scores):
+            chunk = chunk_map.get(meta["id"])
+            if chunk:
+                scored_chunks.append({**chunk, "score": score})
 
         citations: List[Dict[str, Any]] = []
         total_chars = 0
-        for chunk in scored_chunks[:RETRIEVAL_TOP_K]:
+        for chunk in scored_chunks:
             snippet = documents.truncate_text(
                 chunk.get("text", ""),
                 RETRIEVAL_MAX_CHARS_PER_CHUNK
@@ -79,5 +111,7 @@ async def build_retrieval_context(
         context = _build_context(citations)
         return (context if context else None), citations
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Retrieval error: {e}")
         return None, []

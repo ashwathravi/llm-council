@@ -1,6 +1,6 @@
 """FastAPI backend for LLM Council."""
 
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -30,7 +30,11 @@ from . import export
 async def lifespan(app: FastAPI):
     # Initialize DB (create tables) on startup
     await init_db()
+    # Initialize shared HTTP client
+    await openrouter.init_client()
     yield
+    # Close shared HTTP client
+    await openrouter.close_client()
 
 app = FastAPI(title="LLM Council API", lifespan=lifespan)
 
@@ -42,7 +46,21 @@ async def add_security_headers(request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    # Content-Security-Policy is complex for existing React apps, omitting for now to avoid breakage
+
+    # Content-Security-Policy
+    # Allow scripts from self, inline (needed for React/Vite), and Google Auth
+    # Allow images from self, data URIs, and Google user content (avatars)
+    csp = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https://*.googleusercontent.com; "
+        "connect-src 'self' https://accounts.google.com; "
+        "frame-src 'self' https://accounts.google.com; "
+        "object-src 'none'; "
+        "base-uri 'self';"
+    )
+    response.headers["Content-Security-Policy"] = csp
     return response
 
 # Enable CORS with configurable origins and hardened settings
@@ -59,7 +77,7 @@ class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
     framework: str = "standard"
     council_models: List[str] = Field(default=[], max_length=10)
-    chairman_model: Optional[str] = None
+    chairman_model: Optional[str] = Field(None, max_length=100)
 
     @field_validator("framework")
     @classmethod
@@ -82,7 +100,7 @@ class CreateConversationRequest(BaseModel):
 
 class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
-    content: str
+    content: str = Field(..., max_length=50000)
 
 
 class ConversationMetadata(BaseModel):
@@ -108,6 +126,9 @@ class LoginResponse(BaseModel):
     access_token: str
     token_type: str
     user: Dict[str, Any]
+
+class AuthConfigResponse(BaseModel):
+    google_client_id: Optional[str] = None
 
 class DocumentMetadata(BaseModel):
     id: str
@@ -142,7 +163,13 @@ async def login(request: auth.GoogleLoginRequest):
     """
     # Verify Google token
     google_user = auth.verify_google_token(request.id_token)
-    
+    email = google_user.get("email")
+
+    # Security: Validate user access against allowlists.
+    if not email:
+        raise HTTPException(status_code=400, detail="Email not provided in token")
+    auth.validate_user_access(email)
+
     # Create session token
     user_id = google_user["sub"]
     access_token = auth.create_access_token(data={"sub": user_id})
@@ -157,6 +184,12 @@ async def login(request: auth.GoogleLoginRequest):
             "picture": google_user.get("picture")
         }
     }
+
+
+@app.get("/api/auth/config", response_model=AuthConfigResponse)
+async def get_auth_config():
+    """Public auth config needed by the login UI."""
+    return {"google_client_id": auth.GOOGLE_CLIENT_ID}
 
 
 @app.get("/api/conversations/{conversation_id}/export")
@@ -207,19 +240,6 @@ async def delete_conversation(conversation_id: str, user_id: str = Depends(auth.
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.delete("/api/conversations/{conversation_id}")
-async def delete_conversation(conversation_id: str, user_id: str = Depends(auth.get_current_user_id)):
-    """Delete a conversation."""
-    try:
-        await storage.delete_conversation(conversation_id, user_id)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        print(f"Error deleting conversation: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
 @app.get("/api/models")
 async def list_models(user_id: str = Depends(auth.get_current_user_id)):
     """Fetch available models from OpenRouter."""
@@ -228,7 +248,8 @@ async def list_models(user_id: str = Depends(auth.get_current_user_id)):
         return models
     except Exception as e:
         print(f"Error fetching models: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Security: Do not leak internal error details to client
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/api/status")
 async def get_status():
@@ -686,7 +707,8 @@ async def send_message_stream(
             import traceback
             traceback.print_exc()
             print(f"Streaming error: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+            # Security: Do not leak internal error details to client
+            yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred.'})}\n\n"
 
     return StreamingResponse(
         event_generator(),

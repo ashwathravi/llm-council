@@ -1,6 +1,7 @@
 
 import React, { memo, useState, useEffect, useRef } from 'react';
 import { api } from '../api';
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -134,28 +135,36 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
 
         {/* Document List */}
         {(documents.length > 0 || uploading) && (
-          <div className="flex flex-wrap gap-2">
-            {documents.map((doc) => (
-              <Badge key={doc.id} variant="secondary" className="pl-2 pr-1 py-1 gap-2 h-7 font-normal">
-                <FileText className="h-3 w-3 text-muted-foreground" />
-                <span className="truncate max-w-[150px]">{doc.filename}</span>
-                <span className="text-xs text-muted-foreground ml-1">{formatBytes(doc.size_bytes)}</span>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteDocument(doc.id)}
-                  className="ml-1 rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
-            ))}
+          <TooltipProvider>
+            <div className="flex flex-wrap gap-2">
+              {documents.map((doc) => (
+                <Badge key={doc.id} variant="secondary" className="pl-2 pr-1 py-1 gap-2 h-7 font-normal">
+                  <FileText className="h-3 w-3 text-muted-foreground" />
+                  <span className="truncate max-w-[150px]">{doc.filename}</span>
+                  <span className="text-xs text-muted-foreground ml-1">{formatBytes(doc.size_bytes)}</span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteDocument(doc.id)}
+                        className="ml-1 rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-label={`Remove ${doc.filename}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Remove document</TooltipContent>
+                  </Tooltip>
+                </Badge>
+              ))}
 
-            {uploading && (
-              <Badge variant="outline" className="animate-pulse">
-                Uploading... {uploadProgress}%
-              </Badge>
-            )}
-          </div>
+              {uploading && (
+                <Badge variant="outline" className="animate-pulse">
+                  Uploading... {uploadProgress}%
+                </Badge>
+              )}
+            </div>
+          </TooltipProvider>
         )}
 
         {/* Input Area */}
@@ -168,15 +177,30 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
-                  onClick={handleUploadClick}
-                  disabled={!conversationId || uploading}
+                  className={cn(
+                    "h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground",
+                    (!conversationId || uploading) && "opacity-50 cursor-not-allowed"
+                  )}
+                  onClick={(e) => {
+                    if (!conversationId || uploading) {
+                      e.preventDefault();
+                      return;
+                    }
+                    handleUploadClick();
+                  }}
+                  aria-disabled={!conversationId || uploading}
                 >
                   <Paperclip className="h-4 w-4" />
                   <span className="sr-only">Attach PDF</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Attach PDF (Max 5)</TooltipContent>
+              <TooltipContent>
+                {!conversationId
+                  ? "Start a conversation to attach files"
+                  : uploading
+                    ? "Uploading..."
+                    : "Attach PDF (Max 5)"}
+              </TooltipContent>
             </Tooltip>
           </TooltipProvider>
 
@@ -197,6 +221,7 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Message the Council..."
+            aria-label="Message input"
             spellCheck={false}
             className="min-h-[44px] w-full resize-none border-0 bg-transparent py-3 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
             disabled={isLoading}

@@ -15,6 +15,17 @@ const getAuthHeaders = () => {
 
 export const api = {
   /**
+   * Get public auth configuration.
+   */
+  async getAuthConfig() {
+    const response = await fetch(`${API_BASE}/api/auth/config`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch auth config');
+    }
+    return response.json();
+  },
+
+  /**
    * Verify Google ID token and get session.
    */
   async login(idToken) {

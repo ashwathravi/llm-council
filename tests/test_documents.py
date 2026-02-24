@@ -17,25 +17,24 @@ def test_chunk_pages_overlap():
 
 @pytest.mark.asyncio
 async def test_build_retrieval_context_orders_results():
-    chunks = [
-        {
-            "document_id": "doc-1",
-            "page_number": 1,
-            "text": "alpha",
-            "embedding": [1.0, 0.0],
-        },
-        {
-            "document_id": "doc-2",
-            "page_number": 2,
-            "text": "beta",
-            "embedding": [0.0, 1.0],
-        },
+    # Mock metadata (embeddings only)
+    chunks_meta = [
+        {"id": "c1", "document_id": "doc-1", "page_number": 1, "embedding": [1.0, 0.0]},
+        {"id": "c2", "document_id": "doc-2", "page_number": 2, "embedding": [0.0, 1.0]},
+    ]
+    # Mock full chunks (text)
+    chunks_full = [
+        {"id": "c1", "document_id": "doc-1", "page_number": 1, "text": "alpha", "embedding": [1.0, 0.0]},
+        {"id": "c2", "document_id": "doc-2", "page_number": 2, "text": "beta", "embedding": [0.0, 1.0]},
     ]
 
-    with patch("backend.storage.list_document_chunks", new_callable=AsyncMock) as mock_chunks, \
+    with patch("backend.storage.list_document_embeddings", new_callable=AsyncMock) as mock_embeddings, \
+         patch("backend.storage.get_document_chunks_by_ids", new_callable=AsyncMock) as mock_chunks, \
          patch("backend.storage.list_documents", new_callable=AsyncMock) as mock_docs, \
          patch("backend.documents.embed_texts") as mock_embed:
-        mock_chunks.return_value = chunks
+
+        mock_embeddings.return_value = chunks_meta
+        mock_chunks.return_value = chunks_full
         mock_docs.return_value = [
             {"id": "doc-1", "filename": "alpha.pdf"},
             {"id": "doc-2", "filename": "beta.pdf"},
@@ -45,25 +44,27 @@ async def test_build_retrieval_context_orders_results():
         context, citations = await retrieval.build_retrieval_context("conv", "user", "query")
 
         assert context is not None
+        # Should match doc-1 because dot product with [1,0] is 1.0 vs 0.0
         assert citations[0]["filename"] == "alpha.pdf"
         assert citations[0]["page_number"] == 1
 
 
 @pytest.mark.asyncio
 async def test_build_retrieval_context_offloads_embedding_to_threadpool():
-    chunks = [
-        {
-            "document_id": "doc-1",
-            "page_number": 1,
-            "text": "alpha",
-            "embedding": [1.0, 0.0],
-        }
+    chunks_meta = [
+        {"id": "c1", "document_id": "doc-1", "page_number": 1, "embedding": [1.0, 0.0]},
+    ]
+    chunks_full = [
+        {"id": "c1", "document_id": "doc-1", "page_number": 1, "text": "alpha", "embedding": [1.0, 0.0]},
     ]
 
-    with patch("backend.storage.list_document_chunks", new_callable=AsyncMock) as mock_chunks, \
+    with patch("backend.storage.list_document_embeddings", new_callable=AsyncMock) as mock_embeddings, \
+         patch("backend.storage.get_document_chunks_by_ids", new_callable=AsyncMock) as mock_chunks, \
          patch("backend.storage.list_documents", new_callable=AsyncMock) as mock_docs, \
          patch("backend.retrieval.run_in_threadpool", new_callable=AsyncMock) as mock_threadpool:
-        mock_chunks.return_value = chunks
+
+        mock_embeddings.return_value = chunks_meta
+        mock_chunks.return_value = chunks_full
         mock_docs.return_value = [{"id": "doc-1", "filename": "alpha.pdf"}]
         mock_threadpool.return_value = [[1.0, 0.0]]
 
@@ -71,6 +72,8 @@ async def test_build_retrieval_context_offloads_embedding_to_threadpool():
 
         assert context is not None
         assert citations[0]["filename"] == "alpha.pdf"
+
+        # Verify call to threadpool for embeddings
         mock_threadpool.assert_awaited_once_with(documents.embed_texts, ["query"])
 
 

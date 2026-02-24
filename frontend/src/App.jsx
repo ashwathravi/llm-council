@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense, useMemo } from 'react';
 // import Sidebar from './components/Sidebar';
 import CouncilSidebar from './components/CouncilSidebar';
 import ChatInterface from './components/ChatInterface';
@@ -16,6 +16,7 @@ function App() {
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
+
   const [isLoading, setIsLoading] = useState(false);
   // Theme State
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
@@ -140,6 +141,31 @@ function App() {
   const handleSidebarClose = useCallback(() => {
     setIsSidebarOpen(false);
   }, []);
+
+  // Optimize Sidebar re-renders by extracting only necessary metadata
+  // We extract properties first so they can be stable dependencies for useMemo
+  const conversationId = currentConversation?.id;
+  const conversationTitle = currentConversation?.title;
+  const conversationFramework = currentConversation?.framework;
+  const conversationCouncilModels = currentConversation?.council_models;
+  const conversationChairmanModel = currentConversation?.chairman_model;
+
+  const activeConversationMetadata = useMemo(() => {
+    if (!conversationId) return null;
+    return {
+      id: conversationId,
+      title: conversationTitle,
+      framework: conversationFramework,
+      council_models: conversationCouncilModels,
+      chairman_model: conversationChairmanModel,
+    };
+  }, [
+    conversationId,
+    conversationTitle,
+    conversationFramework,
+    conversationCouncilModels,
+    conversationChairmanModel
+  ]);
 
   // ... (Keep handleSendMessage logic exactly as is, it's complex) ...
   const handleSendMessage = useCallback(async (content) => {
@@ -284,10 +310,24 @@ function App() {
             });
             break;
           case 'title_complete':
-            loadConversations();
+            // ⚡ Bolt: Optimize by updating local state instead of re-fetching entire list
+            if (event.data?.title) {
+              const newTitle = event.data.title;
+              setConversations((prev) =>
+                prev.map((c) =>
+                  c.id === currentConversationId ? { ...c, title: newTitle } : c
+                )
+              );
+              // Only update current conversation if it matches the one that generated the title
+              setCurrentConversation((prev) =>
+                (prev && prev.id === currentConversationId)
+                  ? { ...prev, title: newTitle }
+                  : prev
+              );
+            }
             break;
           case 'complete':
-            loadConversations();
+            // ⚡ Bolt: Removed redundant loadConversations() - list order/metadata doesn't change on completion
             setIsLoading(false);
             break;
           case 'error':
@@ -334,7 +374,7 @@ function App() {
       }));
       setIsLoading(false);
     }
-  }, [currentConversationId, loadConversations]);
+  }, [currentConversationId]);
 
   if (authLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
   if (!user) {
@@ -359,7 +399,7 @@ function App() {
         isOpen={isSidebarOpen}
         onClose={handleSidebarClose}
         conversations={conversations}
-        currentConversation={currentConversation}
+        activeConversationMetadata={activeConversationMetadata}
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}

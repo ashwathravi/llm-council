@@ -63,3 +63,9 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  .markdown-content pre code {
+    @apply bg-transparent p-0 text-inherit;
+  }
+}
