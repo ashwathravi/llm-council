@@ -199,20 +199,6 @@ async def db_add_document_chunks(chunks: List[Dict[str, Any]]):
     ]
 
     async with AsyncSessionLocal() as session:
-        data = [
-            {
-                "id": str(uuid.uuid4()),
-                "document_id": chunk["document_id"],
-                "conversation_id": chunk["conversation_id"],
-                "user_id": chunk["user_id"],
-                "chunk_index": chunk["chunk_index"],
-                "page_number": chunk["page_number"],
-                "text": chunk["text"],
-                "embedding": chunk["embedding"],
-                "created_at": datetime.utcnow()
-            }
-            for chunk in chunks
-        ]
         await session.execute(insert(DocumentChunkModel), data)
         await session.commit()
 

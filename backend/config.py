@@ -99,6 +99,8 @@ else:
     APP_ORIGIN = "local"
 
 # CORS Configuration
+# Comma-separated list of allowed origins.
+# If not set, defaults to local development origins.
 _CORS_ORIGINS_DEFAULT = [
     "http://localhost:5173",
     "http://localhost:3000",
@@ -107,6 +109,15 @@ _CORS_ORIGINS_DEFAULT = [
 ]
 _cors_origins_raw = os.getenv("CORS_ALLOWED_ORIGINS")
 if _cors_origins_raw:
-    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors_origins_raw.split(",") if origin.strip()]
 else:
     CORS_ALLOWED_ORIGINS = _CORS_ORIGINS_DEFAULT
+
+# Security: Authorization Allowlist
+# If set, only users in ALLOWED_USERS or domains in ALLOWED_DOMAINS can log in.
+# If both are empty (default), all users with a valid Google account can log in.
+_allowed_users_raw = os.getenv("ALLOWED_USERS", "")
+ALLOWED_USERS = {u.strip().lower() for u in _allowed_users_raw.split(",") if u.strip()}
+
+_allowed_domains_raw = os.getenv("ALLOWED_DOMAINS", "")
+ALLOWED_DOMAINS = {d.strip().lower() for d in _allowed_domains_raw.split(",") if d.strip()}
