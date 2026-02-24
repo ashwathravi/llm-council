@@ -63,7 +63,7 @@ async def add_security_headers(request, call_next):
     response.headers["Content-Security-Policy"] = csp
     return response
 
-# Enable CORS
+# Enable CORS with configurable origins and hardened settings
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ALLOWED_ORIGINS,

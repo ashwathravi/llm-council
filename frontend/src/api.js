@@ -105,7 +105,6 @@ export const api = {
    * Create a new conversation.
    */
   async createConversation(framework = 'standard', councilModels = [], chairmanModel = null) {
-    console.log("API: createConversation payload prep", { framework, councilModels, chairmanModel });
     const response = await fetch(`${API_BASE}/api/conversations`, {
       method: 'POST',
       headers: {

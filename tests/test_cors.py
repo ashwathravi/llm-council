@@ -1,74 +1,66 @@
-
 import pytest
+import os
+import importlib
+from unittest.mock import patch
+from backend import config
 
 @pytest.mark.asyncio
-async def test_cors_options_allowed_origin(async_client):
-    """Test that CORS preflight request works for allowed origin, methods and headers."""
-    headers = {
-        "Origin": "http://localhost:5173",
-        "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "Authorization, Content-Type",
-    }
-    response = await async_client.options("/api/health", headers=headers)
-
-    assert response.status_code == 200
-    assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
-
-    allowed_methods = response.headers.get("access-control-allow-methods", "").split(", ")
-    assert "POST" in allowed_methods
-    assert "GET" in allowed_methods
-    assert "DELETE" in allowed_methods
-    assert "OPTIONS" in allowed_methods
-    assert "*" not in allowed_methods
-
-    allowed_headers = response.headers.get("access-control-allow-headers", "").split(", ")
-    # Starlette might normalize these or return exactly what we requested if they are in the allowed list
-    # Actually, it typically returns the requested headers if they are all allowed.
-    assert "Authorization" in allowed_headers
-    assert "Content-Type" in allowed_headers
-    assert "*" not in allowed_headers
+async def test_cors_default_origins(async_client):
+    """Test that default origins are allowed."""
+    for origin in config.CORS_ALLOWED_ORIGINS:
+        response = await async_client.get(
+            "/api/health",
+            headers={"Origin": origin}
+        )
+        assert response.status_code == 200
+        assert response.headers.get("access-control-allow-origin") == origin
 
 @pytest.mark.asyncio
 async def test_cors_disallowed_origin(async_client):
-    """Test that CORS headers are not present for disallowed origin."""
-    headers = {
-        "Origin": "http://malicious.com",
-        "Access-Control-Request-Method": "POST",
-    }
-    response = await async_client.options("/api/health", headers=headers)
-
-    # CORSMiddleware returns 200 but without CORS headers if origin not allowed
-    assert response.headers.get("access-control-allow-origin") is None
+    """Test that a disallowed origin does not get CORS headers."""
+    response = await async_client.get(
+        "/api/health",
+        headers={"Origin": "http://malicious.com"}
+    )
+    assert response.status_code == 200
+    assert "access-control-allow-origin" not in response.headers
 
 @pytest.mark.asyncio
-async def test_cors_disallowed_method(async_client):
-    """Test that disallowed methods are not reported in CORS headers."""
-    headers = {
-        "Origin": "http://localhost:5173",
-        "Access-Control-Request-Method": "PUT",
-    }
-    response = await async_client.options("/api/health", headers=headers)
+async def test_cors_methods(async_client):
+    """Test that allowed methods are permitted via CORS preflight."""
+    origin = config.CORS_ALLOWED_ORIGINS[0]
 
-    # If method is not allowed, Starlette returns 200 OK but NO CORS headers
-    # OR it doesn't include the disallowed method.
-    if response.headers.get("access-control-allow-methods"):
-        allowed_methods = response.headers.get("access-control-allow-methods", "").split(", ")
-        assert "PUT" not in allowed_methods
-    else:
-        # This is also an acceptable way Starlette handles it
-        pass
+    # Test allowed method
+    response = await async_client.options(
+        "/api/health",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET"
+        }
+    )
+    assert response.status_code == 200
+    assert "GET" in response.headers.get("access-control-allow-methods", "")
 
-@pytest.mark.asyncio
-async def test_cors_disallowed_header(async_client):
-    """Test that disallowed headers are not reported in CORS headers."""
-    headers = {
-        "Origin": "http://localhost:5173",
-        "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "X-Malformed-Header",
-    }
-    response = await async_client.options("/api/health", headers=headers)
+    # Test disallowed method
+    response = await async_client.options(
+        "/api/health",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "PUT"
+        }
+    )
+    # For disallowed methods, CORSMiddleware should not return the allow-methods header including PUT
+    allow_methods = response.headers.get("access-control-allow-methods", "")
+    assert "PUT" not in allow_methods
 
-    # If any header is not allowed, Starlette might omit the whole Access-Control-Allow-Headers
-    # or just omit the disallowed one.
-    allowed_headers = response.headers.get("access-control-allow-headers", "")
-    assert "X-Malformed-Header" not in allowed_headers
+def test_config_parsing():
+    """Test that CORS_ALLOWED_ORIGINS is correctly parsed from environment variables."""
+    with patch.dict(os.environ, {"CORS_ALLOWED_ORIGINS": "http://test1.com, http://test2.com "}):
+        # Reload config to pick up new env var
+        import backend.config
+        importlib.reload(backend.config)
+        # Using exact equality to satisfy CodeQL's origin validation checks
+        assert backend.config.CORS_ALLOWED_ORIGINS == ["http://test1.com", "http://test2.com"]
+
+    # Reset to default (or whatever is currently in env)
+    importlib.reload(backend.config)

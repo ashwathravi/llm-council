@@ -363,7 +363,7 @@ function App() {
             });
             break;
           default:
-            console.log('Unknown event type:', eventType);
+            break;
         }
       });
     } catch (error) {
