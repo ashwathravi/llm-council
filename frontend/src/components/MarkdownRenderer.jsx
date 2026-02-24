@@ -25,12 +25,12 @@ const Pre = ({ children, ...props }) => {
   };
 
   return (
-    <div className="relative group my-4 overflow-hidden rounded-lg border border-slate-800 bg-slate-950 text-slate-100">
+    <div className="relative group my-4 overflow-hidden rounded-lg border border-slate-300 bg-slate-50 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
       <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
         <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 bg-slate-900/80 text-slate-100 hover:bg-slate-800 shadow-sm backdrop-blur-sm"
+            className="h-8 w-8 border border-slate-300 bg-white/90 text-slate-700 hover:bg-white shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-100 dark:hover:bg-slate-700"
             onClick={handleCopy}
             aria-label={copied ? "Copied" : "Copy code"}
         >
@@ -40,7 +40,7 @@ const Pre = ({ children, ...props }) => {
       <pre
         {...props}
         className={cn(
-          "p-4 overflow-x-auto text-[13px] leading-relaxed text-slate-100 [&>code]:text-inherit [&>code]:bg-transparent [&>code]:p-0",
+          "px-4 py-3 overflow-x-auto text-[13px] leading-relaxed text-slate-900 dark:text-slate-100 [&>code]:text-inherit [&>code]:bg-transparent [&>code]:p-0",
           props.className
         )}
       >
@@ -52,7 +52,7 @@ const Pre = ({ children, ...props }) => {
 
 const MarkdownRenderer = memo(({ content, className }) => {
   return (
-    <div className={cn("prose prose-sm dark:prose-invert max-w-none break-words [&_pre]:my-0 [&_pre]:bg-transparent [&_pre]:p-0 [&_pre]:border-0", className)}>
+    <div className={cn("prose prose-sm dark:prose-invert max-w-none break-words [&_pre]:my-0 [&_pre]:bg-transparent [&_pre]:border-0", className)}>
        <ReactMarkdown
           components={{
             pre: Pre,

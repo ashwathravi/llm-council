@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 const MarkdownContent = memo(({ content }) => (
   <MarkdownRenderer
     content={content}
-    className="markdown-content text-foreground prose-p:text-foreground/90 prose-li:text-foreground/90 prose-headings:text-foreground prose-strong:text-foreground prose-code:text-foreground dark:prose-code:text-foreground prose-code:bg-muted/80 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:bg-slate-950 prose-pre:text-slate-100 prose-pre:border prose-pre:border-slate-800 prose-pre:rounded-lg prose-pre:px-4 prose-pre:py-3"
+    className="markdown-content text-foreground prose-p:text-foreground/90 prose-li:text-foreground/90 prose-headings:text-foreground prose-strong:text-foreground prose-code:text-foreground dark:prose-code:text-foreground prose-code:bg-muted/80 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none"
   />
 ));
 
