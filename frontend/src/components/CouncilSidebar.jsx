@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { api } from '../api';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -67,6 +67,22 @@ const sameConfig = (left, right) => {
   return leftModels.every((modelId, index) => modelId === rightModels[index]);
 };
 
+const SIDEBAR_WIDTH_KEY = 'council_sidebar_width';
+const SIDEBAR_MIN_WIDTH = 280;
+const SIDEBAR_MAX_WIDTH = 520;
+const SIDEBAR_DEFAULT_WIDTH = 320;
+
+const clampSidebarWidth = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return SIDEBAR_DEFAULT_WIDTH;
+  return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(parsed)));
+};
+
+const readSavedSidebarWidth = () => {
+  const savedWidth = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+  return savedWidth ? clampSidebarWidth(savedWidth) : SIDEBAR_DEFAULT_WIDTH;
+};
+
 const CouncilSidebar = memo(({
   conversations,
   activeConversationMetadata,
@@ -92,8 +108,42 @@ const CouncilSidebar = memo(({
   const [isCreatingSession, setIsCreatingSession] = useState(false);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(readSavedSidebarWidth);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStateRef = useRef({ startX: 0, startWidth: SIDEBAR_DEFAULT_WIDTH });
 
   const recentConversations = conversations.slice(0, 5);
+
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    if (!isResizing) return undefined;
+
+    const handleMouseMove = (event) => {
+      const deltaX = event.clientX - resizeStateRef.current.startX;
+      setSidebarWidth(clampSidebarWidth(resizeStateRef.current.startWidth + deltaX));
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing]);
 
   useEffect(() => {
     const loadModels = async () => {
@@ -250,6 +300,16 @@ const CouncilSidebar = memo(({
     }
   };
 
+  const handleResizeStart = (event) => {
+    if (isMobile || isCollapsed) return;
+    event.preventDefault();
+    resizeStateRef.current = {
+      startX: event.clientX,
+      startWidth: sidebarWidth,
+    };
+    setIsResizing(true);
+  };
+
   const activeConversationFramework = activeConversationMetadata?.framework;
   const activeFrameworkLabel = activeConversationFramework
     ? (FRAMEWORK_LABELS[activeConversationFramework] || activeConversationFramework)
@@ -267,8 +327,9 @@ const CouncilSidebar = memo(({
           'fixed inset-y-0 left-0 z-50 transform border-r bg-background transition-all duration-300 ease-in-out flex flex-col',
           isOpen ? 'translate-x-0' : '-translate-x-full',
           'md:relative md:translate-x-0',
-          isCollapsed ? 'w-16' : 'w-80'
+          isCollapsed ? 'w-16' : 'w-80 md:w-auto'
         )}
+        style={!isCollapsed && !isMobile ? { width: `${sidebarWidth}px` } : undefined}
       >
         <div className={cn('p-4 border-b flex items-center', isCollapsed ? 'justify-center' : 'justify-between')}>
           {!isCollapsed && (
@@ -318,7 +379,7 @@ const CouncilSidebar = memo(({
         <Separator />
 
         <ScrollArea className="flex-1">
-          <div className="p-3 pr-5 space-y-6">
+          <div className="p-3 pr-7 space-y-6">
             <div className="space-y-2">
               {!isCollapsed && <h3 className="text-xs font-semibold text-muted-foreground px-2">Council Members</h3>}
               <Tooltip>
@@ -365,7 +426,7 @@ const CouncilSidebar = memo(({
                       className={cn(
                         'group flex items-center rounded-md px-2 py-2 text-sm hover:bg-accent/50',
                         currentConversationId === conversation.id ? 'bg-accent text-accent-foreground font-medium' : '',
-                        isCollapsed ? 'justify-center' : 'justify-between'
+                        isCollapsed ? 'justify-center' : 'justify-between gap-2'
                       )}
                     >
                       <button
@@ -376,14 +437,14 @@ const CouncilSidebar = memo(({
                         title={conversation.title}
                       >
                         <History className="h-4 w-4 text-muted-foreground shrink-0" />
-                        {!isCollapsed && <span className="truncate flex-1">{conversation.title}</span>}
+                        {!isCollapsed && <span className="min-w-0 truncate flex-1">{conversation.title}</span>}
                       </button>
 
                       {!isCollapsed && (
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="ml-1 mr-1 h-7 w-7 shrink-0 text-muted-foreground/90 hover:bg-destructive/10 hover:text-destructive opacity-80 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                          className="ml-1 h-7 w-7 shrink-0 text-muted-foreground/90 hover:bg-destructive/10 hover:text-destructive opacity-80 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                           onClick={(event) => handleDelete(event, conversation.id)}
                           aria-label={`Delete conversation: ${conversation.title}`}
                           title="Delete conversation"
@@ -417,6 +478,19 @@ const CouncilSidebar = memo(({
             {isCollapsed && <TooltipContent side="right">Settings</TooltipContent>}
           </Tooltip>
         </div>
+
+        {!isMobile && !isCollapsed && (
+          <div
+            role="separator"
+            aria-label="Resize sidebar"
+            aria-orientation="vertical"
+            onMouseDown={handleResizeStart}
+            className={cn(
+              'absolute right-0 top-0 h-full w-1.5 cursor-col-resize bg-transparent transition-colors',
+              isResizing ? 'bg-border/80' : 'hover:bg-border/50'
+            )}
+          />
+        )}
       </div>
 
       <CouncilConfigDialog

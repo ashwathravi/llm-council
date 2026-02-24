@@ -1,29 +1,44 @@
 services:
-  # Python Backend Service
+  # Preview environment service
   - type: web
     name: llm-council
-    env: python
-    buildCommand: |
-      # Install dependencies
-      pip install -U uv
-      uv sync
-      # Build Frontend
-      cd frontend
-      npm install
-      npm run build
-      cd ..
-    startCommand: uv run python -m backend.main
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: feature/start_new
+    autoDeploy: true
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.10.0
       - key: OPENROUTER_API_KEY
         sync: false # User must provide this
       - key: GOOGLE_CLIENT_ID
-        sync: false # User must provide this (Google OAuth Client ID)
+        sync: false # User must provide this
       - key: DATABASE_URL
-        sync: false # User must provide this (e.g. Supabase connection string)
+        sync: false # User must provide this
       - key: JWT_SECRET_KEY
-        generateValue: true
+        sync: false # User must provide this
       - key: RENDER
         value: true
-    autoDeploy: false
+
+  # Production environment service
+  - type: web
+    name: llm-council-render
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: master
+    autoDeploy: true
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false # User must provide this
+      - key: GOOGLE_CLIENT_ID
+        sync: false # User must provide this
+      - key: DATABASE_URL
+        sync: false # User must provide this
+      - key: JWT_SECRET_KEY
+        sync: false # User must provide this
+      - key: RENDER
+        value: true
