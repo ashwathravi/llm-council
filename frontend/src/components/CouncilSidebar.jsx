@@ -318,7 +318,7 @@ const CouncilSidebar = memo(({
         <Separator />
 
         <ScrollArea className="flex-1">
-          <div className="p-3 space-y-6">
+          <div className="p-3 pr-5 space-y-6">
             <div className="space-y-2">
               {!isCollapsed && <h3 className="text-xs font-semibold text-muted-foreground px-2">Council Members</h3>}
               <Tooltip>
@@ -383,7 +383,7 @@ const CouncilSidebar = memo(({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="ml-1 h-7 w-7 shrink-0 text-muted-foreground/80 hover:bg-destructive/10 hover:text-destructive opacity-70 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                          className="ml-1 mr-1 h-7 w-7 shrink-0 text-muted-foreground/90 hover:bg-destructive/10 hover:text-destructive opacity-80 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                           onClick={(event) => handleDelete(event, conversation.id)}
                           aria-label={`Delete conversation: ${conversation.title}`}
                           title="Delete conversation"

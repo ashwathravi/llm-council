@@ -25,19 +25,25 @@ const Pre = ({ children, ...props }) => {
   };
 
   return (
-    <div className="relative group my-4 overflow-hidden rounded-lg border bg-muted">
+    <div className="relative group my-4 overflow-hidden rounded-lg border border-slate-800 bg-slate-950 text-slate-100">
       <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
         <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 bg-background/80 hover:bg-background shadow-sm backdrop-blur-sm"
+            className="h-8 w-8 bg-slate-900/80 text-slate-100 hover:bg-slate-800 shadow-sm backdrop-blur-sm"
             onClick={handleCopy}
             aria-label={copied ? "Copied" : "Copy code"}
         >
           {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
         </Button>
       </div>
-      <pre {...props} className={cn("p-4 overflow-x-auto", props.className)}>
+      <pre
+        {...props}
+        className={cn(
+          "p-4 overflow-x-auto text-[13px] leading-relaxed text-slate-100 [&>code]:text-inherit [&>code]:bg-transparent [&>code]:p-0",
+          props.className
+        )}
+      >
         {children}
       </pre>
     </div>
