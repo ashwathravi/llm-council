@@ -5,7 +5,7 @@ services:
     runtime: docker
     plan: free
     region: oregon
-    branch: feature/new_start
+    branch: feature/start_new
     autoDeploy: true
     dockerfilePath: ./Dockerfile
     dockerContext: .
