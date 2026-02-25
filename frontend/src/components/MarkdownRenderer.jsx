@@ -26,7 +26,7 @@ const Pre = ({ children, ...props }) => {
 
   return (
     <div className="relative group my-4 overflow-hidden rounded-lg border border-slate-300 bg-slate-50 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity z-10">
         <Button
             variant="ghost"
             size="icon"
