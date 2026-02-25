@@ -517,9 +517,6 @@ async def send_message_stream(
     async def event_generator():
         overall_start = time.monotonic()
         try:
-            # Add user message
-            await storage.add_user_message(conversation_id, user_id, request.content)
-
             # Start title generation in parallel (don't await yet)
             title_task = None
             if is_first_message:
@@ -537,10 +534,12 @@ async def send_message_stream(
             # Append current user message
             history.append({"role": "user", "content": request.content})
 
-            retrieval_context, citations = await retrieval.build_retrieval_context(
-                conversation_id,
-                user_id,
-                request.content
+            # ⚡ Bolt: Run storage (I/O) and retrieval (CPU/Network) in parallel
+            # We use gather to ensure both complete before proceeding, propagating exceptions.
+            # add_user_message returns None, build_retrieval_context returns tuple.
+            _, (retrieval_context, citations) = await asyncio.gather(
+                storage.add_user_message(conversation_id, user_id, request.content),
+                retrieval.build_retrieval_context(conversation_id, user_id, request.content)
             )
 
             print(
