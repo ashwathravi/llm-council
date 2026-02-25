@@ -12,36 +12,6 @@ _limiter_store = defaultdict(lambda: defaultdict(list))
 # Maximum number of IPs to track per scope to prevent memory exhaustion
 MAX_STORE_SIZE = 10000
 
-def _cleanup_stale_entries(scope: str, time_window: int):
-    """
-    Remove IPs from the store that have no requests within the time window.
-    """
-    current_time = time.time()
-    store = _limiter_store[scope]
-
-    # Identify keys to remove
-    to_remove = []
-    for ip, history in list(store.items()):
-        # Remove expired timestamps
-        while history and history[0] < current_time - time_window:
-            history.pop(0)
-
-        # If history is empty, mark for removal
-        if not history:
-            to_remove.append(ip)
-
-    # Remove empty keys
-    for ip in to_remove:
-        del store[ip]
-
-    # Emergency cleanup if still over capacity
-    # Evict oldest entries until we are back under the limit
-    # This prevents a total reset of all rate limits
-    while len(store) > MAX_STORE_SIZE:
-        # Remove the oldest inserted item (FIFO eviction)
-        # In Python 3.7+, dicts preserve insertion order, so next(iter(store)) is the first key
-        del store[next(iter(store))]
-
 def rate_limiter(requests_limit: int = 5, time_window: int = 60, scope: str = "default") -> Callable[[Request], Coroutine[Any, Any, bool]]:
     """
     Dependency factory for rate limiting.
@@ -66,13 +36,23 @@ def rate_limiter(requests_limit: int = 5, time_window: int = 60, scope: str = "d
 
         current_time = time.time()
 
-        # Check store size and cleanup if necessary
-        # We check before inserting to prevent growth beyond limit
-        if len(_limiter_store[scope]) >= MAX_STORE_SIZE:
-             _cleanup_stale_entries(scope, time_window)
+        store = _limiter_store[scope]
 
-        # Get history for this scope and IP
-        history = _limiter_store[scope][client_ip]
+        # Implement LRU: Move current user to end of eviction queue (most recently used)
+        if client_ip in store:
+            val = store.pop(client_ip)
+            store[client_ip] = val
+
+        # Check store size
+        # If we are at limit and this is a new user (not in store),
+        # we need to evict someone to make room.
+        if len(store) >= MAX_STORE_SIZE and client_ip not in store:
+             # Evict LRU (first item)
+             # Since we moved active users to end, the first item is the least recently used
+             del store[next(iter(store))]
+
+        # Get history for this scope and IP (adds to end if new)
+        history = store[client_ip]
 
         # Filter out old requests (cleanup for active user)
         # We modify the list in place

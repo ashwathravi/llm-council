@@ -27,3 +27,8 @@
 **Vulnerability:** The application lacked a `Content-Security-Policy` header, allowing potential XSS attacks to execute scripts from arbitrary domains or inline.
 **Learning:** Modern frontend frameworks like React often rely on inline scripts or styles during development (and sometimes production), making strict CSP implementation challenging. Omitting CSP entirely leaves the application vulnerable.
 **Prevention:** Implement a pragmatic CSP that whitelists specific trusted domains (e.g., Google Auth) and uses 'unsafe-inline' only where strictly necessary, while blocking all other external script sources and object embeddings.
+
+## 2025-05-18 - Algorithmic DoS in Rate Limiter Cleanup
+**Vulnerability:** The in-memory rate limiter implemented a `_cleanup_stale_entries` function that iterated over the entire store (O(N) complexity) on every request once the store was full.
+**Learning:** Linear time operations (O(N)) on the critical request path, especially those dependent on attacker-controlled input size (like unique IP addresses), create trivial DoS vectors.
+**Prevention:** Use O(1) or amortized O(1) data structures (like LRU caches) for high-frequency operations. Ensure bounded resource usage and predictable performance under load.
