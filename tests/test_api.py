@@ -5,14 +5,31 @@ from backend.main import app
 from backend import auth
 
 @pytest.mark.asyncio
-async def test_health_check(async_client):
-    """Test that the status endpoint returns 200 and expected structure."""
+async def test_status_authenticated(async_client):
+    """Test that the status endpoint returns 200 and expected structure when authenticated."""
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        response = await async_client.get("/api/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert "storage_mode" in data
+        assert "origin" in data
+        assert "database_url_configured" in data
+    finally:
+        app.dependency_overrides = {}
+
+@pytest.mark.asyncio
+async def test_status_unauthenticated(async_client):
+    """Test that the status endpoint returns 401 when unauthenticated."""
     response = await async_client.get("/api/status")
+    assert response.status_code == 401
+
+@pytest.mark.asyncio
+async def test_health_check_public(async_client):
+    """Test that the health endpoint is public."""
+    response = await async_client.get("/api/health")
     assert response.status_code == 200
-    data = response.json()
-    assert "storage_mode" in data
-    assert "origin" in data
-    assert "database_url_configured" in data
+    assert response.json()["status"] == "ok"
 
 @pytest.mark.asyncio
 async def test_list_models_mocked(async_client):
@@ -28,12 +45,12 @@ async def test_list_models_mocked(async_client):
         mock_fetch.return_value = mock_models
         
         app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
-        
-        response = await async_client.get("/api/models")
-        assert response.status_code == 200
-        assert response.json() == mock_models
-        
-        app.dependency_overrides = {}
+        try:
+            response = await async_client.get("/api/models")
+            assert response.status_code == 200
+            assert response.json() == mock_models
+        finally:
+            app.dependency_overrides = {}
 
 @pytest.mark.asyncio
 async def test_conversations_empty(async_client):
@@ -44,12 +61,12 @@ async def test_conversations_empty(async_client):
 
     with patch("backend.storage.list_conversations", side_effect=mock_return_empty):
         app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
-        
-        response = await async_client.get("/api/conversations")
-        assert response.status_code == 200
-        assert response.json() == []
-        
-        app.dependency_overrides = {}
+        try:
+            response = await async_client.get("/api/conversations")
+            assert response.status_code == 200
+            assert response.json() == []
+        finally:
+            app.dependency_overrides = {}
 
 @pytest.mark.asyncio
 async def test_create_conversation_invalid_framework(async_client):
@@ -57,19 +74,19 @@ async def test_create_conversation_invalid_framework(async_client):
 
     # Mock authentication
     app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        response = await async_client.post(
+            "/api/conversations",
+            json={
+                "framework": "invalid_framework",
+                "council_models": ["model1"]
+            }
+        )
 
-    response = await async_client.post(
-        "/api/conversations",
-        json={
-            "framework": "invalid_framework",
-            "council_models": ["model1"]
-        }
-    )
-
-    assert response.status_code == 422
-    # FastAPI/Pydantic returns detail about the validation error
-    data = response.json()
-    assert "detail" in data
-    assert any("framework" in error["loc"] for error in data["detail"])
-
-    app.dependency_overrides = {}
+        assert response.status_code == 422
+        # FastAPI/Pydantic returns detail about the validation error
+        data = response.json()
+        assert "detail" in data
+        assert any("framework" in error["loc"] for error in data["detail"])
+    finally:
+        app.dependency_overrides = {}
