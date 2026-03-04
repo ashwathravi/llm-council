@@ -35,34 +35,42 @@ async def test_rate_limiter_memory_protection():
             await dependency(request)
 
         # Assert valid bounded growth
-        assert len(security._limiter_store[scope]) <= 51, \
+        # With LRU eviction, size should never exceed MAX_STORE_SIZE significantly
+        # (It checks len >= MAX before adding, so max size is MAX)
+        assert len(security._limiter_store[scope]) <= 50, \
             f"Store size {len(security._limiter_store[scope])} exceeded expected limit"
 
         # Now wait for window to expire
         time.sleep(window + 1.5)
 
-        # Trigger requests to force cleanup
-        # We need to hit the threshold (50) to trigger cleanup.
-        # Currently size is likely 49.
+        # Trigger requests to force cleanup/eviction
+        # We need to hit the threshold (50) to trigger eviction.
+        # Currently size is 50.
 
-        # Request 1: Should push size to 50
+        # Request 1: Size is 50. Should trigger eviction of LRU item.
         request = MagicMock(spec=Request)
         request.client.host = "trigger_1"
         request.headers.get.return_value = None
         await dependency(request)
 
-        # Request 2: Size is 50. Should trigger cleanup.
-        # Cleanup should remove the 49 stale entries.
+        # Request 2: Size is 50. Should trigger eviction again.
         request = MagicMock(spec=Request)
         request.client.host = "trigger_2"
         request.headers.get.return_value = None
         await dependency(request)
 
-        # Assert that we cleaned up
-        # We expect "trigger_1", "trigger_2" to be present. Stale entries removed.
+        # Assert that size is still bounded
         current_size = len(security._limiter_store[scope])
-        assert current_size <= 5, \
-             f"Store size {current_size} indicates stale entries were not removed"
+        assert current_size <= 50, \
+             f"Store size {current_size} indicates unbounded growth"
+
+        # Verify trigger_1 and trigger_2 are present (LRU logic keeps recent items)
+        assert "trigger_1" in security._limiter_store[scope]
+        assert "trigger_2" in security._limiter_store[scope]
+
+        # Verify oldest items (1.2.3.0, 1.2.3.1) were evicted
+        assert "1.2.3.0" not in security._limiter_store[scope]
+        assert "1.2.3.1" not in security._limiter_store[scope]
 
     # Verify patch is reverted
     assert security.MAX_STORE_SIZE == original_max

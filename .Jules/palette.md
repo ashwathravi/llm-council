@@ -33,3 +33,7 @@
 ## 2024-03-24 - Search in Long Lists
 **Learning:** Users with many options (e.g., >10 models) struggle to find specific items in scrollable lists.
 **Action:** Implemented a real-time search filter with `aria-label` for accessibility in the configuration dialog. When presenting long lists, always include a filter input to improve efficiency and keyboard accessibility.
+
+## 2025-02-28 - Copy Button Visibility
+**Learning:** Actions revealed only on hover (like "Copy Code") are invisible and often inaccessible to keyboard-only users, as they cannot hover to trigger the visibility.
+**Action:** Added `focus-within:opacity-100` to the container of the Copy button in `MarkdownRenderer.jsx`. This ensures that when a keyboard user tabs into the button, the container becomes visible, revealing the control.
