@@ -5,7 +5,7 @@ import CouncilMessageBlock from './CouncilMessageBlock';
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { User } from "lucide-react";
 
-const MessageItem = memo(({ msg }) => {
+const MessageItem = memo(({ msg, messageIndex, onRetryFailedModels }) => {
   if (msg.role === 'user') {
     return (
       <div className="flex justify-end mb-6">
@@ -37,7 +37,11 @@ const MessageItem = memo(({ msg }) => {
         </Avatar>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium mb-1 ml-1 text-muted-foreground">LLM Council</div>
-          <CouncilMessageBlock message={msg} />
+          <CouncilMessageBlock
+            message={msg}
+            messageIndex={messageIndex}
+            onRetryFailedModels={onRetryFailedModels}
+          />
         </div>
       </div>
     </div>

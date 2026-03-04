@@ -156,6 +156,34 @@ export const api = {
   },
 
   /**
+   * Retry failed Stage 1 model calls for a prior assistant message.
+   */
+  async retryFailedModels(conversationId, messageIndex, models = []) {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/messages/${messageIndex}/retry-stage1`,
+      {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ models }),
+      }
+    );
+
+    if (!response.ok) {
+      let detail = 'Failed to retry failed models';
+      try {
+        const data = await response.json();
+        detail = data.detail || data.error || detail;
+      } catch {
+        const text = await response.text();
+        if (text) detail = text;
+      }
+      throw new Error(detail);
+    }
+
+    return response.json();
+  },
+
+  /**
    * Send a message and receive streaming updates.
    */
   async sendMessageStream(conversationId, content, onEvent) {

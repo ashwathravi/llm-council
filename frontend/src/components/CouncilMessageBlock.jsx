@@ -4,7 +4,8 @@ import MarkdownRenderer from './MarkdownRenderer';
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, Trophy, Crown, BrainCircuit } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, Trophy, Crown, BrainCircuit, GitCompareArrows, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ⚡ Bolt: Memoize markdown rendering to prevent re-parsing on every parent re-render
@@ -61,6 +62,71 @@ const Stage1TabContent = memo(({ res }) => (
 
 Stage1TabContent.displayName = 'Stage1TabContent';
 
+const DiffTabContent = memo(({ diffData }) => {
+  const { consensusSentences, overlaps, uniqueTerms } = diffData;
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="space-y-2">
+        <h3 className="font-semibold">Agreement Signals</h3>
+        {consensusSentences.length > 0 ? (
+          <div className="space-y-2">
+            {consensusSentences.map((item, idx) => (
+              <div key={idx} className="rounded-lg border bg-card/40 p-3">
+                <div className="text-sm text-foreground/90">{item.sentence}</div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Supported by {item.supporters.length} models
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No strong sentence-level overlap detected between model responses.
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="font-semibold">Pairwise Similarity</h3>
+        {overlaps.length > 0 ? (
+          <div className="space-y-3">
+            {overlaps.map((item, idx) => (
+              <div key={idx} className="space-y-1">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{item.left} vs {item.right}</span>
+                  <span>{item.score}%</span>
+                </div>
+                <div className="h-2 w-full rounded bg-muted">
+                  <div className="h-2 rounded bg-primary" style={{ width: `${item.score}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Not enough model responses to compare.</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="font-semibold">Distinctive Terms</h3>
+        <div className="space-y-2">
+          {uniqueTerms.map((item, idx) => (
+            <div key={idx} className="rounded-lg border bg-card/40 p-3">
+              <div className="text-xs font-medium text-foreground/80">{item.model}</div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                {item.terms.length > 0 ? item.terms.join(', ') : 'No high-signal unique terms.'}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+DiffTabContent.displayName = 'DiffTabContent';
+
 const formatModelList = (models) => {
   if (!Array.isArray(models) || models.length === 0) {
     return 'None';
@@ -68,13 +134,133 @@ const formatModelList = (models) => {
   return models.join(', ');
 };
 
-const CouncilMessageBlock = ({ message }) => {
+const STOP_WORDS = new Set([
+  'about', 'after', 'again', 'against', 'because', 'being', 'between', 'could',
+  'does', 'doing', 'from', 'have', 'just', 'more', 'most', 'other', 'over',
+  'should', 'their', 'there', 'these', 'this', 'those', 'under', 'very', 'with',
+  'would', 'your', 'that', 'then', 'than', 'into', 'while', 'where', 'when',
+  'which', 'what', 'will', 'also', 'only', 'such', 'each'
+]);
+
+const splitSentences = (text) => (
+  String(text || '')
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 30)
+);
+
+const normalizeSentence = (sentence) => (
+  sentence
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+);
+
+const tokenize = (text) => (
+  String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length >= 4 && !STOP_WORDS.has(token))
+);
+
+const extractRetryModelName = (modelLabel) => {
+  if (typeof modelLabel !== 'string') return '';
+  const cleaned = modelLabel.trim();
+  if (cleaned.endsWith(')') && cleaned.includes(' (')) {
+    return cleaned.slice(0, cleaned.lastIndexOf(' (')).trim();
+  }
+  return cleaned;
+};
+
+const buildComparisonDiff = (stage1Results) => {
+  if (!Array.isArray(stage1Results) || stage1Results.length < 2) {
+    return { consensusSentences: [], overlaps: [], uniqueTerms: [] };
+  }
+
+  const modelEntries = stage1Results.map((item) => ({
+    model: item.model,
+    response: item.response || '',
+    tokens: new Set(tokenize(item.response || '')),
+  }));
+
+  const tokenUsage = new Map();
+  modelEntries.forEach((entry) => {
+    entry.tokens.forEach((token) => {
+      tokenUsage.set(token, (tokenUsage.get(token) || 0) + 1);
+    });
+  });
+
+  const uniqueTerms = modelEntries.map((entry) => {
+    const terms = [...entry.tokens]
+      .filter((token) => tokenUsage.get(token) === 1)
+      .sort()
+      .slice(0, 8);
+    return { model: entry.model, terms };
+  });
+
+  const overlaps = [];
+  for (let i = 0; i < modelEntries.length; i += 1) {
+    for (let j = i + 1; j < modelEntries.length; j += 1) {
+      const left = modelEntries[i];
+      const right = modelEntries[j];
+      const [shorter, longer] = left.tokens.size <= right.tokens.size
+        ? [left.tokens, right.tokens]
+        : [right.tokens, left.tokens];
+
+      let intersection = 0;
+      shorter.forEach((token) => {
+        if (longer.has(token)) intersection += 1;
+      });
+
+      const union = left.tokens.size + right.tokens.size - intersection;
+      const score = union > 0 ? Math.round((intersection / union) * 100) : 0;
+      overlaps.push({ left: left.model, right: right.model, score });
+    }
+  }
+  overlaps.sort((a, b) => b.score - a.score);
+
+  const sentenceSupport = new Map();
+  stage1Results.forEach((item) => {
+    const localSeen = new Set();
+    splitSentences(item.response).forEach((sentence) => {
+      const normalized = normalizeSentence(sentence);
+      if (!normalized || localSeen.has(normalized)) return;
+      localSeen.add(normalized);
+
+      if (!sentenceSupport.has(normalized)) {
+        sentenceSupport.set(normalized, {
+          sentence,
+          supporters: new Set([item.model]),
+        });
+        return;
+      }
+
+      sentenceSupport.get(normalized).supporters.add(item.model);
+    });
+  });
+
+  const consensusSentences = [...sentenceSupport.values()]
+    .filter((item) => item.supporters.size >= 2)
+    .sort((a, b) => b.supporters.size - a.supporters.size)
+    .slice(0, 5)
+    .map((item) => ({
+      sentence: item.sentence,
+      supporters: [...item.supporters],
+    }));
+
+  return { consensusSentences, overlaps, uniqueTerms };
+};
+
+const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => {
   const { stage1, stage2, stage3, loading, errors, metadata } = message;
   const [activeTab, setActiveTab] = useState('consensus');
+  const [isRetryingFailedModels, setIsRetryingFailedModels] = useState(false);
 
   const hasStage1 = stage1 && stage1.length > 0;
   const hasStage2 = stage2 && stage2.length > 0;
   const hasStage3 = stage3 && stage3.response;
+  const hasComparisonDiff = hasStage1 && stage1.length > 1;
 
   const aggregateRankings = metadata?.aggregate_rankings || [];
 
@@ -115,10 +301,43 @@ const CouncilMessageBlock = ({ message }) => {
     return merged;
   }, [errors, stage1Errors]);
 
+  const failedModelIds = useMemo(() => {
+    const seen = new Set();
+    const models = [];
+    combinedErrors.forEach((errorItem) => {
+      const normalized = extractRetryModelName(errorItem.model);
+      if (!normalized || seen.has(normalized)) return;
+      seen.add(normalized);
+      models.push(normalized);
+    });
+    return models;
+  }, [combinedErrors]);
+
+  const diffData = useMemo(() => buildComparisonDiff(stage1), [stage1]);
+
   const hasModelMetadata =
     Array.isArray(metadata?.requested_council_models) ||
     Array.isArray(metadata?.effective_council_models) ||
     Array.isArray(metadata?.responded_council_models);
+
+  const canRetryFailedModels = (
+    typeof onRetryFailedModels === 'function' &&
+    Number.isInteger(messageIndex) &&
+    failedModelIds.length > 0
+  );
+
+  const handleRetryFailedModels = async () => {
+    if (!canRetryFailedModels || isRetryingFailedModels) return;
+    setIsRetryingFailedModels(true);
+    try {
+      await onRetryFailedModels(messageIndex, failedModelIds);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Failed to retry models';
+      alert(detail);
+    } finally {
+      setIsRetryingFailedModels(false);
+    }
+  };
 
   return (
     <Card className="w-full border-2 border-transparent data-[state=chairman]:border-chairman/20 overflow-hidden">
@@ -133,6 +352,12 @@ const CouncilMessageBlock = ({ message }) => {
               <TabsTrigger value="rankings" className="gap-2">
                 <Trophy className="h-3.5 w-3.5 text-yellow-500" />
                 Rankings
+              </TabsTrigger>
+            )}
+            {hasComparisonDiff && (
+              <TabsTrigger value="diff" className="gap-2">
+                <GitCompareArrows className="h-3.5 w-3.5 text-sky-500" />
+                Diff
               </TabsTrigger>
             )}
             {hasStage1 && stage1.map((res, idx) => (
@@ -203,6 +428,10 @@ const CouncilMessageBlock = ({ message }) => {
             <RankingsTabContent aggregateRankings={aggregateRankings} />
           </TabsContent>
 
+          <TabsContent value="diff" className="m-0 focus-visible:ring-0">
+            <DiffTabContent diffData={diffData} />
+          </TabsContent>
+
           {hasStage1 && stage1.map((res, idx) => (
             <TabsContent key={idx} value={`model-${idx}`} className="m-0 focus-visible:ring-0">
               <Stage1TabContent res={res} />
@@ -212,9 +441,23 @@ const CouncilMessageBlock = ({ message }) => {
 
         {combinedErrors.length > 0 && (
           <div className="bg-destructive/10 p-4 border-t border-destructive/20 text-destructive text-sm">
-            <div className="font-semibold flex items-center gap-2 mb-1">
-              <AlertTriangle className="h-4 w-4" />
-              Errors detected:
+            <div className="mb-2 flex items-start justify-between gap-3">
+              <div className="font-semibold flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" />
+                Errors detected:
+              </div>
+              {canRetryFailedModels && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-destructive/40 text-destructive hover:text-destructive"
+                  onClick={handleRetryFailedModels}
+                  disabled={isRetryingFailedModels}
+                >
+                  <RotateCcw className={cn('mr-1 h-3.5 w-3.5', isRetryingFailedModels && 'animate-spin')} />
+                  {isRetryingFailedModels ? 'Retrying...' : 'Retry Failed Models'}
+                </Button>
+              )}
             </div>
             <ul className="list-disc list-inside">
               {combinedErrors.map((err, idx) => (

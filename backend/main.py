@@ -102,6 +102,20 @@ class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
     content: str = Field(..., max_length=50000)
 
+class RetryStage1Request(BaseModel):
+    """Request to retry failed Stage 1 models for an existing assistant message."""
+    models: List[str] = Field(default_factory=list, max_length=10)
+
+    @field_validator("models")
+    @classmethod
+    def validate_models(cls, v: List[str]) -> List[str]:
+        if len(v) > 10:
+            raise ValueError("Too many models selected (max 10)")
+        for model in v:
+            if len(model) > 100:
+                raise ValueError("Model name too long")
+        return v
+
 
 class ConversationMetadata(BaseModel):
     """Conversation metadata for list view."""
@@ -489,6 +503,213 @@ async def send_message(
         "stage2": stage2_results,
         "stage3": stage3_result,
         "metadata": metadata
+    }
+
+
+def _extract_retry_model_name(model_label: Any) -> str:
+    if not isinstance(model_label, str):
+        return ""
+    cleaned = model_label.strip()
+    if cleaned.endswith(")") and " (" in cleaned:
+        base, _ = cleaned.rsplit(" (", 1)
+        return base.strip()
+    return cleaned
+
+
+def _is_retry_model_match(model_name: str, retry_model: str) -> bool:
+    if model_name == retry_model:
+        return True
+    return model_name.startswith(f"{retry_model} (")
+
+
+def _find_previous_user_message_index(messages: List[Dict[str, Any]], assistant_message_index: int) -> Optional[int]:
+    for index in range(assistant_message_index - 1, -1, -1):
+        if messages[index].get("role") == "user":
+            return index
+    return None
+
+
+def _build_history_through_user_message(
+    messages: List[Dict[str, Any]],
+    user_message_index: int
+) -> List[Dict[str, str]]:
+    history: List[Dict[str, str]] = []
+    for msg in messages[:user_message_index]:
+        role = msg.get("role")
+        if role == "user":
+            history.append({"role": "user", "content": msg.get("content", "")})
+            continue
+        if role == "assistant":
+            stage3 = msg.get("stage3")
+            if isinstance(stage3, dict) and stage3.get("response"):
+                history.append({"role": "assistant", "content": stage3["response"]})
+
+    user_message = messages[user_message_index]
+    history.append({"role": "user", "content": user_message.get("content", "")})
+    return history
+
+
+@app.post(
+    "/api/conversations/{conversation_id}/messages/{message_index}/retry-stage1",
+    dependencies=[Depends(security.rate_limiter(requests_limit=20, time_window=60, scope="chat"))]
+)
+async def retry_failed_stage1_models(
+    conversation_id: str,
+    message_index: int,
+    request: RetryStage1Request,
+    user_id: str = Depends(auth.get_current_user_id)
+):
+    """
+    Retry Stage 1 only for models that failed on a prior assistant message.
+    """
+    conversation = await storage.get_conversation(conversation_id, user_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    messages = conversation.get("messages", [])
+    if message_index < 0 or message_index >= len(messages):
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    target_message = messages[message_index]
+    if target_message.get("role") != "assistant":
+        raise HTTPException(status_code=400, detail="Retry is only supported for assistant messages")
+
+    existing_metadata = target_message.get("metadata")
+    metadata: Dict[str, Any] = dict(existing_metadata) if isinstance(existing_metadata, dict) else {}
+    existing_stage1 = target_message.get("stage1")
+    stage1_results: List[Dict[str, Any]] = list(existing_stage1) if isinstance(existing_stage1, list) else []
+
+    existing_stage1_errors = metadata.get("stage1_errors")
+    normalized_existing_errors: List[Dict[str, str]] = []
+    if isinstance(existing_stage1_errors, list):
+        for error_item in existing_stage1_errors:
+            if not isinstance(error_item, dict):
+                continue
+            model_label = error_item.get("model")
+            error_text = error_item.get("error")
+            if not isinstance(model_label, str):
+                continue
+            normalized_existing_errors.append({
+                "model": model_label,
+                "error": str(error_text) if error_text is not None else "Unknown error",
+            })
+
+    failed_models_from_message: List[str] = []
+    failed_seen = set()
+    for error_item in normalized_existing_errors:
+        model_name = _extract_retry_model_name(error_item.get("model"))
+        if not model_name or model_name in failed_seen:
+            continue
+        failed_seen.add(model_name)
+        failed_models_from_message.append(model_name)
+
+    requested_models = request.models if request.models else failed_models_from_message
+    if not requested_models:
+        raise HTTPException(status_code=400, detail="No failed models found to retry")
+
+    deduped_requested_models: List[str] = []
+    request_seen = set()
+    for model_name in requested_models:
+        normalized_name = _extract_retry_model_name(model_name)
+        if not normalized_name or normalized_name in request_seen:
+            continue
+        request_seen.add(normalized_name)
+        deduped_requested_models.append(normalized_name)
+
+    effective_models = metadata.get("effective_council_models")
+    if not isinstance(effective_models, list) or not effective_models:
+        effective_models = resolve_active_models(conversation.get("council_models"))
+    allowed_models = set(effective_models)
+
+    retry_models = [model_name for model_name in deduped_requested_models if model_name in allowed_models]
+    if not retry_models:
+        raise HTTPException(status_code=400, detail="No retriable models in request")
+
+    previous_user_index = _find_previous_user_message_index(messages, message_index)
+    if previous_user_index is None:
+        raise HTTPException(status_code=400, detail="No matching user message found for retry")
+
+    history = _build_history_through_user_message(messages, previous_user_index)
+    retry_query = history[-1]["content"] if history else ""
+    if not retry_query.strip():
+        raise HTTPException(status_code=400, detail="Cannot retry an empty prompt")
+
+    retrieval_context, citations = await retrieval.build_retrieval_context(
+        conversation_id,
+        user_id,
+        retry_query
+    )
+
+    retry_stage1_results: List[Dict[str, Any]] = []
+    retry_stage1_errors: List[Dict[str, str]] = []
+    async for result in stage1_collect_responses(
+        history,
+        retry_models,
+        retrieval_context=retrieval_context
+    ):
+        if result.get("error"):
+            retry_stage1_errors.append({
+                "model": result.get("model", "unknown"),
+                "error": result.get("error", "Unknown error")
+            })
+        else:
+            retry_stage1_results.append(result)
+
+    retry_model_set = set(retry_models)
+    merged_stage1: List[Dict[str, Any]] = []
+    for item in stage1_results:
+        model_name = item.get("model")
+        if not isinstance(model_name, str):
+            continue
+        if any(_is_retry_model_match(model_name, retry_model) for retry_model in retry_model_set):
+            continue
+        merged_stage1.append(item)
+    merged_stage1.extend(retry_stage1_results)
+
+    remaining_previous_errors: List[Dict[str, str]] = []
+    for error_item in normalized_existing_errors:
+        previous_model = _extract_retry_model_name(error_item.get("model"))
+        if previous_model in retry_model_set:
+            continue
+        remaining_previous_errors.append(error_item)
+    combined_errors = remaining_previous_errors + retry_stage1_errors
+
+    responded_models: List[str] = []
+    responded_seen = set()
+    for item in merged_stage1:
+        model_name = item.get("model")
+        if isinstance(model_name, str) and model_name not in responded_seen:
+            responded_seen.add(model_name)
+            responded_models.append(model_name)
+
+    retry_history = metadata.get("stage1_retry_history")
+    retry_history = list(retry_history) if isinstance(retry_history, list) else []
+    retry_history.append({
+        "retried_models": retry_models,
+        "recovered_models": [item["model"] for item in retry_stage1_results],
+        "failed_models": [item["model"] for item in retry_stage1_errors],
+        "timestamp_ms": int(time.time() * 1000),
+    })
+
+    metadata["stage1_errors"] = combined_errors
+    metadata["responded_council_models"] = responded_models
+    metadata["stage1_retry_history"] = retry_history
+    metadata["retrieval"] = {"citations": citations}
+
+    if conversation.get("framework") == "six_hats":
+        metadata["retry_note"] = "Retry runs use direct model calls and do not re-assign Six Hats roles."
+
+    target_message["stage1"] = merged_stage1
+    target_message["metadata"] = metadata
+    await storage.update_message(conversation_id, user_id, message_index, target_message)
+
+    return {
+        "stage1": merged_stage1,
+        "stage1_errors": combined_errors,
+        "retried_models": retry_models,
+        "recovered_models": [item["model"] for item in retry_stage1_results],
+        "failed_models": [item["model"] for item in retry_stage1_errors],
+        "metadata": metadata,
     }
 
 

@@ -92,6 +92,22 @@ async def db_update_title(conversation_id: str, user_id: str, title: str):
         conv.title = title
         await session.commit()
 
+async def db_update_message(conversation_id: str, user_id: str, message_index: int, message: Dict[str, Any]):
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(ConversationModel).where(ConversationModel.id == conversation_id))
+        conv = result.scalar_one_or_none()
+        if not conv or conv.user_id != user_id:
+            raise ValueError("Unauthorized")
+
+        current_msgs = list(conv.messages or [])
+        if message_index < 0 or message_index >= len(current_msgs):
+            raise IndexError("Message index out of range")
+
+        current_msgs[message_index] = message
+        conv.messages = current_msgs
+        flag_modified(conv, "messages")
+        await session.commit()
+
 async def db_delete_conversation(conversation_id: str, user_id: str):
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(ConversationModel).where(ConversationModel.id == conversation_id))
@@ -359,6 +375,19 @@ def file_save_conversation(conversation: Dict[str, Any]):
     with open(get_conversation_path(conversation['id']), 'w') as f:
         json.dump(conversation, f, indent=2)
 
+def file_update_message(conversation_id: str, user_id: str, message_index: int, message: Dict[str, Any]):
+    conv = file_get_conversation(conversation_id, user_id)
+    if not conv:
+        raise ValueError("Not found")
+
+    current_messages = list(conv.get("messages", []))
+    if message_index < 0 or message_index >= len(current_messages):
+        raise IndexError("Message index out of range")
+
+    current_messages[message_index] = message
+    conv["messages"] = current_messages
+    file_save_conversation(conv)
+
 def file_delete_conversation(conversation_id: str, user_id: str):
     path = get_conversation_path(conversation_id)
     if not os.path.exists(path):
@@ -565,6 +594,12 @@ async def add_assistant_message(conversation_id: str, user_id: str, stage1, stag
         if not conv: raise ValueError("Not found")
         conv["messages"].append(message)
         file_save_conversation(conv)
+
+async def update_message(conversation_id: str, user_id: str, message_index: int, message: Dict[str, Any]):
+    if os.getenv("DATABASE_URL"):
+        await db_update_message(conversation_id, user_id, message_index, message)
+    else:
+        file_update_message(conversation_id, user_id, message_index, message)
 
 async def update_conversation_title(conversation_id: str, user_id: str, title: str):
     if os.getenv("DATABASE_URL"):

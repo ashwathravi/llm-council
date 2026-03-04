@@ -1,6 +1,6 @@
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from backend.main import app
 from backend import auth
 
@@ -88,5 +88,101 @@ async def test_create_conversation_invalid_framework(async_client):
         data = response.json()
         assert "detail" in data
         assert any("framework" in error["loc"] for error in data["detail"])
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_stage1_models_success(async_client):
+    conversation = {
+        "id": "conv-1",
+        "framework": "standard",
+        "council_models": ["model-good", "model-bad"],
+        "messages": [
+            {"role": "user", "content": "How do I optimize this query?"},
+            {
+                "role": "assistant",
+                "stage1": [{"model": "model-good", "response": "Use indexes and EXPLAIN."}],
+                "stage2": [],
+                "stage3": {"model": "chair", "response": "Use index tuning."},
+                "metadata": {
+                    "effective_council_models": ["model-good", "model-bad"],
+                    "stage1_errors": [{"model": "model-bad", "error": "timeout"}],
+                    "responded_council_models": ["model-good"],
+                },
+            },
+        ],
+    }
+
+    async def mock_stage1_stream(*args, **kwargs):
+        yield {"model": "model-bad", "response": "Add covering indexes and check cardinality."}
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.update_message", new_callable=AsyncMock) as mock_update_message, \
+             patch("backend.retrieval.build_retrieval_context", new_callable=AsyncMock) as mock_retrieval, \
+             patch("backend.main.stage1_collect_responses", side_effect=mock_stage1_stream):
+            mock_get_conversation.return_value = conversation
+            mock_retrieval.return_value = ("", [])
+
+            response = await async_client.post(
+                "/api/conversations/conv-1/messages/1/retry-stage1",
+                json={}
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["retried_models"] == ["model-bad"]
+            assert data["recovered_models"] == ["model-bad"]
+            assert data["failed_models"] == []
+            assert len(data["stage1"]) == 2
+            assert {item["model"] for item in data["stage1"]} == {"model-good", "model-bad"}
+
+            assert mock_update_message.await_count == 1
+            update_call = mock_update_message.await_args[0]
+            assert update_call[0] == "conv-1"
+            assert update_call[1] == "test_user"
+            assert update_call[2] == 1
+            assert isinstance(update_call[3], dict)
+            assert len(update_call[3]["stage1"]) == 2
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_stage1_models_without_failures_returns_400(async_client):
+    conversation = {
+        "id": "conv-2",
+        "framework": "standard",
+        "council_models": ["model-good"],
+        "messages": [
+            {"role": "user", "content": "Explain joins"},
+            {
+                "role": "assistant",
+                "stage1": [{"model": "model-good", "response": "Use inner joins for matching rows."}],
+                "stage2": [],
+                "stage3": {"model": "chair", "response": "Use joins carefully."},
+                "metadata": {
+                    "effective_council_models": ["model-good"],
+                    "stage1_errors": [],
+                    "responded_council_models": ["model-good"],
+                },
+            },
+        ],
+    }
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation:
+            mock_get_conversation.return_value = conversation
+
+            response = await async_client.post(
+                "/api/conversations/conv-2/messages/1/retry-stage1",
+                json={}
+            )
+
+            assert response.status_code == 400
+            assert response.json()["detail"] == "No failed models found to retry"
     finally:
         app.dependency_overrides = {}

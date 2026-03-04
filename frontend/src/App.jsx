@@ -376,6 +376,37 @@ function App() {
     }
   }, [currentConversationId]);
 
+  const handleRetryFailedModels = useCallback(async (messageIndex, models = []) => {
+    if (!currentConversationId) return null;
+
+    const retryData = await api.retryFailedModels(currentConversationId, messageIndex, models);
+    setCurrentConversation((prev) => {
+      if (!prev || !Array.isArray(prev.messages)) return prev;
+      if (messageIndex < 0 || messageIndex >= prev.messages.length) return prev;
+
+      const messages = [...prev.messages];
+      const targetMessage = { ...messages[messageIndex] };
+      const existingMetadata = targetMessage.metadata || {};
+      const incomingMetadata = retryData?.metadata || {};
+
+      targetMessage.stage1 = Array.isArray(retryData?.stage1)
+        ? retryData.stage1
+        : targetMessage.stage1;
+      targetMessage.metadata = {
+        ...existingMetadata,
+        ...incomingMetadata,
+        stage1_errors: Array.isArray(retryData?.stage1_errors)
+          ? retryData.stage1_errors
+          : existingMetadata.stage1_errors,
+      };
+
+      messages[messageIndex] = targetMessage;
+      return { ...prev, messages };
+    });
+
+    return retryData;
+  }, [currentConversationId]);
+
   if (authLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
   if (!user) {
     return (
@@ -430,6 +461,7 @@ function App() {
           <ChatInterface
             conversation={currentConversation}
             onSendMessage={handleSendMessage}
+            onRetryFailedModels={handleRetryFailedModels}
             isLoading={isLoading}
           />
         </main>

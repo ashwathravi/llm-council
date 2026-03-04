@@ -8,6 +8,7 @@ import { BrainCircuit } from "lucide-react";
 export default function ChatInterface({
   conversation,
   onSendMessage,
+  onRetryFailedModels,
   isLoading,
 }) {
   const messagesEndRef = useRef(null);
@@ -51,7 +52,12 @@ export default function ChatInterface({
           </div>
         ) : (
           conversation.messages.map((msg, index) => (
-            <MessageItem key={index} msg={msg} />
+            <MessageItem
+              key={index}
+              msg={msg}
+              messageIndex={index}
+              onRetryFailedModels={onRetryFailedModels}
+            />
           ))
         )}
 
