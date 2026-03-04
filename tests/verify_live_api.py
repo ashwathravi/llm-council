@@ -21,10 +21,10 @@ async def verify_endpoints():
     headers = {"Authorization": f"Bearer {token}"}
     
     async with httpx.AsyncClient() as client:
-        # 1. Test Status (No auth needed ideally, but let's check)
+        # 1. Test Status (Auth required)
         print("--- Testing /api/status ---")
         try:
-            resp = await client.get(f"{API_URL}/status")
+            resp = await client.get(f"{API_URL}/status", headers=headers)
             print(f"Status: {resp.status_code}")
             print(f"Response: {resp.text}")
         except Exception as e:

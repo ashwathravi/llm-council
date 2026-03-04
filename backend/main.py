@@ -252,7 +252,7 @@ async def list_models(user_id: str = Depends(auth.get_current_user_id)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/api/status")
-async def get_status():
+async def get_status(user_id: str = Depends(auth.get_current_user_id)):
     """Get infrastructure status."""
     from . import config
     is_db = bool(config.DATABASE_URL)
