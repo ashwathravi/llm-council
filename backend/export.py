@@ -11,37 +11,38 @@ def export_to_markdown(conversation: dict) -> str:
     """
     Export conversation to Markdown format.
     """
-    md = f"# {conversation.get('title', 'Conversation')}\n\n"
-    md += f"**Date:** {conversation.get('created_at', '')}\n"
-    md += f"**Framework:** {conversation.get('framework', 'Standard')}\n\n"
+    lines = []
+    lines.append(f"# {conversation.get('title', 'Conversation')}\n\n")
+    lines.append(f"**Date:** {conversation.get('created_at', '')}\n")
+    lines.append(f"**Framework:** {conversation.get('framework', 'Standard')}\n\n")
 
     for msg in conversation.get('messages', []):
         role = msg.get('role')
         if role == 'user':
-            md += f"## User\n\n{msg.get('content', '')}\n\n"
+            lines.append(f"## User\n\n{msg.get('content', '')}\n\n")
         elif role == 'assistant':
-            md += "## LLM Council\n\n"
+            lines.append("## LLM Council\n\n")
 
             # Stage 1
             if msg.get('stage1'):
-                md += "### Stage 1: Individual Responses\n\n"
+                lines.append("### Stage 1: Individual Responses\n\n")
                 for res in msg['stage1']:
-                    md += f"**{res.get('model', 'Model')}**:\n\n{res.get('response', '')}\n\n"
+                    lines.append(f"**{res.get('model', 'Model')}**:\n\n{res.get('response', '')}\n\n")
 
             # Stage 2
             if msg.get('stage2'):
-                md += "### Stage 2: Peer Review\n\n"
+                lines.append("### Stage 2: Peer Review\n\n")
                 for res in msg['stage2']:
-                    md += f"**{res.get('model', 'Model')}**:\n\n{res.get('ranking', '')}\n\n"
+                    lines.append(f"**{res.get('model', 'Model')}**:\n\n{res.get('ranking', '')}\n\n")
 
             # Stage 3
             if msg.get('stage3'):
-                md += "### Stage 3: Final Synthesis\n\n"
-                md += f"{msg['stage3'].get('response', '')}\n\n"
+                lines.append("### Stage 3: Final Synthesis\n\n")
+                lines.append(f"{msg['stage3'].get('response', '')}\n\n")
 
-        md += "---\n\n"
+        lines.append("---\n\n")
 
-    return md
+    return "".join(lines)
 
 def export_to_pdf(conversation: dict) -> bytes:
     """
