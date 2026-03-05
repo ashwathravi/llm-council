@@ -186,3 +186,80 @@ async def test_retry_failed_stage1_models_without_failures_returns_400(async_cli
             assert response.json()["detail"] == "No failed models found to retry"
     finally:
         app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_retry_endpoint_can_refresh_synthesis_without_retrying_models(async_client):
+    conversation = {
+        "id": "conv-3",
+        "framework": "standard",
+        "council_models": ["model-a", "model-b"],
+        "chairman_model": "chair-model",
+        "messages": [
+            {"role": "user", "content": "How should we scale this service?"},
+            {
+                "role": "assistant",
+                "stage1": [
+                    {"model": "model-a", "response": "Use horizontal scaling and caching."},
+                    {"model": "model-b", "response": "Add autoscaling and load balancing."},
+                ],
+                "stage2": [{"model": "old-ranker", "ranking": "old"}],
+                "stage3": {"model": "chair-model", "response": "Old synthesis"},
+                "metadata": {
+                    "effective_council_models": ["model-a", "model-b"],
+                    "stage1_errors": [],
+                    "responded_council_models": ["model-a", "model-b"],
+                    "label_to_model": {"Response A": "model-a", "Response B": "model-b"},
+                    "aggregate_rankings": [{"model": "model-a", "average_rank": 1.0, "rankings_count": 1}],
+                },
+            },
+        ],
+    }
+
+    async def mock_stage3_stream(*args, **kwargs):
+        yield "Refreshed "
+        yield "synthesis"
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("stage1_collect_responses should not be called for refresh-only requests")
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.update_message", new_callable=AsyncMock) as mock_update_message, \
+             patch("backend.retrieval.build_retrieval_context", new_callable=AsyncMock) as mock_retrieval, \
+             patch("backend.main.stage1_collect_responses", side_effect=fail_if_called), \
+             patch("backend.main.stage2_collect_rankings", new_callable=AsyncMock) as mock_stage2, \
+             patch("backend.main.calculate_aggregate_rankings", return_value=[{"model": "model-b", "average_rank": 1.0, "rankings_count": 1}]), \
+             patch("backend.main.stage3_synthesize_final", side_effect=mock_stage3_stream):
+            mock_get_conversation.return_value = conversation
+            mock_retrieval.return_value = ("retrieval context", [])
+            mock_stage2.return_value = (
+                [{"model": "ranker", "ranking": "FINAL RANKING:\n1. Response B\n2. Response A", "parsed_ranking": ["Response B", "Response A"]}],
+                {"Response A": "model-a", "Response B": "model-b"},
+            )
+
+            response = await async_client.post(
+                "/api/conversations/conv-3/messages/1/retry-stage1",
+                json={"refresh_synthesis": True}
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["retried_models"] == []
+            assert data["recovered_models"] == []
+            assert data["failed_models"] == []
+            assert data["synthesis_refreshed"] is True
+            assert data["synthesis_refresh_error"] is None
+            assert data["stage3"]["response"] == "Refreshed synthesis"
+            assert len(data["stage2"]) == 1
+
+            assert mock_update_message.await_count == 1
+            update_call = mock_update_message.await_args[0]
+            assert update_call[0] == "conv-3"
+            assert update_call[1] == "test_user"
+            assert update_call[2] == 1
+            assert update_call[3]["stage3"]["response"] == "Refreshed synthesis"
+            assert "synthesis_refreshed_at_ms" in update_call[3]["metadata"]
+    finally:
+        app.dependency_overrides = {}

@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Trophy, Crown, BrainCircuit, GitCompareArrows, RotateCcw } from "lucide-react";
+import { AlertTriangle, Trophy, Crown, BrainCircuit, GitCompareArrows, RotateCcw, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ⚡ Bolt: Memoize markdown rendering to prevent re-parsing on every parent re-render
@@ -256,6 +256,8 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
   const { stage1, stage2, stage3, loading, errors, metadata } = message;
   const [activeTab, setActiveTab] = useState('consensus');
   const [isRetryingFailedModels, setIsRetryingFailedModels] = useState(false);
+  const [retryingModelIds, setRetryingModelIds] = useState([]);
+  const [isRefreshingSynthesis, setIsRefreshingSynthesis] = useState(false);
 
   const hasStage1 = stage1 && stage1.length > 0;
   const hasStage2 = stage2 && stage2.length > 0;
@@ -301,17 +303,21 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
     return merged;
   }, [errors, stage1Errors]);
 
-  const failedModelIds = useMemo(() => {
-    const seen = new Set();
-    const models = [];
+  const failedModelEntries = useMemo(() => {
+    const map = new Map();
     combinedErrors.forEach((errorItem) => {
       const normalized = extractRetryModelName(errorItem.model);
-      if (!normalized || seen.has(normalized)) return;
-      seen.add(normalized);
-      models.push(normalized);
+      if (!normalized) return;
+      if (!map.has(normalized)) {
+        map.set(normalized, {
+          modelId: normalized,
+          label: errorItem.model || normalized,
+        });
+      }
     });
-    return models;
+    return [...map.values()];
   }, [combinedErrors]);
+  const failedModelIds = failedModelEntries.map((entry) => entry.modelId);
 
   const diffData = useMemo(() => buildComparisonDiff(stage1), [stage1]);
 
@@ -325,17 +331,49 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
     Number.isInteger(messageIndex) &&
     failedModelIds.length > 0
   );
+  const hasRetryHistory = Array.isArray(metadata?.stage1_retry_history) && metadata.stage1_retry_history.length > 0;
+  const canRefreshSynthesis = (
+    typeof onRetryFailedModels === 'function' &&
+    Number.isInteger(messageIndex) &&
+    hasStage1 &&
+    hasRetryHistory
+  );
 
   const handleRetryFailedModels = async () => {
     if (!canRetryFailedModels || isRetryingFailedModels) return;
     setIsRetryingFailedModels(true);
     try {
       await onRetryFailedModels(messageIndex, failedModelIds);
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : 'Failed to retry models';
-      alert(detail);
+    } catch {
+      // Errors are surfaced via global toasts in App.
     } finally {
       setIsRetryingFailedModels(false);
+    }
+  };
+
+  const handleRetrySingleModel = async (modelId) => {
+    if (!canRetryFailedModels || !modelId) return;
+    if (isRetryingFailedModels || retryingModelIds.includes(modelId)) return;
+
+    setRetryingModelIds((current) => [...current, modelId]);
+    try {
+      await onRetryFailedModels(messageIndex, [modelId]);
+    } catch {
+      // Errors are surfaced via global toasts in App.
+    } finally {
+      setRetryingModelIds((current) => current.filter((item) => item !== modelId));
+    }
+  };
+
+  const handleRefreshSynthesis = async () => {
+    if (!canRefreshSynthesis || isRefreshingSynthesis) return;
+    setIsRefreshingSynthesis(true);
+    try {
+      await onRetryFailedModels(messageIndex, [], { refreshSynthesis: true });
+    } catch {
+      // Errors are surfaced via global toasts in App.
+    } finally {
+      setIsRefreshingSynthesis(false);
     }
   };
 
@@ -405,6 +443,19 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
                       </div>
                     </div>
                   )}
+                  {canRefreshSynthesis && (
+                    <div className="mb-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRefreshSynthesis}
+                        disabled={isRefreshingSynthesis || isRetryingFailedModels}
+                      >
+                        <RefreshCw className={cn('mr-1 h-3.5 w-3.5', isRefreshingSynthesis && 'animate-spin')} />
+                        {isRefreshingSynthesis ? 'Refreshing Synthesis...' : 'Refresh Synthesis'}
+                      </Button>
+                    </div>
+                  )}
                   <MarkdownContent content={stage3.response} />
                   {loading?.stage3 && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1" />}
                 </>
@@ -446,20 +497,42 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
                 <AlertTriangle className="h-4 w-4" />
                 Errors detected:
               </div>
-              {canRetryFailedModels && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 border-destructive/40 text-destructive hover:text-destructive"
-                  onClick={handleRetryFailedModels}
-                  disabled={isRetryingFailedModels}
-                >
-                  <RotateCcw className={cn('mr-1 h-3.5 w-3.5', isRetryingFailedModels && 'animate-spin')} />
-                  {isRetryingFailedModels ? 'Retrying...' : 'Retry Failed Models'}
-                </Button>
-              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                {canRetryFailedModels && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 border-destructive/40 text-destructive hover:text-destructive"
+                    onClick={handleRetryFailedModels}
+                    disabled={isRetryingFailedModels || isRefreshingSynthesis}
+                  >
+                    <RotateCcw className={cn('mr-1 h-3.5 w-3.5', isRetryingFailedModels && 'animate-spin')} />
+                    {isRetryingFailedModels ? 'Retrying...' : 'Retry Failed Models'}
+                  </Button>
+                )}
+              </div>
             </div>
-            <ul className="list-disc list-inside">
+            {failedModelEntries.length > 0 && canRetryFailedModels && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {failedModelEntries.map((entry) => {
+                  const isRetryingModel = retryingModelIds.includes(entry.modelId);
+                  return (
+                    <Button
+                      key={entry.modelId}
+                      variant="outline"
+                      size="sm"
+                      className="h-7 border-destructive/40 text-destructive hover:text-destructive"
+                      onClick={() => handleRetrySingleModel(entry.modelId)}
+                      disabled={isRetryingModel || isRetryingFailedModels || isRefreshingSynthesis}
+                    >
+                      <RotateCcw className={cn('mr-1 h-3.5 w-3.5', isRetryingModel && 'animate-spin')} />
+                      {isRetryingModel ? 'Retrying...' : `Retry ${entry.label}`}
+                    </Button>
+                  );
+                })}
+              </div>
+            )}
+            <ul className="list-disc list-inside space-y-1">
               {combinedErrors.map((err, idx) => (
                 <li key={idx}><strong>{err.model}:</strong> {err.error}</li>
               ))}

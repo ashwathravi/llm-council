@@ -105,6 +105,7 @@ class SendMessageRequest(BaseModel):
 class RetryStage1Request(BaseModel):
     """Request to retry failed Stage 1 models for an existing assistant message."""
     models: List[str] = Field(default_factory=list, max_length=10)
+    refresh_synthesis: bool = False
 
     @field_validator("models")
     @classmethod
@@ -549,6 +550,72 @@ def _build_history_through_user_message(
     return history
 
 
+def _build_response_label_mapping(stage1_results: List[Dict[str, Any]]) -> Dict[str, str]:
+    labels = [chr(65 + index) for index in range(len(stage1_results))]
+    return {
+        f"Response {label}": result["model"]
+        for label, result in zip(labels, stage1_results)
+    }
+
+
+async def _rerun_stage2_and_stage3(
+    *,
+    framework: str,
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    effective_models: List[str],
+    chairman_model: Optional[str],
+    retrieval_context: str
+) -> Dict[str, Any]:
+    stage2_results: List[Dict[str, Any]] = []
+    aggregate_rankings: List[Dict[str, Any]] = []
+
+    if framework == "ensemble":
+        label_to_model = _build_response_label_mapping(stage1_results)
+    elif framework == "debate":
+        stage2_results, label_to_model = await stage2_collect_critiques(
+            user_query,
+            stage1_results,
+            effective_models,
+            retrieval_context=retrieval_context
+        )
+    else:
+        stage2_results, label_to_model = await stage2_collect_rankings(
+            user_query,
+            stage1_results,
+            effective_models,
+            chairman_model,
+            retrieval_context=retrieval_context
+        )
+        aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+
+    full_stage3_response = ""
+    async for token in stage3_synthesize_final(
+        user_query,
+        stage1_results,
+        stage2_results,
+        chairman_model=chairman_model,
+        mode=framework,
+        retrieval_context=retrieval_context
+    ):
+        full_stage3_response += token
+
+    if not full_stage3_response.strip():
+        raise RuntimeError("The chairman model returned an empty response.")
+
+    stage3_result = {
+        "model": chairman_model or config.CHAIRMAN_MODEL,
+        "response": full_stage3_response
+    }
+
+    return {
+        "stage2": stage2_results,
+        "stage3": stage3_result,
+        "label_to_model": label_to_model,
+        "aggregate_rankings": aggregate_rankings,
+    }
+
+
 @app.post(
     "/api/conversations/{conversation_id}/messages/{message_index}/retry-stage1",
     dependencies=[Depends(security.rate_limiter(requests_limit=20, time_window=60, scope="chat"))]
@@ -603,8 +670,12 @@ async def retry_failed_stage1_models(
         failed_seen.add(model_name)
         failed_models_from_message.append(model_name)
 
-    requested_models = request.models if request.models else failed_models_from_message
-    if not requested_models:
+    requested_models = (
+        []
+        if request.refresh_synthesis and not request.models
+        else (request.models if request.models else failed_models_from_message)
+    )
+    if not requested_models and not request.refresh_synthesis:
         raise HTTPException(status_code=400, detail="No failed models found to retry")
 
     deduped_requested_models: List[str] = []
@@ -622,38 +693,44 @@ async def retry_failed_stage1_models(
     allowed_models = set(effective_models)
 
     retry_models = [model_name for model_name in deduped_requested_models if model_name in allowed_models]
-    if not retry_models:
+    if deduped_requested_models and not retry_models:
         raise HTTPException(status_code=400, detail="No retriable models in request")
 
-    previous_user_index = _find_previous_user_message_index(messages, message_index)
-    if previous_user_index is None:
-        raise HTTPException(status_code=400, detail="No matching user message found for retry")
+    history: List[Dict[str, str]] = []
+    retry_query = ""
+    retrieval_context = ""
+    citations: List[Dict[str, Any]] = []
+    if retry_models or request.refresh_synthesis:
+        previous_user_index = _find_previous_user_message_index(messages, message_index)
+        if previous_user_index is None:
+            raise HTTPException(status_code=400, detail="No matching user message found for retry")
 
-    history = _build_history_through_user_message(messages, previous_user_index)
-    retry_query = history[-1]["content"] if history else ""
-    if not retry_query.strip():
-        raise HTTPException(status_code=400, detail="Cannot retry an empty prompt")
+        history = _build_history_through_user_message(messages, previous_user_index)
+        retry_query = history[-1]["content"] if history else ""
+        if not retry_query.strip():
+            raise HTTPException(status_code=400, detail="Cannot retry an empty prompt")
 
-    retrieval_context, citations = await retrieval.build_retrieval_context(
-        conversation_id,
-        user_id,
-        retry_query
-    )
+        retrieval_context, citations = await retrieval.build_retrieval_context(
+            conversation_id,
+            user_id,
+            retry_query
+        )
 
     retry_stage1_results: List[Dict[str, Any]] = []
     retry_stage1_errors: List[Dict[str, str]] = []
-    async for result in stage1_collect_responses(
-        history,
-        retry_models,
-        retrieval_context=retrieval_context
-    ):
-        if result.get("error"):
-            retry_stage1_errors.append({
-                "model": result.get("model", "unknown"),
-                "error": result.get("error", "Unknown error")
-            })
-        else:
-            retry_stage1_results.append(result)
+    if retry_models:
+        async for result in stage1_collect_responses(
+            history,
+            retry_models,
+            retrieval_context=retrieval_context
+        ):
+            if result.get("error"):
+                retry_stage1_errors.append({
+                    "model": result.get("model", "unknown"),
+                    "error": result.get("error", "Unknown error")
+                })
+            else:
+                retry_stage1_results.append(result)
 
     retry_model_set = set(retry_models)
     merged_stage1: List[Dict[str, Any]] = []
@@ -684,12 +761,13 @@ async def retry_failed_stage1_models(
 
     retry_history = metadata.get("stage1_retry_history")
     retry_history = list(retry_history) if isinstance(retry_history, list) else []
-    retry_history.append({
-        "retried_models": retry_models,
-        "recovered_models": [item["model"] for item in retry_stage1_results],
-        "failed_models": [item["model"] for item in retry_stage1_errors],
-        "timestamp_ms": int(time.time() * 1000),
-    })
+    if retry_models:
+        retry_history.append({
+            "retried_models": retry_models,
+            "recovered_models": [item["model"] for item in retry_stage1_results],
+            "failed_models": [item["model"] for item in retry_stage1_errors],
+            "timestamp_ms": int(time.time() * 1000),
+        })
 
     metadata["stage1_errors"] = combined_errors
     metadata["responded_council_models"] = responded_models
@@ -701,14 +779,52 @@ async def retry_failed_stage1_models(
 
     target_message["stage1"] = merged_stage1
     target_message["metadata"] = metadata
+
+    synthesis_refreshed = False
+    synthesis_refresh_error: Optional[str] = None
+    if request.refresh_synthesis:
+        if not merged_stage1:
+            synthesis_refresh_error = "Cannot refresh synthesis without Stage 1 responses."
+        else:
+            active_chairman_model = metadata.get("chairman_model")
+            if not isinstance(active_chairman_model, str) or not active_chairman_model:
+                active_chairman_model = conversation.get("chairman_model") or config.CHAIRMAN_MODEL
+            framework = conversation.get("framework", "standard")
+
+            refresh_started_at = time.monotonic()
+            try:
+                refreshed_data = await _rerun_stage2_and_stage3(
+                    framework=framework,
+                    user_query=retry_query,
+                    stage1_results=merged_stage1,
+                    effective_models=effective_models,
+                    chairman_model=active_chairman_model,
+                    retrieval_context=retrieval_context
+                )
+                target_message["stage2"] = refreshed_data["stage2"]
+                target_message["stage3"] = refreshed_data["stage3"]
+                metadata["label_to_model"] = refreshed_data["label_to_model"]
+                metadata["aggregate_rankings"] = refreshed_data["aggregate_rankings"]
+                metadata["synthesis_refreshed_at_ms"] = int(time.time() * 1000)
+                metadata["synthesis_refresh_duration_seconds"] = round(time.monotonic() - refresh_started_at, 3)
+                metadata.pop("synthesis_refresh_error", None)
+                synthesis_refreshed = True
+            except Exception:
+                synthesis_refresh_error = "Failed to refresh synthesis."
+                metadata["synthesis_refresh_error"] = synthesis_refresh_error
+
     await storage.update_message(conversation_id, user_id, message_index, target_message)
 
     return {
         "stage1": merged_stage1,
+        "stage2": target_message.get("stage2"),
+        "stage3": target_message.get("stage3"),
         "stage1_errors": combined_errors,
         "retried_models": retry_models,
         "recovered_models": [item["model"] for item in retry_stage1_results],
         "failed_models": [item["model"] for item in retry_stage1_errors],
+        "synthesis_refreshed": synthesis_refreshed,
+        "synthesis_refresh_error": synthesis_refresh_error,
         "metadata": metadata,
     }
 
