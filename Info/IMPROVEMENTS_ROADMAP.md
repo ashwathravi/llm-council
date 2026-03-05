@@ -26,6 +26,12 @@ _Last updated: March 4, 2026_
 
 ## Follow-Up Queue
 
+
+- [ ] Guided “first prompt” onboarding
+  - Add one-tap starter prompts and keyboard shortcuts to reduce empty-state friction.
+
+- [ ] Session templates by intent
+  - Offer pre-baked council configurations (e.g., Debug, Product, Security) to speed setup.
 - [ ] Preset management enhancements
   - Add rename/delete/reorder support and optional “pin favorite preset”.
 
