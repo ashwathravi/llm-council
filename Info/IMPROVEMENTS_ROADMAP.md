@@ -70,8 +70,15 @@ _Last updated: March 4, 2026_
     - Added per-conversation local draft persistence for unsent composer text.
     - Restores saved drafts when returning to a conversation and surfaces a clear-draft action.
 
+- [x] Quick-copy actions for consensus and model responses
+  - Status: Implemented.
+  - Frontend:
+    - Added copy-to-clipboard actions for the consensus pane and each individual Stage 1 model response.
+    - Added toast feedback for successful copy and clipboard access failures.
+
 ## Progress Log
 
+- 2026-03-05: Added one-click copy actions for consensus + Stage 1 model tabs with clipboard success/failure toasts.
 - 2026-03-05: Added per-conversation composer draft persistence + restore banner with a one-click clear action.
 - 2026-03-05: Added in-composer prompt snippet chips (Decision Brief/Debug Plan/Risk Scan) to speed up repeat prompting workflows.
 - 2026-03-05: Added post-retry synthesis refresh endpoint + UI action to recompute Stage 2/3 from recovered Stage 1 responses.
