@@ -76,7 +76,10 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage, prefilledPro
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    const isPrimaryModifierEnter = (e.ctrlKey || e.metaKey) && e.key === 'Enter';
+    const isStandardSend = e.key === 'Enter' && !e.shiftKey;
+
+    if (isStandardSend || isPrimaryModifierEnter) {
       e.preventDefault();
       handleSubmit(e);
     }
