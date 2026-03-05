@@ -26,12 +26,15 @@ const PROMPT_SNIPPETS = [
   }
 ];
 
+const DRAFT_STORAGE_KEY_PREFIX = 'llm-council:draft:';
+
 const ChatInput = memo(({ conversationId, isLoading, onSendMessage, prefilledPrompt = '' }) => {
   const [input, setInput] = useState('');
   const [documents, setDocuments] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
+  const [draftRestored, setDraftRestored] = useState(false);
 
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -49,8 +52,11 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage, prefilledPro
     setUploadError('');
     setUploading(false);
     setUploadProgress(0);
+    setDraftRestored(false);
+
     if (!conversationId) {
       setDocuments([]);
+      setInput('');
       return;
     }
 
@@ -65,6 +71,31 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage, prefilledPro
 
     loadDocuments();
   }, [conversationId]);
+
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const storageKey = `${DRAFT_STORAGE_KEY_PREFIX}${conversationId}`;
+    const savedDraft = localStorage.getItem(storageKey);
+    if (savedDraft) {
+      setInput(savedDraft);
+      setDraftRestored(true);
+    }
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const storageKey = `${DRAFT_STORAGE_KEY_PREFIX}${conversationId}`;
+    const trimmedInput = input.trim();
+
+    if (!trimmedInput) {
+      localStorage.removeItem(storageKey);
+      return;
+    }
+
+    localStorage.setItem(storageKey, input);
+  }, [conversationId, input]);
 
   useEffect(() => {
     if (!prefilledPrompt) return;
@@ -87,6 +118,10 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage, prefilledPro
     e.preventDefault();
     if (input.trim() && !isLoading) {
       onSendMessage(input);
+      if (conversationId) {
+        localStorage.removeItem(`${DRAFT_STORAGE_KEY_PREFIX}${conversationId}`);
+      }
+      setDraftRestored(false);
       setInput('');
       // Reset height
       if (textareaRef.current) textareaRef.current.style.height = "auto";
@@ -169,6 +204,14 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage, prefilledPro
     textareaRef.current?.focus();
   };
 
+  const handleClearDraft = () => {
+    if (!conversationId) return;
+    localStorage.removeItem(`${DRAFT_STORAGE_KEY_PREFIX}${conversationId}`);
+    setInput('');
+    setDraftRestored(false);
+    textareaRef.current?.focus();
+  };
+
   return (
     <div className="border-t bg-background p-4">
       <form onSubmit={handleSubmit} className="mx-auto max-w-3xl flex flex-col gap-3">
@@ -212,6 +255,15 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage, prefilledPro
         )}
 
         {/* Input Area */}
+        {draftRestored && (
+          <div className="flex items-center justify-between rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+            <span>Draft restored for this conversation.</span>
+            <Button type="button" variant="ghost" size="sm" onClick={handleClearDraft} className="h-6 px-2 text-xs">
+              Clear draft
+            </Button>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2" aria-label="Prompt starter snippets">
           {PROMPT_SNIPPETS.map((snippet) => (
             <Button

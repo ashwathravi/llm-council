@@ -64,8 +64,15 @@ _Last updated: March 4, 2026_
     - Added per-message `Refresh synthesis` action once Stage 1 retries exist.
     - Updates rankings, consensus output, and metadata in place after refresh.
 
+- [x] Composer draft recovery by conversation
+  - Status: Implemented.
+  - Frontend:
+    - Added per-conversation local draft persistence for unsent composer text.
+    - Restores saved drafts when returning to a conversation and surfaces a clear-draft action.
+
 ## Progress Log
 
+- 2026-03-05: Added per-conversation composer draft persistence + restore banner with a one-click clear action.
 - 2026-03-05: Added in-composer prompt snippet chips (Decision Brief/Debug Plan/Risk Scan) to speed up repeat prompting workflows.
 - 2026-03-05: Added post-retry synthesis refresh endpoint + UI action to recompute Stage 2/3 from recovered Stage 1 responses.
 - 2026-03-05: Added granular Stage 1 retry UX with per-model retry actions and explicit retry outcome toasts.
