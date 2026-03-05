@@ -8,6 +8,24 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Badge } from "@/components/ui/badge";
 import { Paperclip, Send, X, FileText, Loader2 } from "lucide-react";
 
+const PROMPT_SNIPPETS = [
+  {
+    id: 'decision-brief',
+    label: 'Decision Brief',
+    prompt: 'Give me a concise decision brief with options, trade-offs, and a recommended next step.'
+  },
+  {
+    id: 'debug-plan',
+    label: 'Debug Plan',
+    prompt: 'Diagnose this issue step-by-step and propose the fastest path to a verified fix.'
+  },
+  {
+    id: 'risk-scan',
+    label: 'Risk Scan',
+    prompt: 'Perform a risk scan: list key risks, likelihood, impact, and practical mitigations.'
+  }
+];
+
 const ChatInput = memo(({ conversationId, isLoading, onSendMessage, prefilledPrompt = '' }) => {
   const [input, setInput] = useState('');
   const [documents, setDocuments] = useState([]);
@@ -145,6 +163,12 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage, prefilledPro
     }
   };
 
+  const handleSnippetSelect = (prompt) => {
+    if (isLoading) return;
+    setInput(prompt);
+    textareaRef.current?.focus();
+  };
+
   return (
     <div className="border-t bg-background p-4">
       <form onSubmit={handleSubmit} className="mx-auto max-w-3xl flex flex-col gap-3">
@@ -188,6 +212,23 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage, prefilledPro
         )}
 
         {/* Input Area */}
+        <div className="flex flex-wrap gap-2" aria-label="Prompt starter snippets">
+          {PROMPT_SNIPPETS.map((snippet) => (
+            <Button
+              key={snippet.id}
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleSnippetSelect(snippet.prompt)}
+              disabled={isLoading}
+              className="h-7 rounded-full text-xs"
+              aria-label={`Insert ${snippet.label} snippet`}
+            >
+              {snippet.label}
+            </Button>
+          ))}
+        </div>
+
         <div className="relative flex items-end gap-2 rounded-lg border bg-background p-2 shadow-sm focus-within:ring-1 focus-within:ring-ring">
           {/* Attachment Button */}
           <TooltipProvider>
