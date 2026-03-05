@@ -253,10 +253,11 @@ const buildComparisonDiff = (stage1Results) => {
   return { consensusSentences, overlaps, uniqueTerms };
 };
 
-const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => {
+const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels, onRefreshSynthesis }) => {
   const { stage1, stage2, stage3, loading, errors, metadata } = message;
   const [activeTab, setActiveTab] = useState('consensus');
   const [isRetryingFailedModels, setIsRetryingFailedModels] = useState(false);
+  const [isRefreshingSynthesis, setIsRefreshingSynthesis] = useState(false);
   const [retryingModels, setRetryingModels] = useState([]);
   const { toast } = useToast();
 
@@ -329,6 +330,15 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
     failedModelIds.length > 0
   );
 
+  const canRefreshSynthesis = (
+    typeof onRefreshSynthesis === 'function' &&
+    Number.isInteger(messageIndex) &&
+    hasStage1 &&
+    hasStage3 &&
+    Array.isArray(metadata?.stage1_retry_history) &&
+    metadata.stage1_retry_history.length > 0
+  );
+
   const handleRetryModels = async (modelsToRetry) => {
     if (!canRetryFailedModels || !Array.isArray(modelsToRetry) || modelsToRetry.length === 0) return;
     const uniqueModels = [...new Set(modelsToRetry.filter(Boolean))];
@@ -386,6 +396,28 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
     await handleRetryModels([modelName]);
   };
 
+  const handleRefreshSynthesis = async () => {
+    if (!canRefreshSynthesis || isRefreshingSynthesis) return;
+
+    setIsRefreshingSynthesis(true);
+    try {
+      await onRefreshSynthesis(messageIndex);
+      toast({
+        title: 'Synthesis refreshed',
+        description: 'Stage 2 + Stage 3 were recomputed from recovered Stage 1 responses.',
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Failed to refresh synthesis';
+      toast({
+        title: 'Synthesis refresh failed',
+        description: detail,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRefreshingSynthesis(false);
+    }
+  };
+
   return (
     <Card className="w-full border-2 border-transparent data-[state=chairman]:border-chairman/20 overflow-hidden">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -437,6 +469,19 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
                       <Badge variant="secondary" className="text-xs">
                         {metadata.framework}
                       </Badge>
+                    )}
+                    {canRefreshSynthesis && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={handleRefreshSynthesis}
+                        disabled={isRefreshingSynthesis}
+                        aria-label="Refresh synthesis using latest Stage 1 results"
+                      >
+                        <RotateCcw className={cn('mr-1 h-3.5 w-3.5', isRefreshingSynthesis && 'animate-spin')} />
+                        {isRefreshingSynthesis ? 'Refreshing...' : 'Refresh synthesis'}
+                      </Button>
                     )}
                   </div>
                   {hasModelMetadata && (

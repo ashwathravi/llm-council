@@ -15,6 +15,7 @@ export default function ChatInterface({
   conversation,
   onSendMessage,
   onRetryFailedModels,
+  onRefreshSynthesis,
   isLoading,
 }) {
   const messagesEndRef = useRef(null);
@@ -100,6 +101,7 @@ export default function ChatInterface({
               msg={msg}
               messageIndex={index}
               onRetryFailedModels={onRetryFailedModels}
+              onRefreshSynthesis={onRefreshSynthesis}
             />
           ))
         )}

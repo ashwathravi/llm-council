@@ -184,6 +184,34 @@ export const api = {
   },
 
   /**
+   * Recompute Stage 2 + Stage 3 synthesis for an assistant message.
+   */
+  async refreshSynthesis(conversationId, messageIndex) {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/messages/${messageIndex}/refresh-synthesis`,
+      {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ force: false }),
+      }
+    );
+
+    if (!response.ok) {
+      let detail = 'Failed to refresh synthesis';
+      try {
+        const data = await response.json();
+        detail = data.detail || data.error || detail;
+      } catch {
+        const text = await response.text();
+        if (text) detail = text;
+      }
+      throw new Error(detail);
+    }
+
+    return response.json();
+  },
+
+  /**
    * Send a message and receive streaming updates.
    */
   async sendMessageStream(conversationId, content, onEvent) {

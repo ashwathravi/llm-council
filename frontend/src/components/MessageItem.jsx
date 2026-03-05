@@ -5,7 +5,7 @@ import CouncilMessageBlock from './CouncilMessageBlock';
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { User } from "lucide-react";
 
-const MessageItem = memo(({ msg, messageIndex, onRetryFailedModels }) => {
+const MessageItem = memo(({ msg, messageIndex, onRetryFailedModels, onRefreshSynthesis }) => {
   if (msg.role === 'user') {
     return (
       <div className="flex justify-end mb-6">
@@ -41,6 +41,7 @@ const MessageItem = memo(({ msg, messageIndex, onRetryFailedModels }) => {
             message={msg}
             messageIndex={messageIndex}
             onRetryFailedModels={onRetryFailedModels}
+            onRefreshSynthesis={onRefreshSynthesis}
           />
         </div>
       </div>

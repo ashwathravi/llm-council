@@ -407,6 +407,37 @@ function App() {
     return retryData;
   }, [currentConversationId]);
 
+  const handleRefreshSynthesis = useCallback(async (messageIndex) => {
+    if (!currentConversationId) return null;
+
+    const refreshData = await api.refreshSynthesis(currentConversationId, messageIndex);
+    setCurrentConversation((prev) => {
+      if (!prev || !Array.isArray(prev.messages)) return prev;
+      if (messageIndex < 0 || messageIndex >= prev.messages.length) return prev;
+
+      const messages = [...prev.messages];
+      const targetMessage = { ...messages[messageIndex] };
+      const existingMetadata = targetMessage.metadata || {};
+      const incomingMetadata = refreshData?.metadata || {};
+
+      targetMessage.stage2 = Array.isArray(refreshData?.stage2)
+        ? refreshData.stage2
+        : targetMessage.stage2;
+      targetMessage.stage3 = refreshData?.stage3 && typeof refreshData.stage3 === 'object'
+        ? refreshData.stage3
+        : targetMessage.stage3;
+      targetMessage.metadata = {
+        ...existingMetadata,
+        ...incomingMetadata,
+      };
+
+      messages[messageIndex] = targetMessage;
+      return { ...prev, messages };
+    });
+
+    return refreshData;
+  }, [currentConversationId]);
+
   if (authLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
   if (!user) {
     return (
@@ -462,6 +493,7 @@ function App() {
             conversation={currentConversation}
             onSendMessage={handleSendMessage}
             onRetryFailedModels={handleRetryFailedModels}
+            onRefreshSynthesis={handleRefreshSynthesis}
             isLoading={isLoading}
           />
         </main>
