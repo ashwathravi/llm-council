@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
 import { AlertTriangle, Trophy, Crown, BrainCircuit, GitCompareArrows, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -256,6 +257,8 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
   const { stage1, stage2, stage3, loading, errors, metadata } = message;
   const [activeTab, setActiveTab] = useState('consensus');
   const [isRetryingFailedModels, setIsRetryingFailedModels] = useState(false);
+  const [retryingModels, setRetryingModels] = useState([]);
+  const { toast } = useToast();
 
   const hasStage1 = stage1 && stage1.length > 0;
   const hasStage2 = stage2 && stage2.length > 0;
@@ -326,17 +329,61 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
     failedModelIds.length > 0
   );
 
-  const handleRetryFailedModels = async () => {
-    if (!canRetryFailedModels || isRetryingFailedModels) return;
-    setIsRetryingFailedModels(true);
+  const handleRetryModels = async (modelsToRetry) => {
+    if (!canRetryFailedModels || !Array.isArray(modelsToRetry) || modelsToRetry.length === 0) return;
+    const uniqueModels = [...new Set(modelsToRetry.filter(Boolean))];
+    const isBulkRetry = uniqueModels.length > 1;
+
+    if (isBulkRetry) {
+      if (isRetryingFailedModels) return;
+      setIsRetryingFailedModels(true);
+    } else {
+      if (retryingModels.includes(uniqueModels[0])) return;
+      setRetryingModels((prev) => [...prev, uniqueModels[0]]);
+    }
+
     try {
-      await onRetryFailedModels(messageIndex, failedModelIds);
+      const retryResult = await onRetryFailedModels(messageIndex, uniqueModels);
+      const recoveredModels = Array.isArray(retryResult?.recovered_models)
+        ? retryResult.recovered_models
+        : [];
+      const failedModels = Array.isArray(retryResult?.failed_models)
+        ? retryResult.failed_models
+        : [];
+
+      const title = failedModels.length > 0 ? 'Retry completed with some failures' : 'Retry completed';
+      const description = [
+        `Recovered: ${recoveredModels.length}`,
+        `Still failing: ${failedModels.length}`,
+      ].join(' • ');
+
+      toast({
+        title,
+        description,
+        variant: failedModels.length > 0 ? 'destructive' : 'default',
+      });
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Failed to retry models';
-      alert(detail);
+      toast({
+        title: 'Retry failed',
+        description: detail,
+        variant: 'destructive',
+      });
     } finally {
-      setIsRetryingFailedModels(false);
+      if (isBulkRetry) {
+        setIsRetryingFailedModels(false);
+      } else {
+        setRetryingModels((prev) => prev.filter((modelName) => modelName !== uniqueModels[0]));
+      }
     }
+  };
+
+  const handleRetryFailedModels = async () => {
+    await handleRetryModels(failedModelIds);
+  };
+
+  const handleRetrySingleModel = async (modelName) => {
+    await handleRetryModels([modelName]);
   };
 
   return (
@@ -459,9 +506,25 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
                 </Button>
               )}
             </div>
-            <ul className="list-disc list-inside">
+            <ul className="space-y-2">
               {combinedErrors.map((err, idx) => (
-                <li key={idx}><strong>{err.model}:</strong> {err.error}</li>
+                <li key={idx} className="flex flex-col gap-2 rounded border border-destructive/20 bg-background/50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <strong>{err.model}:</strong> {err.error}
+                  </div>
+                  {canRetryFailedModels && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 border-destructive/40 text-destructive hover:text-destructive"
+                      onClick={() => handleRetrySingleModel(extractRetryModelName(err.model))}
+                      disabled={isRetryingFailedModels || retryingModels.includes(extractRetryModelName(err.model))}
+                    >
+                      <RotateCcw className={cn('mr-1 h-3.5 w-3.5', retryingModels.includes(extractRetryModelName(err.model)) && 'animate-spin')} />
+                      {retryingModels.includes(extractRetryModelName(err.model)) ? 'Retrying...' : 'Retry model'}
+                    </Button>
+                  )}
+                </li>
               ))}
             </ul>
           </div>
