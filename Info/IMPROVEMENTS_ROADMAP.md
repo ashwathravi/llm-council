@@ -44,14 +44,18 @@ _Last updated: March 4, 2026_
     - Added preset actions in configuration dialog for rename, delete, and manual reorder.
     - Added optional pin/unpin toggle with pinned presets surfaced first in the saved preset list.
 
-- [ ] Retry granularity improvements
-  - Add per-model retry buttons and explicit retry result toasts.
+- [x] Retry granularity improvements
+  - Status: Implemented.
+  - Frontend:
+    - Added per-model retry buttons inside the council error panel.
+    - Added explicit success/error retry toasts with recovered vs still-failing counts.
 
 - [ ] Synthesis refresh option after retry
   - Optional action to rerun Stage 2 + Stage 3 using recovered Stage 1 responses.
 
 ## Progress Log
 
+- 2026-03-05: Added granular Stage 1 retry UX with per-model retry actions and explicit retry outcome toasts.
 - 2026-03-05: Added guided “first prompt” onboarding with starter prompt quick picks, Alt+1/2/3 shortcuts, and send shortcut guidance in empty-state UI.
 - 2026-03-05: Added intent-based session templates in the council configuration flow (Debug/Product/Security) with one-tap application.
 - 2026-03-05: Added preset management controls (rename/delete/reorder/pin) to saved configurations in council setup.
