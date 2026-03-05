@@ -30,8 +30,11 @@ _Last updated: March 4, 2026_
 - [ ] Guided “first prompt” onboarding
   - Add one-tap starter prompts and keyboard shortcuts to reduce empty-state friction.
 
-- [ ] Session templates by intent
-  - Offer pre-baked council configurations (e.g., Debug, Product, Security) to speed setup.
+- [x] Session templates by intent
+  - Status: Implemented.
+  - Frontend:
+    - Added intent templates (Debug, Product, Security) to the council configuration dialog.
+    - Applying a template pre-selects framework, suggested council members, and a chairman.
 - [ ] Preset management enhancements
   - Add rename/delete/reorder support and optional “pin favorite preset”.
 
@@ -43,4 +46,5 @@ _Last updated: March 4, 2026_
 
 ## Progress Log
 
+- 2026-03-05: Added intent-based session templates in the council configuration flow (Debug/Product/Security) with one-tap application.
 - 2026-03-04: Implemented retry endpoint + UI action, added comparison diff tab, and re-established roadmap tracking file.
