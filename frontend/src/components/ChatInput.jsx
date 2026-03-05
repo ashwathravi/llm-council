@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Badge } from "@/components/ui/badge";
 import { Paperclip, Send, X, FileText, Loader2 } from "lucide-react";
 
-const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
+const ChatInput = memo(({ conversationId, isLoading, onSendMessage, prefilledPrompt = '' }) => {
   const [input, setInput] = useState('');
   const [documents, setDocuments] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -47,6 +47,23 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
 
     loadDocuments();
   }, [conversationId]);
+
+  useEffect(() => {
+    if (!prefilledPrompt) return;
+    setInput(prefilledPrompt);
+    textareaRef.current?.focus();
+  }, [prefilledPrompt]);
+
+  useEffect(() => {
+    const focusComposer = (event) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') return;
+      event.preventDefault();
+      textareaRef.current?.focus();
+    };
+
+    window.addEventListener('keydown', focusComposer);
+    return () => window.removeEventListener('keydown', focusComposer);
+  }, []);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -220,7 +237,7 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Message the Council..."
+            placeholder="Message the Council... (Ctrl/Cmd+K to focus)"
             aria-label="Message input"
             spellCheck={false}
             className="min-h-[44px] w-full resize-none border-0 bg-transparent py-3 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
