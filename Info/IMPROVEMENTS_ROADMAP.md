@@ -1,6 +1,6 @@
 # Utility & UX Improvements Roadmap
 
-_Last updated: March 4, 2026_
+_Last updated: March 5, 2026_
 
 ## Quick Wins (Execution Status)
 
@@ -26,15 +26,28 @@ _Last updated: March 4, 2026_
 
 ## Follow-Up Queue
 
-- [ ] Preset management enhancements
-  - Add rename/delete/reorder support and optional “pin favorite preset”.
+- [x] Preset management enhancements
+  - Status: Implemented.
+  - Frontend:
+    - Added preset rename, delete, reorder (up/down), and pin/unpin controls in `Load Saved Config`.
+    - Presets persist pinned state and ordering in local storage.
 
-- [ ] Retry granularity improvements
-  - Add per-model retry buttons and explicit retry result toasts.
+- [x] Retry granularity improvements
+  - Status: Implemented.
+  - Frontend:
+    - Added per-model retry buttons in the council error panel.
+    - Added explicit retry result toasts for success, partial recovery, and failure.
 
-- [ ] Synthesis refresh option after retry
-  - Optional action to rerun Stage 2 + Stage 3 using recovered Stage 1 responses.
+- [x] Synthesis refresh option after retry
+  - Status: Implemented.
+  - Backend:
+    - Extended `POST /api/conversations/{conversation_id}/messages/{message_index}/retry-stage1` with `refresh_synthesis`.
+    - Supports Stage 2 + Stage 3 refresh against current/recovered Stage 1 responses.
+  - Frontend:
+    - Added `Refresh Synthesis` action after retries (when retry history exists).
+    - Updates message Stage 2/Stage 3 in-place and surfaces refresh result via toast.
 
 ## Progress Log
 
 - 2026-03-04: Implemented retry endpoint + UI action, added comparison diff tab, and re-established roadmap tracking file.
+- 2026-03-05: Implemented preset management controls (rename/delete/reorder/pin), per-model retries with result toasts, and synthesis refresh support after retry.

@@ -158,13 +158,17 @@ export const api = {
   /**
    * Retry failed Stage 1 model calls for a prior assistant message.
    */
-  async retryFailedModels(conversationId, messageIndex, models = []) {
+  async retryFailedModels(conversationId, messageIndex, models = [], options = {}) {
+    const refreshSynthesis = Boolean(options?.refreshSynthesis);
     const response = await fetch(
       `${API_BASE}/api/conversations/${conversationId}/messages/${messageIndex}/retry-stage1`,
       {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ models }),
+        body: JSON.stringify({
+          models,
+          refresh_synthesis: refreshSynthesis,
+        }),
       }
     );
 

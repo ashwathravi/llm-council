@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, Crown, Save, Settings2, Star, Users, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Crown, Pencil, Pin, PinOff, Save, Settings2, Star, Trash2, Users, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
@@ -64,6 +64,10 @@ const CouncilConfigDialog = ({
   setChairmanModel,
   presets,
   onSavePreset,
+  onRenamePreset,
+  onDeletePreset,
+  onReorderPreset,
+  onTogglePinPreset,
   activeView,
   setActiveView,
   favoriteModels,
@@ -399,7 +403,7 @@ const CouncilConfigDialog = ({
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {presets.map((preset) => (
+                {presets.map((preset, presetIndex) => (
                   <Card
                     key={preset.id}
                     role="button"
@@ -419,8 +423,94 @@ const CouncilConfigDialog = ({
                   >
                     <CardContent className="p-4">
                       <div className="flex justify-between items-start mb-2">
-                        <div className="font-semibold text-sm">{preset.name}</div>
-                        {activePresetId === preset.id && <Check className="h-4 w-4 text-primary" />}
+                        <div className="min-w-0">
+                          <div className="font-semibold text-sm flex items-center gap-2">
+                            <span className="truncate">{preset.name}</span>
+                            {preset.isPinned && (
+                              <Badge variant="secondary" className="h-5 text-[10px] px-1.5">Pinned</Badge>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {activePresetId === preset.id && <Check className="h-4 w-4 text-primary" />}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onTogglePinPreset?.(preset.id);
+                            }}
+                            aria-label={preset.isPinned ? `Unpin preset ${preset.name}` : `Pin preset ${preset.name}`}
+                            title={preset.isPinned ? 'Unpin preset' : 'Pin preset'}
+                          >
+                            {preset.isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onRenamePreset?.(preset.id);
+                            }}
+                            aria-label={`Rename preset ${preset.name}`}
+                            title="Rename preset"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onReorderPreset?.(preset.id, 'up');
+                            }}
+                            aria-label={`Move preset ${preset.name} up`}
+                            title="Move up"
+                            disabled={presetIndex === 0}
+                          >
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onReorderPreset?.(preset.id, 'down');
+                            }}
+                            aria-label={`Move preset ${preset.name} down`}
+                            title="Move down"
+                            disabled={presetIndex === presets.length - 1}
+                          >
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-destructive hover:text-destructive"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onDeletePreset?.(preset.id);
+                            }}
+                            aria-label={`Delete preset ${preset.name}`}
+                            title="Delete preset"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </div>
                       <p className="text-xs text-muted-foreground">{preset.description}</p>
                     </CardContent>

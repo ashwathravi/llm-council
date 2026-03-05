@@ -5,6 +5,7 @@ import ChatInterface from './components/ChatInterface';
 import { api } from './api';
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
+import { useToast } from "@/components/ui/use-toast";
 import { Moon, Sun, Menu, LogOut } from "lucide-react";
 
 const Login = lazy(() => import('./components/Login'));
@@ -13,6 +14,7 @@ import { useAuth } from './contexts/AuthContextDefinition';
 
 function App() {
   const { user, isLoading: authLoading, logout } = useAuth();
+  const { toast } = useToast();
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
@@ -376,36 +378,103 @@ function App() {
     }
   }, [currentConversationId]);
 
-  const handleRetryFailedModels = useCallback(async (messageIndex, models = []) => {
+  const handleRetryFailedModels = useCallback(async (messageIndex, models = [], options = {}) => {
     if (!currentConversationId) return null;
+    const refreshSynthesis = Boolean(options?.refreshSynthesis);
 
-    const retryData = await api.retryFailedModels(currentConversationId, messageIndex, models);
-    setCurrentConversation((prev) => {
-      if (!prev || !Array.isArray(prev.messages)) return prev;
-      if (messageIndex < 0 || messageIndex >= prev.messages.length) return prev;
+    try {
+      const retryData = await api.retryFailedModels(
+        currentConversationId,
+        messageIndex,
+        models,
+        { refreshSynthesis }
+      );
 
-      const messages = [...prev.messages];
-      const targetMessage = { ...messages[messageIndex] };
-      const existingMetadata = targetMessage.metadata || {};
-      const incomingMetadata = retryData?.metadata || {};
+      setCurrentConversation((prev) => {
+        if (!prev || !Array.isArray(prev.messages)) return prev;
+        if (messageIndex < 0 || messageIndex >= prev.messages.length) return prev;
 
-      targetMessage.stage1 = Array.isArray(retryData?.stage1)
-        ? retryData.stage1
-        : targetMessage.stage1;
-      targetMessage.metadata = {
-        ...existingMetadata,
-        ...incomingMetadata,
-        stage1_errors: Array.isArray(retryData?.stage1_errors)
+        const messages = [...prev.messages];
+        const targetMessage = { ...messages[messageIndex] };
+        const existingMetadata = targetMessage.metadata || {};
+        const incomingMetadata = retryData?.metadata || {};
+
+        targetMessage.stage1 = Array.isArray(retryData?.stage1)
+          ? retryData.stage1
+          : targetMessage.stage1;
+        targetMessage.stage2 = Array.isArray(retryData?.stage2)
+          ? retryData.stage2
+          : targetMessage.stage2;
+        targetMessage.stage3 = retryData?.stage3 && typeof retryData.stage3 === 'object'
+          ? retryData.stage3
+          : targetMessage.stage3;
+        targetMessage.errors = Array.isArray(retryData?.stage1_errors)
           ? retryData.stage1_errors
-          : existingMetadata.stage1_errors,
-      };
+          : targetMessage.errors;
+        targetMessage.metadata = {
+          ...existingMetadata,
+          ...incomingMetadata,
+          stage1_errors: Array.isArray(retryData?.stage1_errors)
+            ? retryData.stage1_errors
+            : existingMetadata.stage1_errors,
+        };
 
-      messages[messageIndex] = targetMessage;
-      return { ...prev, messages };
-    });
+        messages[messageIndex] = targetMessage;
+        return { ...prev, messages };
+      });
 
-    return retryData;
-  }, [currentConversationId]);
+      const retriedModels = Array.isArray(retryData?.retried_models) ? retryData.retried_models : [];
+      const recoveredModels = Array.isArray(retryData?.recovered_models) ? retryData.recovered_models : [];
+      const failedModels = Array.isArray(retryData?.failed_models) ? retryData.failed_models : [];
+
+      if (retriedModels.length > 0) {
+        if (recoveredModels.length === retriedModels.length && failedModels.length === 0) {
+          toast({
+            title: "Retry Complete",
+            description: `Recovered ${recoveredModels.length} ${recoveredModels.length === 1 ? 'model' : 'models'}.`,
+          });
+        } else if (recoveredModels.length > 0) {
+          toast({
+            title: "Retry Partially Complete",
+            description: `Recovered ${recoveredModels.length}/${retriedModels.length}; ${failedModels.length} still failing.`,
+          });
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Retry Unsuccessful",
+            description: failedModels.length > 0
+              ? `No models recovered. Still failing: ${failedModels.join(', ')}.`
+              : "No models recovered.",
+          });
+        }
+      }
+
+      if (refreshSynthesis) {
+        if (retryData?.synthesis_refreshed) {
+          toast({
+            title: "Synthesis Refreshed",
+            description: "Stage 2 and Stage 3 were rerun with the latest Stage 1 responses.",
+          });
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Synthesis Refresh Failed",
+            description: retryData?.synthesis_refresh_error || "Could not refresh synthesis.",
+          });
+        }
+      }
+
+      return retryData;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Failed to retry models';
+      toast({
+        variant: "destructive",
+        title: refreshSynthesis ? "Synthesis Refresh Failed" : "Retry Failed",
+        description: detail,
+      });
+      throw error;
+    }
+  }, [currentConversationId, toast]);
 
   if (authLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
   if (!user) {

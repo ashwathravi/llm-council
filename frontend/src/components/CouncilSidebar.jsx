@@ -26,7 +26,28 @@ const readSavedPresets = () => {
   if (!savedPresets) return [];
   try {
     const parsed = JSON.parse(savedPresets);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+
+    let hasPinnedPreset = false;
+    return parsed
+      .filter((preset) => preset && typeof preset === 'object')
+      .map((preset, index) => {
+        const fallbackId = `${Date.now()}-${index}`;
+        const rawPinned = Boolean(preset.isPinned);
+        const isPinned = rawPinned && !hasPinnedPreset;
+        if (isPinned) {
+          hasPinnedPreset = true;
+        }
+        return {
+          id: typeof preset.id === 'string' && preset.id.trim() ? preset.id : fallbackId,
+          name: typeof preset.name === 'string' && preset.name.trim() ? preset.name : `Preset ${index + 1}`,
+          description: typeof preset.description === 'string' ? preset.description : '',
+          framework: typeof preset.framework === 'string' ? preset.framework : 'standard',
+          chairmanModel: typeof preset.chairmanModel === 'string' ? preset.chairmanModel : '',
+          councilModels: Array.isArray(preset.councilModels) ? preset.councilModels : [],
+          isPinned,
+        };
+      });
   } catch (error) {
     console.error('Failed to parse presets', error);
     return [];
@@ -184,6 +205,11 @@ const CouncilSidebar = memo(({
 
   const getModelName = (modelId) => models.find((model) => model.id === modelId)?.name || modelId;
 
+  const persistPresets = (nextPresets) => {
+    setPresets(nextPresets);
+    localStorage.setItem('council_presets', JSON.stringify(nextPresets));
+  };
+
   const buildDefaultPresetName = () => {
     const councilTypeName = FRAMEWORK_LABELS[selectedFramework] || selectedFramework;
     const memberCount = councilModels.length;
@@ -222,11 +248,65 @@ const CouncilSidebar = memo(({
       framework: selectedFramework,
       chairmanModel,
       councilModels,
+      isPinned: false,
     };
 
-    const updatedPresets = [...presets, newPreset];
-    setPresets(updatedPresets);
-    localStorage.setItem('council_presets', JSON.stringify(updatedPresets));
+    persistPresets([...presets, newPreset]);
+  };
+
+  const renamePreset = (presetId) => {
+    const targetPreset = presets.find((preset) => preset.id === presetId);
+    if (!targetPreset) return;
+
+    const proposedName = prompt('Rename preset:', targetPreset.name);
+    if (proposedName === null) return;
+    const normalizedName = proposedName.trim();
+    if (!normalizedName) return;
+
+    persistPresets(
+      presets.map((preset) =>
+        preset.id === presetId ? { ...preset, name: normalizedName } : preset
+      )
+    );
+  };
+
+  const deletePreset = (presetId) => {
+    const targetPreset = presets.find((preset) => preset.id === presetId);
+    if (!targetPreset) return;
+    if (!confirm(`Delete preset "${targetPreset.name}"?`)) return;
+
+    persistPresets(presets.filter((preset) => preset.id !== presetId));
+  };
+
+  const reorderPreset = (presetId, direction) => {
+    const currentIndex = presets.findIndex((preset) => preset.id === presetId);
+    if (currentIndex < 0) return;
+
+    const delta = direction === 'up' ? -1 : 1;
+    const targetIndex = currentIndex + delta;
+    if (targetIndex < 0 || targetIndex >= presets.length) return;
+
+    const updatedPresets = [...presets];
+    const [movedPreset] = updatedPresets.splice(currentIndex, 1);
+    updatedPresets.splice(targetIndex, 0, movedPreset);
+    persistPresets(updatedPresets);
+  };
+
+  const togglePinnedPreset = (presetId) => {
+    const isAlreadyPinned = presets.some((preset) => preset.id === presetId && preset.isPinned);
+    if (isAlreadyPinned) {
+      persistPresets(
+        presets.map((preset) => ({ ...preset, isPinned: false }))
+      );
+      return;
+    }
+
+    persistPresets(
+      presets.map((preset) => ({
+        ...preset,
+        isPinned: preset.id === presetId,
+      }))
+    );
   };
 
   const handleMaxCouncilModelsChange = (nextMaxValue) => {
@@ -513,6 +593,10 @@ const CouncilSidebar = memo(({
         setChairmanModel={setChairmanModel}
         presets={presets}
         onSavePreset={saveNewPreset}
+        onRenamePreset={renamePreset}
+        onDeletePreset={deletePreset}
+        onReorderPreset={reorderPreset}
+        onTogglePinPreset={togglePinnedPreset}
         activeView={configDialogView}
         setActiveView={setConfigDialogView}
         favoriteModels={favoriteModels}
