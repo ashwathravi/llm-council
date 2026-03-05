@@ -3,7 +3,7 @@ import React, { memo } from 'react';
 import { api } from '../api';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Download, Link as LinkIcon, FileText, Check, ListTree } from "lucide-react";
+import { Download, Link as LinkIcon, FileText, Check } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -25,8 +25,6 @@ const ChatHeader = memo(({
   framework,
   councilModels,
   chairmanModel,
-  onToggleNavigator,
-  isNavigatorOpen = false,
   navigatorItemCount = 0,
 }) => {
   const { toast } = useToast();
@@ -85,22 +83,6 @@ const ChatHeader = memo(({
       </div>
       <div className="flex items-center gap-1">
         <TooltipProvider>
-          {typeof onToggleNavigator === 'function' && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={isNavigatorOpen ? "secondary" : "ghost"}
-                  size="icon"
-                  onClick={onToggleNavigator}
-                  aria-label={isNavigatorOpen ? "Close conversation navigator" : "Open conversation navigator"}
-                >
-                  <ListTree className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{isNavigatorOpen ? 'Close Navigator' : 'Open Navigator'}</TooltipContent>
-            </Tooltip>
-          )}
-
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" onClick={() => handleExport('md')}>

@@ -6,7 +6,7 @@ import { api } from './api';
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
 import { useToast } from "@/components/ui/use-toast";
-import { Moon, Sun, Menu, LogOut } from "lucide-react";
+import { Moon, Sun, Menu, LogOut, ListTree } from "lucide-react";
 
 const Login = lazy(() => import('./components/Login'));
 import { useAuth } from './contexts/AuthContextDefinition';
@@ -36,6 +36,7 @@ function App() {
   const mobileBreakpoint = 768; // Tailwind md
   const [isMobile, setIsMobile] = useState(window.innerWidth < mobileBreakpoint);
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= mobileBreakpoint);
+  const [isNavigatorOpen, setIsNavigatorOpen] = useState(false);
 
   // ... (Keep existing loadConversations, loadConversation logic) ...
   const loadConversations = useCallback(async () => {
@@ -142,6 +143,10 @@ function App() {
 
   const handleSidebarClose = useCallback(() => {
     setIsSidebarOpen(false);
+  }, []);
+
+  const toggleNavigator = useCallback(() => {
+    setIsNavigatorOpen((current) => !current);
   }, []);
 
   // Optimize Sidebar re-renders by extracting only necessary metadata
@@ -514,6 +519,16 @@ function App() {
           )}
           <div className="flex-1" />
 
+          <Button
+            variant={isNavigatorOpen ? "secondary" : "ghost"}
+            size="icon"
+            onClick={toggleNavigator}
+            title={isNavigatorOpen ? "Close Navigator" : "Open Navigator"}
+            disabled={!currentConversation}
+          >
+            <ListTree className="h-5 w-5" />
+          </Button>
+
           <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle Theme">
             {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
           </Button>
@@ -534,6 +549,8 @@ function App() {
             onRetryFailedModels={handleRetryFailedModels}
             isLoading={isLoading}
             isMobile={isMobile}
+            isNavigatorOpen={isNavigatorOpen}
+            onNavigatorOpenChange={setIsNavigatorOpen}
           />
         </main>
       </div>
