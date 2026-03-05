@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { AlertTriangle, Trophy, Crown, BrainCircuit, GitCompareArrows, RotateCcw } from "lucide-react";
+import { AlertTriangle, Trophy, Crown, BrainCircuit, GitCompareArrows, RotateCcw, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ⚡ Bolt: Memoize markdown rendering to prevent re-parsing on every parent re-render
@@ -52,10 +52,20 @@ const RankingsTabContent = memo(({ aggregateRankings }) => (
 RankingsTabContent.displayName = 'RankingsTabContent';
 
 // ⚡ Bolt: Extract and memoize Stage 1 tab content to keep individual responses stable during updates
-const Stage1TabContent = memo(({ res }) => (
+const Stage1TabContent = memo(({ res, onCopy }) => (
   <div className="p-6">
-    <div className="flex items-center gap-2 mb-4">
+    <div className="flex items-center gap-2 mb-4 flex-wrap">
       <Badge variant="outline">{res.model}</Badge>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 text-xs"
+        onClick={() => onCopy(res.response, `${res.model} response`)}
+        aria-label={`Copy ${res.model} response`}
+      >
+        <Copy className="mr-1 h-3.5 w-3.5" />
+        Copy
+      </Button>
     </div>
     <MarkdownContent content={res.response} />
   </div>
@@ -418,6 +428,31 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels, onRef
     }
   };
 
+  const copyToClipboard = async (value, label) => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (!text) {
+      toast({
+        title: 'Nothing to copy',
+        description: `No ${label.toLowerCase()} content available yet.`,
+      });
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({
+        title: `${label} copied`,
+        description: `Copied ${label.toLowerCase()} to your clipboard.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Copy failed',
+        description: error instanceof Error ? error.message : 'Could not access clipboard.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   return (
     <Card className="w-full border-2 border-transparent data-[state=chairman]:border-chairman/20 overflow-hidden">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -483,6 +518,18 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels, onRef
                         {isRefreshingSynthesis ? 'Refreshing...' : 'Refresh synthesis'}
                       </Button>
                     )}
+                    {hasStage3 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => copyToClipboard(stage3.response, 'Consensus')}
+                        aria-label="Copy consensus response"
+                      >
+                        <Copy className="mr-1 h-3.5 w-3.5" />
+                        Copy consensus
+                      </Button>
+                    )}
                   </div>
                   {hasModelMetadata && (
                     <div className="mb-4 space-y-1 text-xs text-muted-foreground">
@@ -526,7 +573,7 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels, onRef
 
           {hasStage1 && stage1.map((res, idx) => (
             <TabsContent key={idx} value={`model-${idx}`} className="m-0 focus-visible:ring-0">
-              <Stage1TabContent res={res} />
+              <Stage1TabContent res={res} onCopy={copyToClipboard} />
             </TabsContent>
           ))}
         </div>
