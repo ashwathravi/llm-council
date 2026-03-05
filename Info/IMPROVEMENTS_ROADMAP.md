@@ -27,8 +27,11 @@ _Last updated: March 4, 2026_
 ## Follow-Up Queue
 
 
-- [ ] Guided “first prompt” onboarding
-  - Add one-tap starter prompts and keyboard shortcuts to reduce empty-state friction.
+- [x] Guided “first prompt” onboarding
+  - Status: Implemented.
+  - Frontend:
+    - Added starter prompt quick picks in the empty conversation state.
+    - Added keyboard shortcuts (`Alt+1/2/3`) to prefill starter prompts and surfaced shortcut hints in the UI.
 
 - [x] Session templates by intent
   - Status: Implemented.
@@ -46,5 +49,6 @@ _Last updated: March 4, 2026_
 
 ## Progress Log
 
+- 2026-03-05: Added guided “first prompt” onboarding with starter prompt quick picks, Alt+1/2/3 shortcuts, and send shortcut guidance in empty-state UI.
 - 2026-03-05: Added intent-based session templates in the council configuration flow (Debug/Product/Security) with one-tap application.
 - 2026-03-04: Implemented retry endpoint + UI action, added comparison diff tab, and re-established roadmap tracking file.

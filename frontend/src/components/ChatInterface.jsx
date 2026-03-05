@@ -5,6 +5,12 @@ import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
 import { BrainCircuit } from "lucide-react";
 
+const STARTER_PROMPTS = [
+  'Give me a concise implementation plan for this feature, including risks and rollout steps.',
+  'Compare two technical approaches and recommend one with trade-offs.',
+  'Review this idea for accessibility and performance gaps before we ship.',
+];
+
 export default function ChatInterface({
   conversation,
   onSendMessage,
@@ -14,11 +20,22 @@ export default function ChatInterface({
   const messagesEndRef = useRef(null);
   const [prefilledPrompt, setPrefilledPrompt] = useState('');
 
-  const starterPrompts = [
-    'Give me a concise implementation plan for this feature, including risks and rollout steps.',
-    'Compare two technical approaches and recommend one with trade-offs.',
-    'Review this idea for accessibility and performance gaps before we ship.',
-  ];
+  useEffect(() => {
+    if (!conversation || conversation.messages.length > 0) return undefined;
+
+    const onStarterPromptShortcut = (event) => {
+      if (!event.altKey) return;
+
+      const index = Number(event.key) - 1;
+      if (Number.isNaN(index) || index < 0 || index >= STARTER_PROMPTS.length) return;
+
+      event.preventDefault();
+      setPrefilledPrompt(STARTER_PROMPTS[index]);
+    };
+
+    window.addEventListener('keydown', onStarterPromptShortcut);
+    return () => window.removeEventListener('keydown', onStarterPromptShortcut);
+  }, [conversation]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -56,18 +73,21 @@ export default function ChatInterface({
           <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground opacity-70">
             <h2 className="text-xl font-semibold mb-2">Start a conversation</h2>
             <p>Ask a question to consult the LLM Council</p>
+            <div className="mt-3 rounded-md border border-dashed px-3 py-2 text-xs">
+              <p>Shortcuts: <span className="font-medium">Alt+1/2/3</span> for starter prompts · <span className="font-medium">Ctrl/Cmd+Enter</span> to send</p>
+            </div>
             <div className="mt-5 max-w-2xl">
               <p className="text-xs uppercase tracking-wide mb-2">Starter prompts</p>
               <div className="flex flex-wrap justify-center gap-2">
-                {starterPrompts.map((prompt) => (
+                {STARTER_PROMPTS.map((prompt, index) => (
                   <button
                     key={prompt}
                     type="button"
                     onClick={() => setPrefilledPrompt(prompt)}
                     className="rounded-full border bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    aria-label={`Use starter prompt: ${prompt}`}
+                    aria-label={`Use starter prompt ${index + 1}: ${prompt}`}
                   >
-                    {prompt}
+                    {index + 1}. {prompt}
                   </button>
                 ))}
               </div>
