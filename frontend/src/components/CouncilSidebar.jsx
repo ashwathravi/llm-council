@@ -33,6 +33,11 @@ const readSavedPresets = () => {
   }
 };
 
+const persistPresets = (nextPresets, setPresets) => {
+  setPresets(nextPresets);
+  localStorage.setItem('council_presets', JSON.stringify(nextPresets));
+};
+
 const readFavoriteModels = () => {
   const savedFavorites = localStorage.getItem('favorite_models');
   if (!savedFavorites) return [];
@@ -222,11 +227,65 @@ const CouncilSidebar = memo(({
       framework: selectedFramework,
       chairmanModel,
       councilModels,
+      pinned: false,
     };
 
-    const updatedPresets = [...presets, newPreset];
-    setPresets(updatedPresets);
-    localStorage.setItem('council_presets', JSON.stringify(updatedPresets));
+    persistPresets([...presets, newPreset], setPresets);
+  };
+
+  const handleRenamePreset = (presetId) => {
+    const targetPreset = presets.find((preset) => preset.id === presetId);
+    if (!targetPreset) return;
+
+    const nextName = prompt('Rename preset:', targetPreset.name);
+    if (nextName === null) return;
+
+    const trimmedName = nextName.trim();
+    if (!trimmedName) {
+      alert('Preset name cannot be empty.');
+      return;
+    }
+
+    persistPresets(
+      presets.map((preset) =>
+        preset.id === presetId
+          ? { ...preset, name: trimmedName }
+          : preset
+      ),
+      setPresets
+    );
+  };
+
+  const handleDeletePreset = (presetId) => {
+    const targetPreset = presets.find((preset) => preset.id === presetId);
+    if (!targetPreset) return;
+    if (!confirm(`Delete preset "${targetPreset.name}"?`)) return;
+
+    persistPresets(presets.filter((preset) => preset.id !== presetId), setPresets);
+  };
+
+  const handleTogglePresetPin = (presetId) => {
+    persistPresets(
+      presets.map((preset) =>
+        preset.id === presetId
+          ? { ...preset, pinned: !preset.pinned }
+          : preset
+      ),
+      setPresets
+    );
+  };
+
+  const handleMovePreset = (presetId, direction) => {
+    const currentIndex = presets.findIndex((preset) => preset.id === presetId);
+    if (currentIndex === -1) return;
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= presets.length) return;
+
+    const reorderedPresets = [...presets];
+    const [movedPreset] = reorderedPresets.splice(currentIndex, 1);
+    reorderedPresets.splice(targetIndex, 0, movedPreset);
+    persistPresets(reorderedPresets, setPresets);
   };
 
   const handleMaxCouncilModelsChange = (nextMaxValue) => {
@@ -513,6 +572,10 @@ const CouncilSidebar = memo(({
         setChairmanModel={setChairmanModel}
         presets={presets}
         onSavePreset={saveNewPreset}
+        onRenamePreset={handleRenamePreset}
+        onDeletePreset={handleDeletePreset}
+        onTogglePresetPin={handleTogglePresetPin}
+        onMovePreset={handleMovePreset}
         activeView={configDialogView}
         setActiveView={setConfigDialogView}
         favoriteModels={favoriteModels}
