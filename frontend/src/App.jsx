@@ -528,10 +528,12 @@ function App() {
 
         <main className="flex-1 overflow-hidden relative">
           <ChatInterface
+            key={currentConversationId || 'no-conversation'}
             conversation={currentConversation}
             onSendMessage={handleSendMessage}
             onRetryFailedModels={handleRetryFailedModels}
             isLoading={isLoading}
+            isMobile={isMobile}
           />
         </main>
       </div>
