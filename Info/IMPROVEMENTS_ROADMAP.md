@@ -26,6 +26,11 @@ _Last updated: March 4, 2026_
 
 ## Follow-Up Queue
 
+- [x] In-composer prompt snippets
+  - Status: Implemented.
+  - Frontend:
+    - Added reusable prompt snippet chips directly above the message composer.
+    - Snippet selection pre-fills the input and keeps focus in the editor for quick edits.
 
 - [x] Guided “first prompt” onboarding
   - Status: Implemented.
@@ -61,6 +66,7 @@ _Last updated: March 4, 2026_
 
 ## Progress Log
 
+- 2026-03-05: Added in-composer prompt snippet chips (Decision Brief/Debug Plan/Risk Scan) to speed up repeat prompting workflows.
 - 2026-03-05: Added post-retry synthesis refresh endpoint + UI action to recompute Stage 2/3 from recovered Stage 1 responses.
 - 2026-03-05: Added granular Stage 1 retry UX with per-model retry actions and explicit retry outcome toasts.
 - 2026-03-05: Added guided “first prompt” onboarding with starter prompt quick picks, Alt+1/2/3 shortcuts, and send shortcut guidance in empty-state UI.
