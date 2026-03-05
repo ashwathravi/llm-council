@@ -50,11 +50,18 @@ _Last updated: March 4, 2026_
     - Added per-model retry buttons inside the council error panel.
     - Added explicit success/error retry toasts with recovered vs still-failing counts.
 
-- [ ] Synthesis refresh option after retry
-  - Optional action to rerun Stage 2 + Stage 3 using recovered Stage 1 responses.
+- [x] Synthesis refresh option after retry
+  - Status: Implemented.
+  - Backend:
+    - Added `POST /api/conversations/{conversation_id}/messages/{message_index}/refresh-synthesis`.
+    - Recomputes Stage 2 + Stage 3 using the message's latest Stage 1 responses while preserving conversation context and retrieval citations.
+  - Frontend:
+    - Added per-message `Refresh synthesis` action once Stage 1 retries exist.
+    - Updates rankings, consensus output, and metadata in place after refresh.
 
 ## Progress Log
 
+- 2026-03-05: Added post-retry synthesis refresh endpoint + UI action to recompute Stage 2/3 from recovered Stage 1 responses.
 - 2026-03-05: Added granular Stage 1 retry UX with per-model retry actions and explicit retry outcome toasts.
 - 2026-03-05: Added guided “first prompt” onboarding with starter prompt quick picks, Alt+1/2/3 shortcuts, and send shortcut guidance in empty-state UI.
 - 2026-03-05: Added intent-based session templates in the council configuration flow (Debug/Product/Security) with one-tap application.

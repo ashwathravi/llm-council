@@ -186,3 +186,65 @@ async def test_retry_failed_stage1_models_without_failures_returns_400(async_cli
             assert response.json()["detail"] == "No failed models found to retry"
     finally:
         app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_refresh_synthesis_after_retry_success(async_client):
+    conversation = {
+        "id": "conv-refresh",
+        "framework": "standard",
+        "council_models": ["model-a", "model-b"],
+        "chairman_model": "chair-model",
+        "messages": [
+            {"role": "user", "content": "How should we improve onboarding?"},
+            {
+                "role": "assistant",
+                "stage1": [
+                    {"model": "model-a", "response": "Use checklists."},
+                    {"model": "model-b", "response": "Add product tours."},
+                ],
+                "stage2": [],
+                "stage3": {"model": "chair-model", "response": "Start with tours then checklists."},
+                "metadata": {
+                    "framework": "standard",
+                    "effective_council_models": ["model-a", "model-b"],
+                    "requested_council_models": ["model-a", "model-b"],
+                    "chairman_model": "chair-model",
+                    "stage1_retry_history": [{"timestamp_ms": 1}],
+                },
+            },
+        ],
+    }
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.update_message", new_callable=AsyncMock) as mock_update_message, \
+             patch("backend.retrieval.build_retrieval_context", new_callable=AsyncMock) as mock_retrieval, \
+             patch("backend.main.stage2_collect_rankings", new_callable=AsyncMock) as mock_stage2_rankings, \
+             patch("backend.main.calculate_aggregate_rankings") as mock_aggregate, \
+             patch("backend.main.stage3_synthesize_final") as mock_stage3:
+            mock_get_conversation.return_value = conversation
+            mock_retrieval.return_value = ("retrieval", [{"id": "doc-1"}])
+            mock_stage2_rankings.return_value = ([{"model": "judge", "ranking": "FINAL RANKING:\n1. Response A\n2. Response B", "parsed_ranking": ["Response A", "Response B"]}], {"Response A": "model-a", "Response B": "model-b"})
+            mock_aggregate.return_value = [{"model": "model-a", "average_rank": 1.0, "rankings_count": 1}]
+
+            async def stage3_chunks(*args, **kwargs):
+                yield "Refreshed"
+                yield " synthesis"
+
+            mock_stage3.side_effect = stage3_chunks
+
+            response = await async_client.post(
+                "/api/conversations/conv-refresh/messages/1/refresh-synthesis",
+                json={}
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["stage3"]["response"] == "Refreshed synthesis"
+            assert data["metadata"]["aggregate_rankings"][0]["model"] == "model-a"
+            assert data["metadata"]["retrieval"]["citations"] == [{"id": "doc-1"}]
+            assert mock_update_message.await_count == 1
+    finally:
+        app.dependency_overrides = {}

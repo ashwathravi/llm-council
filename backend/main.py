@@ -117,6 +117,11 @@ class RetryStage1Request(BaseModel):
         return v
 
 
+class RefreshSynthesisRequest(BaseModel):
+    """Request to refresh Stage 2 + Stage 3 for an existing assistant message."""
+    force: bool = False
+
+
 class ConversationMetadata(BaseModel):
     """Conversation metadata for list view."""
     id: str
@@ -709,6 +714,141 @@ async def retry_failed_stage1_models(
         "retried_models": retry_models,
         "recovered_models": [item["model"] for item in retry_stage1_results],
         "failed_models": [item["model"] for item in retry_stage1_errors],
+        "metadata": metadata,
+    }
+
+
+@app.post(
+    "/api/conversations/{conversation_id}/messages/{message_index}/refresh-synthesis",
+    dependencies=[Depends(security.rate_limiter(requests_limit=20, time_window=60, scope="chat"))]
+)
+async def refresh_synthesis_for_message(
+    conversation_id: str,
+    message_index: int,
+    request: RefreshSynthesisRequest,
+    user_id: str = Depends(auth.get_current_user_id)
+):
+    """Recompute Stage 2 + Stage 3 for an assistant message using current Stage 1 results."""
+    conversation = await storage.get_conversation(conversation_id, user_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    messages = conversation.get("messages", [])
+    if message_index < 0 or message_index >= len(messages):
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    target_message = messages[message_index]
+    if target_message.get("role") != "assistant":
+        raise HTTPException(status_code=400, detail="Synthesis refresh is only supported for assistant messages")
+
+    existing_stage1 = target_message.get("stage1")
+    if not isinstance(existing_stage1, list) or len(existing_stage1) == 0:
+        raise HTTPException(status_code=400, detail="Cannot refresh synthesis without Stage 1 responses")
+
+    previous_user_index = _find_previous_user_message_index(messages, message_index)
+    if previous_user_index is None:
+        raise HTTPException(status_code=400, detail="No matching user message found for synthesis refresh")
+
+    history = _build_history_through_user_message(messages, previous_user_index)
+    user_query = history[-1]["content"] if history else ""
+    if not user_query.strip():
+        raise HTTPException(status_code=400, detail="Cannot refresh synthesis for an empty prompt")
+
+    existing_metadata = target_message.get("metadata")
+    metadata: Dict[str, Any] = dict(existing_metadata) if isinstance(existing_metadata, dict) else {}
+
+    framework = metadata.get("framework") or conversation.get("framework", "standard")
+    requested_council_models = metadata.get("requested_council_models")
+    if not isinstance(requested_council_models, list):
+        requested_council_models = list(conversation.get("council_models") or [])
+    effective_council_models = metadata.get("effective_council_models")
+    if not isinstance(effective_council_models, list) or not effective_council_models:
+        effective_council_models = resolve_active_models(requested_council_models)
+
+    chairman_model = metadata.get("chairman_model") or conversation.get("chairman_model") or config.CHAIRMAN_MODEL
+
+    retrieval_context, citations = await retrieval.build_retrieval_context(
+        conversation_id,
+        user_id,
+        user_query,
+    )
+
+    stage1_results = [
+        item for item in existing_stage1
+        if isinstance(item, dict) and isinstance(item.get("model"), str) and isinstance(item.get("response"), str)
+    ]
+
+    if not stage1_results:
+        raise HTTPException(status_code=400, detail="Cannot refresh synthesis without valid Stage 1 responses")
+
+    if framework == "debate":
+        refreshed_stage2, label_to_model = await stage2_collect_critiques(
+            user_query,
+            stage1_results,
+            effective_council_models,
+            retrieval_context=retrieval_context,
+        )
+        aggregate_rankings = []
+    elif framework == "ensemble":
+        refreshed_stage2 = []
+        labels = [chr(65 + i) for i in range(len(stage1_results))]
+        label_to_model = {
+            f"Response {label}": result["model"]
+            for label, result in zip(labels, stage1_results)
+        }
+        aggregate_rankings = []
+    else:
+        refreshed_stage2, label_to_model = await stage2_collect_rankings(
+            user_query,
+            stage1_results,
+            effective_council_models,
+            chairman_model,
+            retrieval_context=retrieval_context,
+        )
+        aggregate_rankings = calculate_aggregate_rankings(refreshed_stage2, label_to_model) if refreshed_stage2 else []
+
+    stage3_text = ""
+    async for chunk in stage3_synthesize_final(
+        user_query,
+        stage1_results,
+        refreshed_stage2,
+        chairman_model,
+        mode=framework,
+        retrieval_context=retrieval_context,
+    ):
+        stage3_text += chunk
+
+    refreshed_stage3 = {
+        "model": chairman_model,
+        "response": stage3_text,
+    }
+
+    refresh_history = metadata.get("synthesis_refresh_history")
+    refresh_history = list(refresh_history) if isinstance(refresh_history, list) else []
+    refresh_history.append({
+        "timestamp_ms": int(time.time() * 1000),
+        "stage1_count": len(stage1_results),
+        "force": request.force,
+    })
+
+    metadata["framework"] = framework
+    metadata["requested_council_models"] = requested_council_models
+    metadata["effective_council_models"] = effective_council_models
+    metadata["responded_council_models"] = [item["model"] for item in stage1_results]
+    metadata["chairman_model"] = chairman_model
+    metadata["label_to_model"] = label_to_model
+    metadata["aggregate_rankings"] = aggregate_rankings
+    metadata["retrieval"] = {"citations": citations}
+    metadata["synthesis_refresh_history"] = refresh_history
+
+    target_message["stage2"] = refreshed_stage2
+    target_message["stage3"] = refreshed_stage3
+    target_message["metadata"] = metadata
+    await storage.update_message(conversation_id, user_id, message_index, target_message)
+
+    return {
+        "stage2": refreshed_stage2,
+        "stage3": refreshed_stage3,
         "metadata": metadata,
     }
 
