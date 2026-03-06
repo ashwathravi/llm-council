@@ -1,5 +1,6 @@
 """3-stage LLM Council orchestration."""
 
+import re
 from typing import List, Dict, Any, Tuple, Optional
 from .openrouter import query_models_parallel, query_model, query_model_stream
 from .config import (
@@ -12,6 +13,10 @@ from .config import (
     FAST_LOCAL_TITLE,
     TITLE_MODEL,
 )
+
+# Pre-compiled regex patterns for parsing model rankings
+NUMBERED_RESPONSE_RE = re.compile(r'\d+\.\s*Response [A-Z]', re.IGNORECASE)
+RESPONSE_LABEL_RE = re.compile(r'Response\s+([A-Z])', re.IGNORECASE)
 
 
 def _apply_retrieval_context(messages: List[Dict[str, str]], retrieval_context: Optional[str]) -> List[Dict[str, str]]:
@@ -178,8 +183,6 @@ def parse_ranking_from_text(ranking_text: str) -> List[str]:
     Returns:
         List of response labels in ranked order
     """
-    import re
-
     # Look for "FINAL RANKING:" section (case-insensitive)
     marker = "FINAL RANKING:"
     upper_text = ranking_text.upper()
@@ -190,22 +193,22 @@ def parse_ranking_from_text(ranking_text: str) -> List[str]:
         ranking_section = ranking_text[marker_idx + len(marker):]
         # Try to extract numbered list format (e.g., "1. Response A")
         # This pattern looks for: number, period, optional space, "Response X"
-        numbered_matches = re.findall(r'\d+\.\s*Response [A-Z]', ranking_section, re.IGNORECASE)
+        numbered_matches = NUMBERED_RESPONSE_RE.findall(ranking_section)
         if numbered_matches:
             # Extract and normalize the "Response X" part
             results = []
             for m in numbered_matches:
-                inner = re.search(r'Response\s+([A-Z])', m, re.IGNORECASE)
+                inner = RESPONSE_LABEL_RE.search(m)
                 if inner:
                     results.append(f"Response {inner.group(1).upper()}")
             return results
 
         # Fallback: Extract all "Response X" patterns in order from the section
-        matches = re.findall(r'Response\s+([A-Z])', ranking_section, re.IGNORECASE)
+        matches = RESPONSE_LABEL_RE.findall(ranking_section)
         return [f"Response {m.upper()}" for m in matches]
 
     # Fallback: try to find any "Response X" patterns in order in full text
-    matches = re.findall(r'Response\s+([A-Z])', ranking_text, re.IGNORECASE)
+    matches = RESPONSE_LABEL_RE.findall(ranking_text)
     return [f"Response {m.upper()}" for m in matches]
 
 
