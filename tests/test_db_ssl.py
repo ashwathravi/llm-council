@@ -31,17 +31,33 @@ def test_verify_ca_is_secure_cert_only():
     assert ctx.verify_mode == ssl.CERT_REQUIRED
     assert ctx.check_hostname is False
 
-def test_require_is_still_lenient():
+def test_require_is_secure():
     """
-    Asserts that sslmode=require remains lenient (CERT_NONE) for compatibility.
+    Asserts that sslmode=require is now secure (CERT_REQUIRED) but without hostname check.
     """
     query_params = {"sslmode": "require"}
     connect_args, updated_params = configure_ssl_context(query_params)
 
     ctx = connect_args.get("ssl")
     assert ctx is not None
-    assert ctx.verify_mode == ssl.CERT_NONE
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
     assert ctx.check_hostname is False
+
+def test_sslrootcert_loading():
+    """
+    Asserts that sslrootcert is correctly handled and loaded into the context.
+    """
+    from unittest.mock import patch, MagicMock
+
+    query_params = {"sslmode": "verify-ca", "sslrootcert": "/path/to/ca.crt"}
+
+    with patch("ssl.SSLContext.load_verify_locations") as mock_load:
+        connect_args, updated_params = configure_ssl_context(query_params)
+
+        ctx = connect_args.get("ssl")
+        assert ctx is not None
+        mock_load.assert_called_once_with(cafile="/path/to/ca.crt")
+        assert "sslrootcert" not in updated_params
 
 def test_no_sslmode():
     """
