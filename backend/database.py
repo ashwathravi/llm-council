@@ -6,6 +6,7 @@ from typing import List, Optional, Any, Dict
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import String, DateTime, JSON, text, Integer, Text, Index
+from sqlalchemy.engine.url import make_url
 from .config import DATABASE_URL
 
 # --- Database Setup ---
@@ -73,8 +74,6 @@ class DocumentChunkModel(Base):
 # Only create engine if DATABASE_URL is set
 engine = None
 AsyncSessionLocal = None
-
-from sqlalchemy.engine.url import make_url
 
 def configure_ssl_context(query_params: dict):
     """
