@@ -14,6 +14,7 @@ const FRAMEWORK_LABELS = {
   debate: 'Chain of Debate',
   six_hats: 'Six Thinking Hats',
   ensemble: 'Ensemble (Fast)',
+  heterogeneous: 'Heterogeneous Council',
 };
 
 const clampSelectionLimit = (value) => {

@@ -19,34 +19,60 @@ const MarkdownContent = memo(({ content }) => (
 MarkdownContent.displayName = 'MarkdownContent';
 
 // ⚡ Bolt: Extract and memoize Rankings tab content to prevent re-renders when Stage 3 is streaming
-const RankingsTabContent = memo(({ aggregateRankings }) => (
-  <div className="p-6">
-    <h3 className="font-semibold mb-4">Council Rankings</h3>
-    <div className="space-y-4">
-      {aggregateRankings.length > 0 ? (
-        aggregateRankings.map((rank, idx) => (
-          <div key={idx} className="flex items-center justify-between p-3 border rounded-lg bg-card/50">
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted font-bold">
-                {idx + 1}
-              </div>
-              <div>
-                <div className="font-medium">{rank.model}</div>
-                <div className="text-xs text-muted-foreground">{rank.rankings_count} evaluations</div>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="font-mono font-bold text-lg">{rank.average_rank}</div>
-              <div className="text-xs text-muted-foreground">Avg Rank</div>
-            </div>
-          </div>
-        ))
-      ) : (
-        <div className="text-muted-foreground italic">No rankings available for this session type.</div>
+const RankingsTabContent = memo(({ aggregateRankings, framework, modelWeightProfile }) => {
+  const profileByModel = new Map(
+    (Array.isArray(modelWeightProfile) ? modelWeightProfile : [])
+      .filter((entry) => entry && typeof entry.model === 'string')
+      .map((entry) => [entry.model, entry])
+  );
+
+  return (
+    <div className="p-6">
+      <h3 className="font-semibold mb-2">Council Rankings</h3>
+      {framework === 'heterogeneous' && (
+        <p className="mb-4 text-sm text-muted-foreground">
+          Rankings use confidence-weighted ballots multiplied by each model&apos;s rolling council performance.
+        </p>
       )}
+      <div className="space-y-4">
+        {aggregateRankings.length > 0 ? (
+          aggregateRankings.map((rank, idx) => {
+            const profile = profileByModel.get(rank.model);
+            return (
+              <div key={idx} className="flex items-center justify-between p-3 border rounded-lg bg-card/50">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted font-bold">
+                    {idx + 1}
+                  </div>
+                  <div>
+                    <div className="font-medium">{rank.model}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {rank.rankings_count} evaluations
+                      {rank.total_weight ? ` • total weight ${rank.total_weight}` : ''}
+                    </div>
+                    {framework === 'heterogeneous' && profile && (
+                      <div className="text-xs text-muted-foreground">
+                        Next weight {profile.dynamic_weight} • performance {profile.average_performance}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="font-mono font-bold text-lg">{rank.average_rank}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {framework === 'heterogeneous' ? 'Weighted Avg Rank' : 'Avg Rank'}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="text-muted-foreground italic">No rankings available for this session type.</div>
+        )}
+      </div>
     </div>
-  </div>
-));
+  );
+});
 
 RankingsTabContent.displayName = 'RankingsTabContent';
 
@@ -265,6 +291,9 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
   const hasComparisonDiff = hasStage1 && stage1.length > 1;
 
   const aggregateRankings = metadata?.aggregate_rankings || [];
+  const modelWeightProfile = Array.isArray(metadata?.model_weight_profile)
+    ? metadata.model_weight_profile
+    : [];
 
   const requestedCouncilModels = Array.isArray(metadata?.requested_council_models)
     ? metadata.requested_council_models
@@ -476,7 +505,11 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
           </TabsContent>
 
           <TabsContent value="rankings" className="m-0 focus-visible:ring-0">
-            <RankingsTabContent aggregateRankings={aggregateRankings} />
+            <RankingsTabContent
+              aggregateRankings={aggregateRankings}
+              framework={metadata?.framework}
+              modelWeightProfile={modelWeightProfile}
+            />
           </TabsContent>
 
           <TabsContent value="diff" className="m-0 focus-visible:ring-0">

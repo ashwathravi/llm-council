@@ -5,7 +5,7 @@ from backend.main import CreateConversationRequest, SendMessageRequest
 
 def test_valid_frameworks():
     """Test that all allowed frameworks are accepted."""
-    for framework in ["standard", "six_hats", "debate", "ensemble"]:
+    for framework in ["standard", "six_hats", "debate", "ensemble", "heterogeneous"]:
         req = CreateConversationRequest(framework=framework)
         assert req.framework == framework
 

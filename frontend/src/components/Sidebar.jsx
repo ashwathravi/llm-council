@@ -144,6 +144,10 @@ const Sidebar = memo(({
                   <strong>Ensemble (Fast)</strong>
                   <p>Parallel execution for quick consensus without the peer-review stage.</p>
                 </div>
+                <div className="tooltip-item">
+                  <strong>Heterogeneous Council</strong>
+                  <p>Mixed-model council that weights each ballot by declared confidence and recent council performance.</p>
+                </div>
               </div>
             </div>
           </div>
@@ -156,6 +160,7 @@ const Sidebar = memo(({
             <option value="debate">Chain of Debate</option>
             <option value="six_hats">Six Thinking Hats</option>
             <option value="ensemble">Ensemble (Fast)</option>
+            <option value="heterogeneous">Heterogeneous Council</option>
           </select>
         </div>
 

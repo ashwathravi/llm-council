@@ -49,3 +49,102 @@ async def test_stage3_synthesis():
             full_response += token
         
         assert full_response == "Final Answer"
+
+
+def test_parse_confidence_from_text():
+    assert council.parse_confidence_from_text("FINAL RANKING:\n1. Response A\nCONFIDENCE: 82") == 82
+    assert council.parse_confidence_from_text("confidence: 150") == 100
+    assert council.parse_confidence_from_text("No explicit confidence provided") is None
+
+
+def test_calculate_aggregate_rankings_uses_ballot_weights():
+    stage2_results = [
+        {
+            "model": "judge-a",
+            "ranking": "FINAL RANKING:\n1. Response A\n2. Response B",
+            "parsed_ranking": ["Response A", "Response B"],
+            "ballot_weight": 1.5,
+        },
+        {
+            "model": "judge-b",
+            "ranking": "FINAL RANKING:\n1. Response B\n2. Response A",
+            "parsed_ranking": ["Response B", "Response A"],
+            "ballot_weight": 0.5,
+        },
+    ]
+    label_to_model = {"Response A": "model-a", "Response B": "model-b"}
+
+    aggregate = council.calculate_aggregate_rankings(stage2_results, label_to_model)
+
+    assert aggregate[0]["model"] == "model-a"
+    assert aggregate[0]["average_rank"] == 1.25
+    assert aggregate[0]["rankings_count"] == 2
+    assert aggregate[0]["total_weight"] == 2.0
+    assert aggregate[0]["weighted"] is True
+    assert aggregate[1]["model"] == "model-b"
+    assert aggregate[1]["average_rank"] == 1.75
+
+
+def test_build_model_weight_profile_tracks_prior_rounds():
+    conversation_messages = [
+        {
+            "role": "assistant",
+            "metadata": {
+                "responded_council_models": ["model-a", "model-b"],
+                "aggregate_rankings": [
+                    {"model": "model-a", "average_rank": 1.0},
+                    {"model": "model-b", "average_rank": 2.0},
+                ],
+            },
+        },
+    ]
+
+    profiles = council.build_model_weight_profile(
+        conversation_messages,
+        ["model-a", "model-b", "model-c"],
+    )
+
+    assert profiles["model-a"]["rounds_observed"] == 1
+    assert profiles["model-a"]["average_performance"] == 1.0
+    assert profiles["model-a"]["dynamic_weight"] == 1.5
+    assert profiles["model-b"]["average_performance"] == 0.0
+    assert profiles["model-b"]["dynamic_weight"] == 0.5
+    assert profiles["model-c"]["rounds_observed"] == 0
+    assert profiles["model-c"]["dynamic_weight"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_stage2_collect_rankings_heterogeneous_adds_confidence_and_weights():
+    mocked_responses = {
+        "model-a": {
+            "content": "Analysis\nFINAL RANKING:\n1. Response A\n2. Response B\nCONFIDENCE: 80"
+        },
+        "model-b": {
+            "content": "Analysis\nFINAL RANKING:\n1. Response B\n2. Response A\nCONFIDENCE: 60"
+        },
+    }
+
+    with patch("backend.council.query_models_parallel", new_callable=AsyncMock) as mock_parallel:
+        mock_parallel.return_value = mocked_responses
+
+        stage2_results, label_to_model = await council.stage2_collect_rankings(
+            "Which answer is best?",
+            [
+                {"model": "model-a", "response": "Answer A"},
+                {"model": "model-b", "response": "Answer B"},
+            ],
+            council_models=["model-a", "model-b"],
+            framework="heterogeneous",
+            model_profiles={
+                "model-a": {"dynamic_weight": 1.4},
+                "model-b": {"dynamic_weight": 0.8},
+            },
+        )
+
+    assert label_to_model == {"Response A": "model-a", "Response B": "model-b"}
+    assert stage2_results[0]["confidence_score"] == 80
+    assert stage2_results[0]["historical_weight"] == 1.4
+    assert stage2_results[0]["ballot_weight"] == 1.12
+    assert stage2_results[1]["confidence_score"] == 60
+    assert stage2_results[1]["historical_weight"] == 0.8
+    assert stage2_results[1]["ballot_weight"] == 0.48
