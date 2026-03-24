@@ -1,13 +1,12 @@
 
 import json
 import os
-import asyncio
 import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from sqlalchemy.future import select
-from sqlalchemy import update, delete, insert
+from sqlalchemy import delete, insert
 from sqlalchemy.orm.attributes import flag_modified
 from .config import DATA_DIR, APP_ORIGIN, DOCUMENTS_DIR
 from .database import AsyncSessionLocal, ConversationModel, DocumentModel, DocumentChunkModel, init_db
