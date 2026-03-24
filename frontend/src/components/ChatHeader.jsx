@@ -1,6 +1,7 @@
 
 import React, { memo } from 'react';
 import { api } from '../api';
+import { logger } from '@/lib/logger';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Download, Link as LinkIcon, FileText, Check } from "lucide-react";
@@ -42,7 +43,7 @@ const ChatHeader = memo(({
         description: `Exporting conversation to ${format.toUpperCase()}...`,
       });
     } catch (error) {
-      console.error('Export failed:', error);
+      logger.error('Export failed:', error);
       toast({
         variant: "destructive",
         title: "Export Failed",
@@ -61,7 +62,7 @@ const ChatHeader = memo(({
       });
       setTimeout(() => setCopied(false), 2000);
     }).catch(err => {
-      console.error('Failed to copy link:', err);
+      logger.error('Failed to copy link:', err);
       toast({
         variant: "destructive",
         title: "Error",

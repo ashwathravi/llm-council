@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, lazy, Suspense, useMemo } from 'react
 import CouncilSidebar from './components/CouncilSidebar';
 import ChatInterface from './components/ChatInterface';
 import { api } from './api';
+import { logger } from '@/lib/logger';
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
 import { useToast } from "@/components/ui/use-toast";
@@ -44,7 +45,7 @@ function App() {
       const convs = await api.listConversations();
       setConversations(convs);
     } catch (error) {
-      console.error('Failed to load conversations:', error);
+      logger.error('Failed to load conversations:', error);
       if (error.message.includes('401') || error.message.includes('Unauthorized')) {
         logout();
       }
@@ -56,7 +57,7 @@ function App() {
       const conv = await api.getConversation(id);
       setCurrentConversation(conv);
     } catch (error) {
-      console.error('Failed to load conversation:', error);
+      logger.error('Failed to load conversation:', error);
     }
   }, []);
 
@@ -125,7 +126,7 @@ function App() {
       window.history.pushState({ path: newUrl }, '', newUrl);
       return data;
     } catch (error) {
-      console.error('Failed to create conversation:', error);
+      logger.error('Failed to create conversation:', error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -338,7 +339,7 @@ function App() {
             setIsLoading(false);
             break;
           case 'error':
-            console.error('Stream error:', event.error);
+            logger.error('Stream error:', event.error);
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
@@ -374,7 +375,7 @@ function App() {
         }
       });
     } catch (error) {
-      console.error('Failed to send message:', error);
+      logger.error('Failed to send message:', error);
       setCurrentConversation((prev) => ({
         ...prev,
         messages: prev.messages.slice(0, -2),
