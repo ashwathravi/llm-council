@@ -3,6 +3,7 @@ import React from 'react';
 import { GoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
 import { useAuth } from '../contexts/AuthContextDefinition';
 import { api } from '../api';
+import { logger } from '@/lib/logger';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { BrainCircuit } from "lucide-react";
 
@@ -24,7 +25,7 @@ export default function Login() {
                     setGoogleClientId(runtimeClientId);
                 }
             } catch (err) {
-                console.error('Failed to load auth config:', err);
+                logger.error('Failed to load auth config:', err);
             } finally {
                 if (isMounted) {
                     setIsConfigLoading(false);
@@ -54,7 +55,7 @@ export default function Login() {
             const data = await api.login(credentialResponse.credential);
             handleLoginSuccess(data);
         } catch (err) {
-            console.error('Login error:', err);
+            logger.error('Login error:', err);
             setError('Failed to log in with server');
             setIsLoading(false);
         }

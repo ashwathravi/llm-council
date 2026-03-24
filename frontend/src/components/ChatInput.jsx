@@ -1,6 +1,7 @@
 
 import React, { memo, useState, useEffect, useRef } from 'react';
 import { api } from '../api';
+import { logger } from '@/lib/logger';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -41,7 +42,7 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
         const docs = await api.listDocuments(conversationId);
         setDocuments(docs);
       } catch (error) {
-        console.error('Failed to load documents:', error);
+        logger.error('Failed to load documents:', error);
       }
     };
 
@@ -106,7 +107,7 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
       const updatedDocuments = await api.listDocuments(conversationId);
       setDocuments(updatedDocuments);
     } catch (error) {
-      console.error('Upload failed:', error);
+      logger.error('Upload failed:', error);
       setUploadError('Failed to upload documents.');
     } finally {
       setUploading(false);
