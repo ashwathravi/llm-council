@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, lazy, Suspense, useMemo } from 'react';
-// import Sidebar from './components/Sidebar';
 import CouncilSidebar from './components/CouncilSidebar';
 import ChatInterface from './components/ChatInterface';
 import { api } from './api';
@@ -11,7 +10,6 @@ import { Moon, Sun, Menu, LogOut, ListTree } from "lucide-react";
 
 const Login = lazy(() => import('./components/Login'));
 import { useAuth } from './contexts/AuthContextDefinition';
-// import './App.css'; // Deprecated
 
 function App() {
   const { user, isLoading: authLoading, logout } = useAuth();
