@@ -5,6 +5,34 @@ import pytest
 from backend import documents, retrieval, storage, config
 
 
+@pytest.mark.parametrize("text,expected", [
+    ("hello world", "hello world"),
+    ("hello   world", "hello world"),
+    ("hello\tworld", "hello world"),
+    ("hello\nworld", "hello world"),
+    ("  hello \n \t world  ", "hello world"),
+    ("", ""),
+    ("   \n\t  ", ""),
+    ("multiple   spaces   between   words", "multiple spaces between words"),
+])
+def test_normalize_text(text, expected):
+    assert documents.normalize_text(text) == expected
+
+
+@pytest.mark.parametrize("header,expected", [
+    (b"%PDF-1.4", True),
+    (b"%PDF-1.7", True),
+    (b"%PDF-2.0", True),
+    (b"PDF-1.4", False),
+    (b" %PDF-1.4", False),
+    (b"something %PDF-1.4", False),
+    (b"", False),
+    (b"random bytes", False),
+])
+def test_validate_pdf_header(header, expected):
+    assert documents.validate_pdf_header(header) == expected
+
+
 def test_chunk_pages_overlap():
     text = "one two three four five six seven eight nine ten"
     chunks = documents.chunk_pages([text], chunk_words=4, overlap_words=1)
