@@ -269,18 +269,7 @@ async def db_get_document_chunks_by_ids(conversation_id: str, user_id: str, chun
 
 async def db_delete_document(conversation_id: str, document_id: str, user_id: str):
     async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(DocumentModel)
-            .where(
-                DocumentModel.id == document_id,
-                DocumentModel.conversation_id == conversation_id,
-                DocumentModel.user_id == user_id
-            )
-        )
-        doc = result.scalar_one_or_none()
-        if not doc:
-            raise ValueError("Unauthorized or not found")
-
+        # Delete chunks first (no cascade)
         await session.execute(
             delete(DocumentChunkModel)
             .where(
@@ -289,7 +278,21 @@ async def db_delete_document(conversation_id: str, document_id: str, user_id: st
                 DocumentChunkModel.user_id == user_id
             )
         )
-        await session.delete(doc)
+
+        # Delete the document directly and check rowcount for existence/auth
+        result = await session.execute(
+            delete(DocumentModel)
+            .where(
+                DocumentModel.id == document_id,
+                DocumentModel.conversation_id == conversation_id,
+                DocumentModel.user_id == user_id
+            )
+        )
+
+        if result.rowcount == 0:
+            await session.rollback()
+            raise ValueError("Unauthorized or not found")
+
         await session.commit()
 
 def _model_to_dict(model: ConversationModel) -> Dict[str, Any]:
