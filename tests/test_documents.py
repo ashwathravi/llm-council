@@ -5,6 +5,46 @@ import pytest
 from backend import documents, retrieval, storage, config
 
 
+@pytest.mark.parametrize("filename, content_type, expected", [
+    ("test.pdf", "application/pdf", True),
+    ("test.PDF", "application/pdf", True),
+    ("test.pdf", "APPLICATION/PDF", True),
+    ("test.pdf", None, True),
+    (None, "application/pdf", True),
+    ("test.txt", "text/plain", False),
+    ("test.pdf.txt", "text/plain", False),
+    (None, None, False),
+    ("", "", False),
+    ("test.pdf", "text/plain", True), # filename wins
+    ("test.txt", "application/pdf", True), # content_type wins
+])
+def test_is_pdf_file(filename, content_type, expected):
+    assert documents.is_pdf_file(filename, content_type) == expected
+
+
+@pytest.mark.parametrize("header, expected", [
+    (b"%PDF-1.4", True),
+    (b"%PDF-1.7", True),
+    (b"%PDF-2.0", True),
+    (b"NOT A PDF", False),
+    (b"", False),
+    (b" %PDF-1.4", False), # Must start with %PDF-
+])
+def test_validate_pdf_header(header, expected):
+    assert documents.validate_pdf_header(header) == expected
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("  hello   world  ", "hello world"),
+    ("\nhello\tworld\r", "hello world"),
+    ("multiple    spaces", "multiple spaces"),
+    ("", ""),
+    ("   ", ""),
+])
+def test_normalize_text(text, expected):
+    assert documents.normalize_text(text) == expected
+
+
 def test_chunk_pages_overlap():
     text = "one two three four five six seven eight nine ten"
     chunks = documents.chunk_pages([text], chunk_words=4, overlap_words=1)
