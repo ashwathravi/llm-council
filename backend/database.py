@@ -99,14 +99,24 @@ def configure_ssl_context(query_params: dict):
             ssl_context.verify_mode = ssl.CERT_REQUIRED
             connect_args["ssl"] = ssl_context
 
-        # Require: Encryption required, but verification optional (Legacy/Compat)
+        # Require: Encryption required, and now verification is enforced for security.
         elif ssl_mode == "require":
-            # Create a custom SSL context to avoid certificate verification errors
-            # which are common in some deployment environments (e.g. Render, self-signed)
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
             connect_args["ssl"] = ssl_context
+
+    # Support for custom CA bundle
+    if "sslrootcert" in query_params:
+        root_cert = query_params.pop("sslrootcert")
+        # Ensure we have an SSL context if sslrootcert is provided
+        if "ssl" not in connect_args:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+            connect_args["ssl"] = ssl_context
+
+        connect_args["ssl"].load_verify_locations(cafile=root_cert)
 
     return connect_args, query_params
 
