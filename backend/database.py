@@ -81,10 +81,10 @@ def configure_ssl_context(query_params: dict):
     """
     connect_args = {}
     ssl_root_cert = query_params.pop("sslrootcert", None)
+    ssl_context = None
 
     if "sslmode" in query_params:
         ssl_mode = query_params.pop("sslmode")
-        ssl_context = None
 
         # Verify-Full: Strict verification (Certificate + Hostname)
         if ssl_mode == "verify-full":
@@ -98,7 +98,7 @@ def configure_ssl_context(query_params: dict):
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_REQUIRED
 
-        # Require: Encryption required, but verification optional (Legacy/Compat)
+        # Require: Encryption required, and now verification is enforced for security.
         elif ssl_mode == "require":
             # Encryption with certificate verification to prevent MITM.
             # Hostname check is disabled for compatibility with some cloud providers.
@@ -106,10 +106,16 @@ def configure_ssl_context(query_params: dict):
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_REQUIRED
 
-        if ssl_context:
-            if ssl_root_cert:
-                ssl_context.load_verify_locations(cafile=ssl_root_cert)
-            connect_args["ssl"] = ssl_context
+    if ssl_root_cert:
+        # Allow callers to provide a custom CA bundle for certificate validation.
+        if ssl_context is None:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+        ssl_context.load_verify_locations(cafile=ssl_root_cert)
+
+    if ssl_context:
+        connect_args["ssl"] = ssl_context
 
     return connect_args, query_params
 

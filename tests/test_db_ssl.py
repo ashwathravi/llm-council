@@ -43,21 +43,24 @@ def test_require_is_secure():
     assert ctx.verify_mode == ssl.CERT_REQUIRED
     assert ctx.check_hostname is False
 
-def test_sslrootcert_loading():
+def test_sslrootcert_loading(tmp_path):
     """
     Asserts that sslrootcert is correctly handled and loaded into the context.
     """
-    from unittest.mock import patch, MagicMock
+    cert_file = tmp_path / "root.crt"
+    cert_file.write_text("dummy certificate content")
+    query_params = {"sslmode": "require", "sslrootcert": str(cert_file)}
 
-    query_params = {"sslmode": "verify-ca", "sslrootcert": "/path/to/ca.crt"}
-
-    with patch("ssl.SSLContext.load_verify_locations") as mock_load:
+    import unittest.mock as mock
+    with mock.patch("ssl.SSLContext.load_verify_locations") as mock_load:
         connect_args, updated_params = configure_ssl_context(query_params)
 
         ctx = connect_args.get("ssl")
         assert ctx is not None
-        mock_load.assert_called_once_with(cafile="/path/to/ca.crt")
-        assert "sslrootcert" not in updated_params
+        assert ctx.verify_mode == ssl.CERT_REQUIRED
+        mock_load.assert_called_once_with(cafile=str(cert_file))
+
+    assert "sslrootcert" not in updated_params
 
 def test_no_sslmode():
     """
