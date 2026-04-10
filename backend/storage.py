@@ -536,10 +536,18 @@ def file_delete_document(conversation_id: str, document_id: str, user_id: str):
     bundle = load_documents_bundle(conversation_id)
     documents = bundle.get("documents", [])
     chunks = bundle.get("chunks", [])
-    new_documents = [doc for doc in documents if not (doc.get("id") == document_id and doc.get("user_id") == user_id)]
-    if len(new_documents) == len(documents):
+
+    found_idx = -1
+    for i, doc in enumerate(documents):
+        if doc.get("id") == document_id and doc.get("user_id") == user_id:
+            found_idx = i
+            break
+
+    if found_idx == -1:
         raise ValueError("Unauthorized or not found")
-    bundle["documents"] = new_documents
+
+    documents.pop(found_idx)
+    bundle["documents"] = documents
     bundle["chunks"] = [chunk for chunk in chunks if chunk.get("document_id") != document_id]
     save_documents_bundle(conversation_id, bundle)
 
