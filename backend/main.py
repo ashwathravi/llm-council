@@ -14,6 +14,7 @@ import os
 import io
 import time
 import requests
+import logging
 from contextlib import asynccontextmanager
 
 from . import storage, auth, openrouter, security, documents, retrieval, config
@@ -25,6 +26,8 @@ from .council import (
     stage3_synthesize_final, calculate_aggregate_rankings, resolve_active_models
 )
 from . import export
+
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -250,8 +253,8 @@ async def delete_conversation(conversation_id: str, user_id: str = Depends(auth.
         return {"status": "success"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        print(f"Error deleting conversation: {e}")
+    except Exception:
+        logger.error("Error deleting conversation", exc_info=False)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -261,8 +264,8 @@ async def list_models(user_id: str = Depends(auth.get_current_user_id)):
     try:
         models = await openrouter.fetch_models()
         return models
-    except Exception as e:
-        print(f"Error fetching models: {e}")
+    except Exception:
+        logger.error("Error fetching models", exc_info=False)
         # Security: Do not leak internal error details to client
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1039,10 +1042,8 @@ async def send_message_stream(
                 f"responded={responded_council_models}"
             )
 
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"Streaming error: {e}")
+        except Exception:
+            logger.error("Streaming error", exc_info=False)
             # Security: Do not leak internal error details to client
             yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred.'})}\n\n"
 
