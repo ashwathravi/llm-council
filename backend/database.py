@@ -1,5 +1,4 @@
 
-import os
 import ssl
 from datetime import datetime
 from typing import List, Optional, Any, Dict
