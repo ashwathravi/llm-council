@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import numpy as np
+import logging
 from typing import List, Dict, Any, Tuple
 from starlette.concurrency import run_in_threadpool
 
 from . import storage, documents
 from .config import RETRIEVAL_TOP_K, RETRIEVAL_MAX_TOTAL_CHARS, RETRIEVAL_MAX_CHARS_PER_CHUNK
 
+logger = logging.getLogger(__name__)
 
 def _build_context(citations: List[Dict[str, Any]]) -> str:
     if not citations:
@@ -110,8 +112,6 @@ async def build_retrieval_context(
 
         context = _build_context(citations)
         return (context if context else None), citations
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"Retrieval error: {e}")
+    except Exception:
+        logger.exception("Retrieval error")
         return None, []

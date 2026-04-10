@@ -13,7 +13,7 @@ import asyncio
 import os
 import io
 import time
-import requests
+import logging
 from contextlib import asynccontextmanager
 
 from . import storage, auth, openrouter, security, documents, retrieval, config
@@ -26,6 +26,8 @@ from .council import (
     build_model_weight_profile, apply_round_to_model_profiles, serialize_model_weight_profile
 )
 from . import export
+
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -251,8 +253,8 @@ async def delete_conversation(conversation_id: str, user_id: str = Depends(auth.
         return {"status": "success"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        print(f"Error deleting conversation: {e}")
+    except Exception:
+        logger.exception("Error deleting conversation")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -262,8 +264,8 @@ async def list_models(user_id: str = Depends(auth.get_current_user_id)):
     try:
         models = await openrouter.fetch_models()
         return models
-    except Exception as e:
-        print(f"Error fetching models: {e}")
+    except Exception:
+        logger.exception("Error fetching models")
         # Security: Do not leak internal error details to client
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -914,7 +916,7 @@ async def send_message_stream(
                 retrieval.build_retrieval_context(conversation_id, user_id, request.content)
             )
 
-            print(
+            logger.info(
                 f"[stream] conversation={conversation_id} framework={framework} "
                 f"requested_models={requested_council_models} effective_models={effective_council_models} "
                 f"chairman={chairman_model or config.CHAIRMAN_MODEL}"
@@ -953,7 +955,7 @@ async def send_message_stream(
                 "stage1_duration_seconds": stage1_duration,
             }
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results, 'metadata': stage1_meta})}\n\n"
-            print(
+            logger.info(
                 f"[stream] conversation={conversation_id} stage1_complete duration={stage1_duration}s "
                 f"responded={responded_council_models} errors={len(stage1_errors)}"
             )
@@ -1022,7 +1024,7 @@ async def send_message_stream(
                  yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, **hetero_meta, **config_meta, **retrieval_meta}})}\n\n"
 
             stage2_duration = round(time.monotonic() - stage2_start, 3)
-            print(
+            logger.info(
                 f"[stream] conversation={conversation_id} stage2_complete duration={stage2_duration}s "
                 f"framework={framework}"
             )
@@ -1052,7 +1054,7 @@ async def send_message_stream(
             }
             yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
             stage3_duration = round(time.monotonic() - stage3_start, 3)
-            print(f"[stream] conversation={conversation_id} stage3_complete duration={stage3_duration}s")
+            logger.info(f"[stream] conversation={conversation_id} stage3_complete duration={stage3_duration}s")
 
             # Wait for title generation if it was started
             if title_task:
@@ -1100,16 +1102,14 @@ async def send_message_stream(
 
             # Send completion event
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
-            print(
+            logger.info(
                 f"[stream] conversation={conversation_id} complete total={metadata['timing']['total_seconds']}s "
                 f"requested={requested_council_models} effective={effective_council_models} "
                 f"responded={responded_council_models}"
             )
 
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"Streaming error: {e}")
+        except Exception:
+            logger.exception("Streaming error")
             # Security: Do not leak internal error details to client
             yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred.'})}\n\n"
 
