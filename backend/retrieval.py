@@ -113,5 +113,5 @@ async def build_retrieval_context(
         context = _build_context(citations)
         return (context if context else None), citations
     except Exception:
-        logger.exception("Retrieval error")
+        logger.error("Retrieval error", exc_info=False)
         return None, []

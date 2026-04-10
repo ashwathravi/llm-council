@@ -254,7 +254,7 @@ async def delete_conversation(conversation_id: str, user_id: str = Depends(auth.
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception:
-        logger.exception("Error deleting conversation")
+        logger.error("Error deleting conversation", exc_info=False)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -265,7 +265,7 @@ async def list_models(user_id: str = Depends(auth.get_current_user_id)):
         models = await openrouter.fetch_models()
         return models
     except Exception:
-        logger.exception("Error fetching models")
+        logger.error("Error fetching models", exc_info=False)
         # Security: Do not leak internal error details to client
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1109,7 +1109,7 @@ async def send_message_stream(
             )
 
         except Exception:
-            logger.exception("Streaming error")
+            logger.error("Streaming error", exc_info=False)
             # Security: Do not leak internal error details to client
             yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred.'})}\n\n"
 
