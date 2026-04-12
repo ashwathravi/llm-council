@@ -1,0 +1,34 @@
+# Architecture
+
+- Two-part application:
+  - FastAPI backend in `backend/`
+  - React 19 + Vite SPA in `frontend/`
+- Backend owns all state and orchestration:
+  - conversations
+  - uploaded documents
+  - retrieval
+  - council execution
+  - auth/session validation
+- Primary persistence is Postgres via SQLAlchemy async models:
+  - `conversations`
+  - `documents`
+  - `document_chunks`
+- Conversation and message bodies are stored as JSON columns, not normalized message tables.
+- If `DATABASE_URL` is absent, storage falls back to JSON files under `data/conversations` and `data/documents`.
+- PDF ingestion pipeline:
+  - validate file type and magic header
+  - extract text with `pypdf`
+  - chunk by words with overlap
+  - embed chunks with `sentence-transformers/all-MiniLM-L6-v2`
+  - store chunks plus embeddings for retrieval.
+- Retrieval is embedding-based:
+  - embed user query
+  - score saved chunk embeddings with numpy dot product
+  - fetch top chunk texts
+  - prepend a system retrieval block to model prompts.
+- Council execution is a 3-stage pipeline:
+  - Stage 1: collect per-model responses
+  - Stage 2: rank or critique those responses depending on framework
+  - Stage 3: chairman model synthesizes the final answer
+- The streaming endpoint emits SSE events for stage starts, incremental Stage 1 updates, Stage 3 tokens, completion, and errors.
+- In production the backend also serves the built frontend from `frontend/dist`.
