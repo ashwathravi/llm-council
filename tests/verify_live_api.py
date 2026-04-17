@@ -8,8 +8,7 @@ from datetime import datetime, timedelta
 # Configuration matched to backend/auth.py
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 if not SECRET_KEY:
-    raise RuntimeError("JWT_SECRET_KEY environment variable is required for tests.")
-
+    raise RuntimeError("JWT_SECRET_KEY environment variable is required for this test script.")
 ALGORITHM = "HS256"
 API_URL = "http://localhost:8001/api"
 

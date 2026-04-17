@@ -3,7 +3,8 @@ import pytest
 import pytest_asyncio
 import os
 
-# Set dummy secret key for tests before importing backend modules
+# Set a dummy secret key for tests BEFORE importing any backend modules
+# that might trigger the RuntimeError.
 os.environ.setdefault("JWT_SECRET_KEY", "test_only_dummy_secret_key_for_unit_tests")
 
 from httpx import AsyncClient, ASGITransport
