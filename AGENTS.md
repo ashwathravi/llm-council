@@ -17,16 +17,13 @@
 - Preview production frontend build: `cd frontend && npm run preview`
 
 ### Utility scripts
-- Export benchmark script: `python scripts/benchmark_export.py`
-- Retrieval benchmark script: `python scripts/measure_retrieval.py`
+- Export benchmark script: `uv run python scripts/benchmark_export.py`
+- Retrieval benchmark script: `uv run python scripts/measure_retrieval.py`
 - Add DB index migration: `uv run python scripts/add_index.py`
-- Scout assigned GitHub issues into `.agent/passports`: `gh auth login && ./scripts/scout_agent.py`
+- Scout assigned GitHub issues into `.agent/passports`: `gh auth login && uv run python scripts/scout_agent.py`
 
 ### Agentic workflow bootstrap
 - Create a new feature passport: `cp .agent/templates/feature_passport.md .agent/passports/my_feature.md`
 
 ### Container workflow
 - Build and run with Docker Compose: `docker compose up --build`
-
-## TODO
-- Confirm whether utility scripts should be run via `uv run python ...` for environment consistency.
