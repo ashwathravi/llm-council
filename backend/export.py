@@ -11,34 +11,43 @@ def export_to_markdown(conversation: dict) -> str:
     """
     Export conversation to Markdown format.
     """
+    if not isinstance(conversation, dict):
+        conversation = {}
     lines = []
-    lines.append(f"# {conversation.get('title', 'Conversation')}\n\n")
-    lines.append(f"**Date:** {conversation.get('created_at', '')}\n")
-    lines.append(f"**Framework:** {conversation.get('framework', 'Standard')}\n\n")
+    lines.append(f"# {conversation.get('title') or 'Conversation'}\n\n")
+    lines.append(f"**Date:** {conversation.get('created_at') or ''}\n")
+    lines.append(f"**Framework:** {conversation.get('framework') or 'Standard'}\n\n")
 
-    for msg in conversation.get('messages', []):
+    for msg in (conversation.get('messages') or []):
+        if not isinstance(msg, dict):
+            continue
         role = msg.get('role')
         if role == 'user':
-            lines.append(f"## User\n\n{msg.get('content', '')}\n\n")
+            lines.append(f"## User\n\n{msg.get('content') or ''}\n\n")
         elif role == 'assistant':
             lines.append("## LLM Council\n\n")
 
             # Stage 1
-            if msg.get('stage1'):
+            stage1 = msg.get('stage1')
+            if isinstance(stage1, list) and stage1:
                 lines.append("### Stage 1: Individual Responses\n\n")
-                for res in msg['stage1']:
-                    lines.append(f"**{res.get('model', 'Model')}**:\n\n{res.get('response', '')}\n\n")
+                for res in stage1:
+                    if isinstance(res, dict):
+                        lines.append(f"**{res.get('model') or 'Model'}**:\n\n{res.get('response') or ''}\n\n")
 
             # Stage 2
-            if msg.get('stage2'):
+            stage2 = msg.get('stage2')
+            if isinstance(stage2, list) and stage2:
                 lines.append("### Stage 2: Peer Review\n\n")
-                for res in msg['stage2']:
-                    lines.append(f"**{res.get('model', 'Model')}**:\n\n{res.get('ranking', '')}\n\n")
+                for res in stage2:
+                    if isinstance(res, dict):
+                        lines.append(f"**{res.get('model') or 'Model'}**:\n\n{res.get('ranking') or ''}\n\n")
 
             # Stage 3
-            if msg.get('stage3'):
+            stage3 = msg.get('stage3')
+            if isinstance(stage3, dict):
                 lines.append("### Stage 3: Final Synthesis\n\n")
-                lines.append(f"{msg['stage3'].get('response', '')}\n\n")
+                lines.append(f"{stage3.get('response') or ''}\n\n")
 
         lines.append("---\n\n")
 
@@ -72,21 +81,25 @@ def export_to_pdf(conversation: dict) -> bytes:
         # Convert newlines to breaks
         return escaped.replace('\n', '<br/>')
 
+    if not isinstance(conversation, dict):
+        conversation = {}
     # Title
-    story.append(Paragraph(safe_text(conversation.get('title', 'Conversation')), styles["Title"]))
+    story.append(Paragraph(safe_text(conversation.get('title') or 'Conversation'), styles["Title"]))
     story.append(Spacer(1, 12))
 
     # Metadata
-    story.append(Paragraph(f"<b>Date:</b> {safe_text(conversation.get('created_at', ''))}", styles["Normal"]))
-    story.append(Paragraph(f"<b>Framework:</b> {safe_text(conversation.get('framework', 'Standard'))}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Date:</b> {safe_text(conversation.get('created_at') or '')}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Framework:</b> {safe_text(conversation.get('framework') or 'Standard')}", styles["Normal"]))
     story.append(Spacer(1, 24))
 
-    for msg in conversation.get('messages', []):
+    for msg in (conversation.get('messages') or []):
+        if not isinstance(msg, dict):
+            continue
         role = msg.get('role')
 
         if role == 'user':
             story.append(Paragraph("User", styles["UserHeader"]))
-            content = safe_text(msg.get('content', ''))
+            content = safe_text(msg.get('content') or '')
             story.append(Paragraph(content, styles["Normal"]))
             story.append(Spacer(1, 12))
 
@@ -94,29 +107,34 @@ def export_to_pdf(conversation: dict) -> bytes:
             story.append(Paragraph("LLM Council", styles["CouncilHeader"]))
 
             # Stage 1
-            if msg.get('stage1'):
+            stage1 = msg.get('stage1')
+            if isinstance(stage1, list) and stage1:
                 story.append(Paragraph("Stage 1: Individual Responses", styles["StageHeader"]))
-                for res in msg['stage1']:
-                    model = safe_text(res.get('model', 'Model'))
-                    story.append(Paragraph(f"<b>{model}</b>", styles["ModelName"]))
-                    response = safe_text(res.get('response', ''))
-                    story.append(Paragraph(response, styles["NormalSmall"]))
-                    story.append(Spacer(1, 6))
+                for res in stage1:
+                    if isinstance(res, dict):
+                        model = safe_text(res.get('model') or 'Model')
+                        story.append(Paragraph(f"<b>{model}</b>", styles["ModelName"]))
+                        response = safe_text(res.get('response') or '')
+                        story.append(Paragraph(response, styles["NormalSmall"]))
+                        story.append(Spacer(1, 6))
 
             # Stage 2
-            if msg.get('stage2'):
+            stage2 = msg.get('stage2')
+            if isinstance(stage2, list) and stage2:
                 story.append(Paragraph("Stage 2: Peer Review", styles["StageHeader"]))
-                for res in msg['stage2']:
-                    model = safe_text(res.get('model', 'Model'))
-                    story.append(Paragraph(f"<b>{model}</b>", styles["ModelName"]))
-                    ranking = safe_text(res.get('ranking', ''))
-                    story.append(Paragraph(ranking, styles["NormalSmall"]))
-                    story.append(Spacer(1, 6))
+                for res in stage2:
+                    if isinstance(res, dict):
+                        model = safe_text(res.get('model') or 'Model')
+                        story.append(Paragraph(f"<b>{model}</b>", styles["ModelName"]))
+                        ranking = safe_text(res.get('ranking') or '')
+                        story.append(Paragraph(ranking, styles["NormalSmall"]))
+                        story.append(Spacer(1, 6))
 
             # Stage 3
-            if msg.get('stage3'):
+            stage3 = msg.get('stage3')
+            if isinstance(stage3, dict):
                 story.append(Paragraph("Stage 3: Final Synthesis", styles["StageHeader"]))
-                response = safe_text(msg['stage3'].get('response', ''))
+                response = safe_text(stage3.get('response') or '')
                 story.append(Paragraph(response, styles["Normal"]))
 
         story.append(Spacer(1, 12))
