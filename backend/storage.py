@@ -409,19 +409,18 @@ def file_delete_conversation(conversation_id: str, user_id: str):
 def file_list_conversations(user_id: str) -> List[Dict[str, Any]]:
     ensure_data_dir()
     conversations = []
-    for filename in os.listdir(DATA_DIR):
-        if filename.endswith('.json'):
-            try:
-                with open(os.path.join(DATA_DIR, filename), 'r') as f:
-                    data = json.load(f)
-                    if data.get("user_id") == user_id:
-                        conversations.append({
-                            "id": data["id"],
-                            "created_at": data["created_at"],
-                            "title": data.get("title", "New Conversation"),
-                            "framework": data.get("framework", "standard"),
-                        })
-            except Exception: continue
+    for path in Path(DATA_DIR).glob('*.json'):
+        try:
+            with open(path, 'r') as f:
+                data = json.load(f)
+                if data.get("user_id") == user_id:
+                    conversations.append({
+                        "id": data["id"],
+                        "created_at": data["created_at"],
+                        "title": data.get("title", "New Conversation"),
+                        "framework": data.get("framework", "standard"),
+                    })
+        except Exception: continue
     conversations.sort(key=lambda x: x["created_at"], reverse=True)
     return conversations
 
