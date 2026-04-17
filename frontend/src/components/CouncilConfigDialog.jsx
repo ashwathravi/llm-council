@@ -35,6 +35,12 @@ const COUNCIL_TYPES = [
     framework: 'ensemble',
     description: 'Parallel execution for quick consensus without the peer-review stage.',
   },
+  {
+    id: 'heterogeneous',
+    name: 'Heterogeneous Council',
+    framework: 'heterogeneous',
+    description: 'Mixed-model council with confidence-weighted voting and rolling per-model performance weights.',
+  },
 ];
 
 const clampSelectionLimit = (value) => {

@@ -1,6 +1,7 @@
 import { useState, useEffect, memo } from 'react';
 import './Sidebar.css';
 import { api } from '../api';
+import { logger } from '@/lib/logger';
 import ModelSelect from './ModelSelect';
 
 const Sidebar = memo(({
@@ -37,7 +38,7 @@ const Sidebar = memo(({
       const s = await api.getStatus();
       setStatus(s);
     } catch (e) {
-      console.error("Failed to load status", e);
+      logger.error("Failed to load status", e);
       setStatusError("Error");
     }
   };
@@ -52,7 +53,7 @@ const Sidebar = memo(({
       // Ideally backend defaults should be visible but we don't know them easily without fetching config
       // Let's leave empty and let user know "Default" is used if empty
     } catch (error) {
-      console.error("Failed to load models", error);
+      logger.error("Failed to load models", error);
       setModelsError(error.message || "Failed to load models");
     } finally {
       setLoadingModels(false);
@@ -77,7 +78,7 @@ const Sidebar = memo(({
       // Since we don't have 'onDelete' prop yet, let's ask user to refresh or reload window.
       window.location.reload();
     } catch (err) {
-      console.error("Failed to delete", err);
+      logger.error("Failed to delete", err);
       alert("Failed to delete conversation");
     }
   };
@@ -143,6 +144,10 @@ const Sidebar = memo(({
                   <strong>Ensemble (Fast)</strong>
                   <p>Parallel execution for quick consensus without the peer-review stage.</p>
                 </div>
+                <div className="tooltip-item">
+                  <strong>Heterogeneous Council</strong>
+                  <p>Mixed-model council that weights each ballot by declared confidence and recent council performance.</p>
+                </div>
               </div>
             </div>
           </div>
@@ -155,6 +160,7 @@ const Sidebar = memo(({
             <option value="debate">Chain of Debate</option>
             <option value="six_hats">Six Thinking Hats</option>
             <option value="ensemble">Ensemble (Fast)</option>
+            <option value="heterogeneous">Heterogeneous Council</option>
           </select>
         </div>
 

@@ -1,7 +1,6 @@
 """Authentication module for Google Sign-In and JWT management."""
 
 import os
-import sys
 import jwt
 import logging
 from typing import Dict, Any, Optional
@@ -10,7 +9,6 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 from fastapi import HTTPException, status, Header, Depends
 from pydantic import BaseModel
-from .config import APP_ORIGIN
 from . import config
 
 # Setup logging
@@ -23,21 +21,11 @@ jwt_secret = os.getenv("JWT_SECRET_KEY")
 if jwt_secret:
     SECRET_KEY = jwt_secret
 else:
-    if APP_ORIGIN == "local":
-        SECRET_KEY = "dev_secret_key_change_in_production"
-        # Log warning (and print to stderr to ensure visibility during startup)
-        logger.warning("JWT_SECRET_KEY is not set. Using insecure default key.")
-        print(
-            "WARNING: JWT_SECRET_KEY is not set. Using insecure default key. "
-            "This is unsafe for production!",
-            file=sys.stderr
-        )
-    else:
-        # In production (Render, Replit, etc.), fail fast if no secret is set
-        raise RuntimeError(
-            f"CRITICAL SECURITY ERROR: JWT_SECRET_KEY is missing in {APP_ORIGIN} environment. "
-            "You must set a secure random string for JWT_SECRET_KEY to start the application."
-        )
+    # Fail fast if no secret is set across all environments
+    raise RuntimeError(
+        "CRITICAL SECURITY ERROR: JWT_SECRET_KEY is missing. "
+        "You must set a secure random string for JWT_SECRET_KEY to start the application."
+    )
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days

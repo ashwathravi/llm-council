@@ -117,12 +117,13 @@ async def fetch_models() -> List[Dict[str, Any]]:
             
     except httpx.HTTPStatusError as e:
         message = _extract_error_message(e.response)
+        logger.error("OpenRouter error %s: %s", e.response.status_code, message)
         raise RuntimeError(
             f"OpenRouter error {e.response.status_code}: {message}"
         ) from e
     except Exception as e:
-        print(f"Error fetching models: {e}")
-        raise e
+        logger.error("Error fetching models", exc_info=False)
+        raise RuntimeError("Failed to fetch models from OpenRouter.") from e
 
 async def query_model(
     model: str,
@@ -246,11 +247,11 @@ async def query_model(
             "status_code": e.response.status_code,
         }
     except Exception as e:
-        logger.exception("Error querying model %s", model)
+        logger.error("Error querying model %s", model, exc_info=False)
         return {
             "content": None,
             "reasoning_details": None,
-            "error": str(e),
+            "error": "An internal error occurred while querying the model.",
             "status_code": None,
         }
 
@@ -361,5 +362,5 @@ async def query_model_stream(
                 logger.warning("OpenRouter stream for %s closed without [DONE] marker.", model)
 
     except Exception as e:
-        logger.exception("Error querying model stream %s", model)
-        raise RuntimeError(f"Streaming failed for model {model}: {e}") from e
+        logger.error("Error querying model stream %s", model, exc_info=False)
+        raise RuntimeError(f"Streaming failed for model {model}") from e

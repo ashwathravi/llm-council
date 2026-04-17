@@ -1,13 +1,12 @@
 
 import json
 import os
-import asyncio
 import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from sqlalchemy.future import select
-from sqlalchemy import update, delete, insert
+from sqlalchemy import delete, insert
 from sqlalchemy.orm.attributes import flag_modified
 from .config import DATA_DIR, APP_ORIGIN, DOCUMENTS_DIR
 from .database import AsyncSessionLocal, ConversationModel, DocumentModel, DocumentChunkModel, init_db
@@ -269,18 +268,7 @@ async def db_get_document_chunks_by_ids(conversation_id: str, user_id: str, chun
 
 async def db_delete_document(conversation_id: str, document_id: str, user_id: str):
     async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(DocumentModel)
-            .where(
-                DocumentModel.id == document_id,
-                DocumentModel.conversation_id == conversation_id,
-                DocumentModel.user_id == user_id
-            )
-        )
-        doc = result.scalar_one_or_none()
-        if not doc:
-            raise ValueError("Unauthorized or not found")
-
+        # Delete chunks first (no cascade)
         await session.execute(
             delete(DocumentChunkModel)
             .where(
@@ -289,7 +277,21 @@ async def db_delete_document(conversation_id: str, document_id: str, user_id: st
                 DocumentChunkModel.user_id == user_id
             )
         )
-        await session.delete(doc)
+
+        # Delete the document directly and check rowcount for existence/auth
+        result = await session.execute(
+            delete(DocumentModel)
+            .where(
+                DocumentModel.id == document_id,
+                DocumentModel.conversation_id == conversation_id,
+                DocumentModel.user_id == user_id
+            )
+        )
+
+        if result.rowcount == 0:
+            await session.rollback()
+            raise ValueError("Unauthorized or not found")
+
         await session.commit()
 
 def _model_to_dict(model: ConversationModel) -> Dict[str, Any]:
@@ -534,10 +536,18 @@ def file_delete_document(conversation_id: str, document_id: str, user_id: str):
     bundle = load_documents_bundle(conversation_id)
     documents = bundle.get("documents", [])
     chunks = bundle.get("chunks", [])
-    new_documents = [doc for doc in documents if not (doc.get("id") == document_id and doc.get("user_id") == user_id)]
-    if len(new_documents) == len(documents):
+
+    found_idx = -1
+    for i, doc in enumerate(documents):
+        if doc.get("id") == document_id and doc.get("user_id") == user_id:
+            found_idx = i
+            break
+
+    if found_idx == -1:
         raise ValueError("Unauthorized or not found")
-    bundle["documents"] = new_documents
+
+    documents.pop(found_idx)
+    bundle["documents"] = documents
     bundle["chunks"] = [chunk for chunk in chunks if chunk.get("document_id") != document_id]
     save_documents_bundle(conversation_id, bundle)
 

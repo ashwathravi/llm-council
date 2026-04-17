@@ -1,5 +1,7 @@
 """3-stage LLM Council orchestration."""
 
+from collections import defaultdict
+import re
 from typing import List, Dict, Any, Tuple, Optional
 from .openrouter import query_models_parallel, query_model, query_model_stream
 from .config import (
@@ -13,6 +15,15 @@ from .config import (
     TITLE_MODEL,
 )
 
+# Pre-compiled regex patterns for parsing model rankings
+NUMBERED_RESPONSE_RE = re.compile(r'\d+\.\s*Response [A-Z]', re.IGNORECASE)
+RESPONSE_LABEL_RE = re.compile(r'Response\s+([A-Z])', re.IGNORECASE)
+CONFIDENCE_RE = re.compile(r'^\s*CONFIDENCE\s*:\s*(\d{1,3})\s*$', re.IGNORECASE | re.MULTILINE)
+
+DEFAULT_CONFIDENCE_SCORE = 50
+DEFAULT_MODEL_PERFORMANCE = 0.5
+MIN_CONFIDENCE_WEIGHT = 0.25
+
 
 def _apply_retrieval_context(messages: List[Dict[str, str]], retrieval_context: Optional[str]) -> List[Dict[str, str]]:
     if not retrieval_context:
@@ -25,9 +36,165 @@ def _limit_models(models: List[str]) -> List[str]:
         return models
     return models[:MAX_MODELS_PER_REQUEST]
 
+
 def resolve_active_models(council_models: Optional[List[str]] = None) -> List[str]:
     selected_models = council_models if council_models and len(council_models) > 0 else COUNCIL_MODELS
     return _limit_models(selected_models)
+
+
+def parse_confidence_from_text(response_text: str) -> Optional[int]:
+    """Parse a trailing CONFIDENCE line from a model ranking response."""
+    if not response_text:
+        return None
+
+    match = CONFIDENCE_RE.search(response_text)
+    if not match:
+        return None
+
+    value = int(match.group(1))
+    return max(0, min(100, value))
+
+
+def _normalize_confidence_score(confidence_score: Optional[int]) -> int:
+    if confidence_score is None:
+        return DEFAULT_CONFIDENCE_SCORE
+    return max(0, min(100, int(confidence_score)))
+
+
+def _confidence_to_weight(confidence_score: Optional[int]) -> float:
+    normalized = _normalize_confidence_score(confidence_score) / 100
+    return round(max(MIN_CONFIDENCE_WEIGHT, normalized), 3)
+
+
+def _default_model_profile(model_name: str) -> Dict[str, Any]:
+    return {
+        "model": model_name,
+        "rounds_observed": 0,
+        "average_performance": DEFAULT_MODEL_PERFORMANCE,
+        "dynamic_weight": 1.0,
+        "last_average_rank": None,
+    }
+
+
+def _normalize_rank_to_performance(rank_value: float, participant_count: int) -> float:
+    if participant_count <= 1:
+        return 1.0
+    normalized = 1 - ((rank_value - 1) / (participant_count - 1))
+    return max(0.0, min(1.0, normalized))
+
+
+def _coerce_average_rank(rank_entry: Dict[str, Any], participant_count: int) -> float:
+    if not isinstance(rank_entry, dict):
+        return float(participant_count)
+
+    raw_value = rank_entry.get("average_rank")
+    if isinstance(raw_value, (int, float)):
+        return float(raw_value)
+    return float(participant_count)
+
+
+def apply_round_to_model_profiles(
+    model_profiles: Optional[Dict[str, Dict[str, Any]]],
+    aggregate_rankings: List[Dict[str, Any]],
+    responded_models: List[str]
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Update model profiles using a single completed ranking round.
+
+    The repo does not yet have a gold-answer benchmark pipeline, so the rolling
+    performance signal is derived from prior council rankings within the same
+    conversation.
+    """
+    updated_profiles: Dict[str, Dict[str, Any]] = {
+        model: dict(profile)
+        for model, profile in (model_profiles or {}).items()
+    }
+
+    if not responded_models:
+        return updated_profiles
+
+    ranking_by_model = {
+        entry.get("model"): entry
+        for entry in aggregate_rankings
+        if isinstance(entry, dict) and isinstance(entry.get("model"), str)
+    }
+    participant_count = len(responded_models)
+
+    for model_name in responded_models:
+        profile = updated_profiles.get(model_name, _default_model_profile(model_name))
+        rank_value = _coerce_average_rank(ranking_by_model.get(model_name), participant_count)
+        performance = _normalize_rank_to_performance(rank_value, participant_count)
+        prior_rounds = int(profile.get("rounds_observed", 0) or 0)
+        prior_average = float(profile.get("average_performance", DEFAULT_MODEL_PERFORMANCE))
+        next_average = (
+            ((prior_average * prior_rounds) + performance) / (prior_rounds + 1)
+            if prior_rounds > 0 else performance
+        )
+        profile.update({
+            "model": model_name,
+            "rounds_observed": prior_rounds + 1,
+            "average_performance": round(next_average, 3),
+            "dynamic_weight": round(0.5 + next_average, 3),
+            "last_average_rank": round(rank_value, 2),
+        })
+        updated_profiles[model_name] = profile
+
+    return updated_profiles
+
+
+def build_model_weight_profile(
+    conversation_messages: Optional[List[Dict[str, Any]]],
+    active_models: Optional[List[str]] = None
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Build rolling model profiles from prior assistant messages in a conversation.
+    """
+    profiles: Dict[str, Dict[str, Any]] = {}
+    for model_name in active_models or []:
+        profiles[model_name] = _default_model_profile(model_name)
+
+    for message in conversation_messages or []:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+
+        metadata = message.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+
+        aggregate_rankings = metadata.get("aggregate_rankings")
+        if not isinstance(aggregate_rankings, list) or not aggregate_rankings:
+            continue
+
+        responded_models = metadata.get("responded_council_models")
+        if not isinstance(responded_models, list) or not responded_models:
+            responded_models = [
+                entry.get("model")
+                for entry in aggregate_rankings
+                if isinstance(entry, dict) and isinstance(entry.get("model"), str)
+            ]
+
+        profiles = apply_round_to_model_profiles(profiles, aggregate_rankings, responded_models)
+
+    return profiles
+
+
+def serialize_model_weight_profile(
+    model_profiles: Optional[Dict[str, Dict[str, Any]]],
+    model_order: Optional[List[str]] = None
+) -> List[Dict[str, Any]]:
+    if not model_profiles:
+        return []
+
+    ordered_models = list(model_order or [])
+    for model_name in model_profiles.keys():
+        if model_name not in ordered_models:
+            ordered_models.append(model_name)
+
+    return [
+        dict(model_profiles[model_name], model=model_name)
+        for model_name in ordered_models
+        if model_name in model_profiles
+    ]
 
 
 def _fallback_title_from_query(user_query: str) -> str:
@@ -81,7 +248,9 @@ async def stage2_collect_rankings(
     stage1_results: List[Dict[str, Any]],
     council_models: List[str] = None,
     chairman_model: str = None,
-    retrieval_context: Optional[str] = None
+    retrieval_context: Optional[str] = None,
+    framework: str = "standard",
+    model_profiles: Optional[Dict[str, Dict[str, Any]]] = None
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """
     Stage 2: Each model ranks the anonymized responses.
@@ -115,19 +284,26 @@ async def stage2_collect_rankings(
     if retrieval_context:
         retrieval_block = f"\n\nRelevant document excerpts:\n{retrieval_context}\n"
 
-    ranking_prompt = f"""You are evaluating different responses to the following question:
+    if framework == "heterogeneous":
+        ranking_instructions = """2. Then, at the very end of your response, provide a final ranking and a confidence score.
 
-Question: {user_query}
+IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
+- Start with the line "FINAL RANKING:" (all caps, with colon)
+- Then list the responses from best to worst as a numbered list
+- Each line should be: number, period, space, then ONLY the response label (e.g., "1. Response A")
+- After the ranking, add one final line in the form "CONFIDENCE: 78"
+- Use an integer confidence score from 0 to 100 based on how confident you are in your ranking
+- Do not add any other text or explanations after the confidence line
 
-{retrieval_block}
+Example of the correct ending:
 
-Here are the responses from different models (anonymized):
-
-{responses_text}
-
-Your task:
-1. First, evaluate each response individually. For each response, explain what it does well and what it does poorly.
-2. Then, at the very end of your response, provide a final ranking.
+FINAL RANKING:
+1. Response C
+2. Response A
+3. Response B
+CONFIDENCE: 78"""
+    else:
+        ranking_instructions = """2. Then, at the very end of your response, provide a final ranking.
 
 IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
 - Start with the line "FINAL RANKING:" (all caps, with colon)
@@ -144,7 +320,21 @@ Response C offers the most comprehensive answer...
 FINAL RANKING:
 1. Response C
 2. Response A
-3. Response B
+3. Response B"""
+
+    ranking_prompt = f"""You are evaluating different responses to the following question:
+
+Question: {user_query}
+
+{retrieval_block}
+
+Here are the responses from different models (anonymized):
+
+{responses_text}
+
+Your task:
+1. First, evaluate each response individually. For each response, explain what it does well and what it does poorly.
+{ranking_instructions}
 
 Now provide your evaluation and ranking:"""
 
@@ -159,11 +349,22 @@ Now provide your evaluation and ranking:"""
         if response is not None and not response.get("error"):
             full_text = response.get('content', '')
             parsed = parse_ranking_from_text(full_text)
-            stage2_results.append({
+            stage2_entry = {
                 "model": model,
                 "ranking": full_text,
                 "parsed_ranking": parsed
-            })
+            }
+            if framework == "heterogeneous":
+                confidence_score = _normalize_confidence_score(parse_confidence_from_text(full_text))
+                historical_weight = 1.0
+                if model_profiles and isinstance(model_profiles.get(model), dict):
+                    historical_weight = float(model_profiles[model].get("dynamic_weight", 1.0))
+                stage2_entry.update({
+                    "confidence_score": confidence_score,
+                    "historical_weight": round(historical_weight, 3),
+                    "ballot_weight": round(historical_weight * _confidence_to_weight(confidence_score), 3),
+                })
+            stage2_results.append(stage2_entry)
 
     return stage2_results, label_to_model
 
@@ -178,8 +379,6 @@ def parse_ranking_from_text(ranking_text: str) -> List[str]:
     Returns:
         List of response labels in ranked order
     """
-    import re
-
     # Look for "FINAL RANKING:" section (case-insensitive)
     marker = "FINAL RANKING:"
     upper_text = ranking_text.upper()
@@ -190,22 +389,22 @@ def parse_ranking_from_text(ranking_text: str) -> List[str]:
         ranking_section = ranking_text[marker_idx + len(marker):]
         # Try to extract numbered list format (e.g., "1. Response A")
         # This pattern looks for: number, period, optional space, "Response X"
-        numbered_matches = re.findall(r'\d+\.\s*Response [A-Z]', ranking_section, re.IGNORECASE)
+        numbered_matches = NUMBERED_RESPONSE_RE.findall(ranking_section)
         if numbered_matches:
             # Extract and normalize the "Response X" part
             results = []
             for m in numbered_matches:
-                inner = re.search(r'Response\s+([A-Z])', m, re.IGNORECASE)
+                inner = RESPONSE_LABEL_RE.search(m)
                 if inner:
                     results.append(f"Response {inner.group(1).upper()}")
             return results
 
         # Fallback: Extract all "Response X" patterns in order from the section
-        matches = re.findall(r'Response\s+([A-Z])', ranking_section, re.IGNORECASE)
+        matches = RESPONSE_LABEL_RE.findall(ranking_section)
         return [f"Response {m.upper()}" for m in matches]
 
     # Fallback: try to find any "Response X" patterns in order in full text
-    matches = re.findall(r'Response\s+([A-Z])', ranking_text, re.IGNORECASE)
+    matches = RESPONSE_LABEL_RE.findall(ranking_text)
     return [f"Response {m.upper()}" for m in matches]
 
 
@@ -223,32 +422,47 @@ def calculate_aggregate_rankings(
     Returns:
         List of dicts with model name and average rank, sorted best to worst
     """
-    from collections import defaultdict
-
-    # Track positions for each model
     model_positions = defaultdict(list)
+    model_weighted_positions = defaultdict(list)
+    ballot_counts = defaultdict(int)
+    uses_weighted_ballots = False
 
     for ranking in stage2_results:
-        ranking_text = ranking['ranking']
-
-        # Parse the ranking from the structured format
-        parsed_ranking = parse_ranking_from_text(ranking_text)
+        ranking_text = ranking["ranking"]
+        parsed_ranking = ranking.get("parsed_ranking")
+        if not isinstance(parsed_ranking, list):
+            parsed_ranking = parse_ranking_from_text(ranking_text)
+        ballot_weight = ranking.get("ballot_weight", 1.0)
+        if not isinstance(ballot_weight, (int, float)):
+            ballot_weight = 1.0
+        ballot_weight = float(ballot_weight)
+        if abs(ballot_weight - 1.0) > 1e-9:
+            uses_weighted_ballots = True
 
         for position, label in enumerate(parsed_ranking, start=1):
             if label in label_to_model:
                 model_name = label_to_model[label]
                 model_positions[model_name].append(position)
+                model_weighted_positions[model_name].append((position, ballot_weight))
+                ballot_counts[model_name] += 1
 
     # Calculate average position for each model
     aggregate = []
     for model, positions in model_positions.items():
         if positions:
-            avg_rank = sum(positions) / len(positions)
-            aggregate.append({
+            weighted_positions = model_weighted_positions[model]
+            total_weight = sum(weight for _, weight in weighted_positions) or float(len(positions))
+            weighted_sum = sum(position * weight for position, weight in weighted_positions)
+            avg_rank = weighted_sum / total_weight if total_weight else (sum(positions) / len(positions))
+            entry = {
                 "model": model,
                 "average_rank": round(avg_rank, 2),
-                "rankings_count": len(positions)
-            })
+                "rankings_count": ballot_counts[model],
+            }
+            if uses_weighted_ballots:
+                entry["total_weight"] = round(total_weight, 3)
+                entry["weighted"] = True
+            aggregate.append(entry)
 
     # Sort by average rank (lower is better)
     aggregate.sort(key=lambda x: x['average_rank'])
@@ -303,7 +517,8 @@ async def run_full_council(
     council_models: list = None,
     chairman_model: str = None,
     retrieval_context: Optional[str] = None,
-    retrieval_citations: Optional[List[Dict[str, Any]]] = None
+    retrieval_citations: Optional[List[Dict[str, Any]]] = None,
+    conversation_messages: Optional[List[Dict[str, Any]]] = None
 ):
     """
     Orchestrates the selected council process.
@@ -316,6 +531,10 @@ async def run_full_council(
     requested_council_models = list(council_models) if council_models else []
     active_council_models = resolve_active_models(council_models)
     active_chairman_model = chairman_model if chairman_model else CHAIRMAN_MODEL
+    model_profiles = (
+        build_model_weight_profile(conversation_messages, active_council_models)
+        if framework == "heterogeneous" else {}
+    )
 
     # Stage 1: Collect responses
     # We need to pass the full messages to stage 1 functions
@@ -365,13 +584,26 @@ async def run_full_council(
             stage1_results,
             active_council_models,
             active_chairman_model,
-            retrieval_context=retrieval_context
+            retrieval_context=retrieval_context,
+            framework=framework,
+            model_profiles=model_profiles
         )
 
     # Calculate aggregate rankings if applicable
     aggregate_rankings = []
     if framework in ["standard", "six_hats"] and stage2_results:
         aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+    elif framework == "heterogeneous" and stage2_results:
+        aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+
+    updated_model_profiles = (
+        apply_round_to_model_profiles(
+            model_profiles,
+            aggregate_rankings,
+            [result["model"] for result in stage1_results]
+        )
+        if framework == "heterogeneous" and aggregate_rankings else model_profiles
+    )
 
     # Stage 3: Synthesize
     stage3_text = ""
@@ -381,7 +613,8 @@ async def run_full_council(
         stage2_results,
         active_chairman_model,
         mode=framework,
-        retrieval_context=retrieval_context
+        retrieval_context=retrieval_context,
+        aggregate_rankings=aggregate_rankings
     ):
         stage3_text += chunk
 
@@ -402,6 +635,16 @@ async def run_full_council(
         "stage1_errors": stage1_errors,
         "retrieval": {"citations": retrieval_citations or []},
     }
+    if framework == "heterogeneous":
+        metadata["model_weight_profile"] = serialize_model_weight_profile(
+            updated_model_profiles,
+            active_council_models
+        )
+        metadata["ballot_weighting"] = {
+            "mode": "confidence_x_rolling_performance",
+            "confidence_source": "stage2_self_report",
+            "history_source": "prior_conversation_rankings",
+        }
 
     return stage1_results, stage2_results, stage3_result, metadata
 
@@ -655,7 +898,8 @@ async def stage3_synthesize_final(
     stage2_results: List[Dict[str, Any]],
     chairman_model: str = None,
     mode: str = "standard",
-    retrieval_context: Optional[str] = None
+    retrieval_context: Optional[str] = None,
+    aggregate_rankings: Optional[List[Dict[str, Any]]] = None
 ):
     """
     Stage 3: Chairman synthesizes final response (streaming).
@@ -670,10 +914,19 @@ async def stage3_synthesize_final(
         for result in stage1_results
     ])
 
-    stage2_text = "\n\n".join([
-        f"Model: {result['model']}\nFeedback: {result['ranking']}"
-        for result in stage2_results
-    ])
+    stage2_entries = []
+    for result in stage2_results:
+        stage2_lines = [f"Model: {result['model']}"]
+        if mode == "heterogeneous":
+            if "confidence_score" in result:
+                stage2_lines.append(f"Confidence Score: {result['confidence_score']}")
+            if "historical_weight" in result:
+                stage2_lines.append(f"Historical Weight: {result['historical_weight']}")
+            if "ballot_weight" in result:
+                stage2_lines.append(f"Ballot Weight: {result['ballot_weight']}")
+        stage2_lines.append(f"Feedback: {result['ranking']}")
+        stage2_entries.append("\n".join(stage2_lines))
+    stage2_text = "\n\n".join(stage2_entries)
     
     if mode == "debate":
         instruction = "Synthesize a final answer by weighing the original arguments and the peer critiques. Resolve the conflicts and find the strongest truth."
@@ -685,6 +938,9 @@ async def stage3_synthesize_final(
         stage2_text = "(Stage 2 skipped for Ensemble mode)"
         instruction = "Synthesize the provided responses into a single, high-quality answer. Identify the consensus and best insights from the ensemble."
         stage2_label = "STAGE 2 - Skipped"
+    elif mode == "heterogeneous":
+        instruction = "Synthesize a final answer by prioritizing responses that earned the strongest weighted support from confident voters with stronger recent council performance."
+        stage2_label = "STAGE 2 - Weighted Peer Rankings:"
     else: # standard
         instruction = "Synthesize all of this information into a single, comprehensive, accurate answer. Consider the individual responses and the peer rankings."
         stage2_label = "STAGE 2 - Peer Rankings:"
@@ -692,6 +948,24 @@ async def stage3_synthesize_final(
     retrieval_block = ""
     if retrieval_context:
         retrieval_block = f"\nRETRIEVED DOCUMENT EXCERPTS:\n{retrieval_context}\n"
+
+    weighted_consensus_block = ""
+    if mode == "heterogeneous" and aggregate_rankings:
+        summary_lines = []
+        for entry in aggregate_rankings:
+            model_name = entry.get("model", "unknown")
+            average_rank = entry.get("average_rank")
+            rankings_count = entry.get("rankings_count")
+            total_weight = entry.get("total_weight")
+            if total_weight is not None:
+                summary_lines.append(
+                    f"- {model_name}: weighted average rank {average_rank} across {rankings_count} ballots (total weight {total_weight})"
+                )
+            else:
+                summary_lines.append(
+                    f"- {model_name}: average rank {average_rank} across {rankings_count} ballots"
+                )
+        weighted_consensus_block = "WEIGHTED CONSENSUS SUMMARY:\n" + "\n".join(summary_lines) + "\n"
 
     chairman_prompt = f"""You are the Chairman of an LLM Council.
     
@@ -703,6 +977,8 @@ STAGE 1 - Individual Responses:
 
 {stage2_label}
 {stage2_text}
+
+{weighted_consensus_block}
 
 Your task: {instruction}
 

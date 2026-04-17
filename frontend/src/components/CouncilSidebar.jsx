@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, memo } from 'react';
 import { api } from '../api';
+import { logger } from '@/lib/logger';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -13,6 +14,7 @@ const FRAMEWORK_LABELS = {
   debate: 'Chain of Debate',
   six_hats: 'Six Thinking Hats',
   ensemble: 'Ensemble (Fast)',
+  heterogeneous: 'Heterogeneous Council',
 };
 
 const clampSelectionLimit = (value) => {
@@ -49,7 +51,7 @@ const readSavedPresets = () => {
         };
       });
   } catch (error) {
-    console.error('Failed to parse presets', error);
+    logger.error('Failed to parse presets', error);
     return [];
   }
 };
@@ -62,7 +64,7 @@ const readFavoriteModels = () => {
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((id) => typeof id === 'string');
   } catch (error) {
-    console.error('Failed to parse favorite models', error);
+    logger.error('Failed to parse favorite models', error);
     return [];
   }
 };
@@ -188,7 +190,7 @@ const CouncilSidebar = memo(({
             .filter((modelId) => availableModelIds.has(modelId))
         );
       } catch (error) {
-        console.error('Failed to load models', error);
+        logger.error('Failed to load models', error);
       }
     };
 
@@ -362,7 +364,7 @@ const CouncilSidebar = memo(({
       setShowConfigDialog(false);
       if (isMobile) onClose();
     } catch (error) {
-      console.error('Failed to create conversation', error);
+      logger.error('Failed to create conversation', error);
       alert('Failed to start a new session. Please try again.');
     } finally {
       setIsCreatingSession(false);

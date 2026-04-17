@@ -18,11 +18,12 @@ export default function ChatInterface({
   onRetryFailedModels,
   isLoading,
   isMobile = false,
+  isNavigatorOpen = false,
+  onNavigatorOpenChange,
 }) {
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const highlightTimeoutRef = useRef(null);
-  const [isNavigatorOpen, setIsNavigatorOpen] = useState(false);
   const [activeAnchorId, setActiveAnchorId] = useState(null);
   const [highlightedAnchorId, setHighlightedAnchorId] = useState(null);
   const [shouldAutoFollow, setShouldAutoFollow] = useState(true);
@@ -66,6 +67,12 @@ export default function ChatInterface({
     }, 1800);
   }, []);
 
+  const setNavigatorOpen = useCallback((nextOpen) => {
+    if (typeof onNavigatorOpenChange === 'function') {
+      onNavigatorOpenChange(Boolean(nextOpen));
+    }
+  }, [onNavigatorOpenChange]);
+
   const handleJumpToLatest = useCallback(() => {
     const latestAnchorId = outlineItems[outlineItems.length - 1]?.anchorId || null;
     if (latestAnchorId) {
@@ -76,9 +83,25 @@ export default function ChatInterface({
     setIsNearBottom(true);
     scrollToBottom('smooth');
     if (isMobile) {
-      setIsNavigatorOpen(false);
+      setNavigatorOpen(false);
     }
-  }, [highlightAnchor, isMobile, outlineItems, scrollToBottom]);
+  }, [highlightAnchor, isMobile, outlineItems, scrollToBottom, setNavigatorOpen]);
+
+  const handleJumpToTop = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const firstAnchorId = outlineItems[0]?.anchorId || null;
+    if (firstAnchorId) {
+      setActiveAnchorId(firstAnchorId);
+      highlightAnchor(firstAnchorId);
+    }
+    setShouldAutoFollow(false);
+    setIsNearBottom(false);
+    container.scrollTo({ top: 0, behavior: 'smooth' });
+    if (isMobile) {
+      setNavigatorOpen(false);
+    }
+  }, [highlightAnchor, isMobile, outlineItems, setNavigatorOpen]);
 
   const handleJumpToAnchor = useCallback((anchorId) => {
     if (!anchorId) return;
@@ -92,15 +115,19 @@ export default function ChatInterface({
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     if (isMobile) {
-      setIsNavigatorOpen(false);
+      setNavigatorOpen(false);
     }
-  }, [highlightAnchor, isMobile]);
+  }, [highlightAnchor, isMobile, setNavigatorOpen]);
 
   const handleJumpToFirst = useCallback(() => {
     const firstAnchorId = outlineItems[0]?.anchorId;
     if (!firstAnchorId) return;
+    if (outlineItems.length <= 1) {
+      handleJumpToTop();
+      return;
+    }
     handleJumpToAnchor(firstAnchorId);
-  }, [handleJumpToAnchor, outlineItems]);
+  }, [handleJumpToAnchor, handleJumpToTop, outlineItems]);
 
   const handleMessagesScroll = useCallback(() => {
     const nearBottom = isNearBottomInViewport();
@@ -217,8 +244,6 @@ export default function ChatInterface({
           framework={conversation.framework}
           councilModels={conversation.council_models}
           chairmanModel={conversation.chairman_model}
-          onToggleNavigator={() => setIsNavigatorOpen((current) => !current)}
-          isNavigatorOpen={isNavigatorOpen}
           navigatorItemCount={outlineItems.length}
         />
 
@@ -291,16 +316,17 @@ export default function ChatInterface({
           <ConversationNavigator
             items={outlineItems}
             activeAnchorId={resolvedActiveAnchorId}
+            onJumpToTop={handleJumpToTop}
             onJumpToAnchor={handleJumpToAnchor}
             onJumpToFirst={handleJumpToFirst}
             onJumpToLatest={handleJumpToLatest}
-            onClose={() => setIsNavigatorOpen(false)}
+            onClose={() => setNavigatorOpen(false)}
           />
         </aside>
       )}
 
       {isMobile && (
-        <Dialog open={isNavigatorOpen} onOpenChange={setIsNavigatorOpen}>
+        <Dialog open={isNavigatorOpen} onOpenChange={setNavigatorOpen}>
           <DialogContent className="left-0 right-0 top-auto bottom-0 h-[78vh] max-w-none translate-x-0 translate-y-0 rounded-b-none rounded-t-xl p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom">
             <DialogTitle className="sr-only">Conversation Navigator</DialogTitle>
             <DialogDescription className="sr-only">
@@ -309,10 +335,11 @@ export default function ChatInterface({
             <ConversationNavigator
               items={outlineItems}
               activeAnchorId={resolvedActiveAnchorId}
+              onJumpToTop={handleJumpToTop}
               onJumpToAnchor={handleJumpToAnchor}
               onJumpToFirst={handleJumpToFirst}
               onJumpToLatest={handleJumpToLatest}
-              onClose={() => setIsNavigatorOpen(false)}
+              onClose={() => setNavigatorOpen(false)}
             />
           </DialogContent>
         </Dialog>

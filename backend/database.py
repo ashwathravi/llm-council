@@ -1,11 +1,11 @@
 
-import os
 import ssl
 from datetime import datetime
 from typing import List, Optional, Any, Dict
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import String, DateTime, JSON, text, Integer, Text, Index
+from sqlalchemy.engine.url import make_url
 from .config import DATABASE_URL
 
 # --- Database Setup ---
@@ -74,14 +74,15 @@ class DocumentChunkModel(Base):
 engine = None
 AsyncSessionLocal = None
 
-from sqlalchemy.engine.url import make_url
-
 def configure_ssl_context(query_params: dict):
     """
     Configure SSL context based on sslmode query parameter.
     Returns (connect_args_dict, updated_query_params).
     """
     connect_args = {}
+    ssl_root_cert = query_params.pop("sslrootcert", None)
+    ssl_context = None
+
     if "sslmode" in query_params:
         ssl_mode = query_params.pop("sslmode")
 
@@ -90,23 +91,31 @@ def configure_ssl_context(query_params: dict):
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = True
             ssl_context.verify_mode = ssl.CERT_REQUIRED
-            connect_args["ssl"] = ssl_context
 
         # Verify-CA: Verify Certificate only (No hostname check)
         elif ssl_mode == "verify-ca":
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_REQUIRED
-            connect_args["ssl"] = ssl_context
 
-        # Require: Encryption required, but verification optional (Legacy/Compat)
+        # Require: Encryption required, and now verification is enforced for security.
         elif ssl_mode == "require":
-            # Create a custom SSL context to avoid certificate verification errors
-            # which are common in some deployment environments (e.g. Render, self-signed)
+            # Encryption with certificate verification to prevent MITM.
+            # Hostname check is disabled for compatibility with some cloud providers.
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-            connect_args["ssl"] = ssl_context
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+
+    if ssl_root_cert:
+        # Allow callers to provide a custom CA bundle for certificate validation.
+        if ssl_context is None:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+        ssl_context.load_verify_locations(cafile=ssl_root_cert)
+
+    if ssl_context:
+        connect_args["ssl"] = ssl_context
 
     return connect_args, query_params
 

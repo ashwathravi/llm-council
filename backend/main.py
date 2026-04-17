@@ -1,6 +1,6 @@
 """FastAPI backend for LLM Council."""
 
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, status
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -13,7 +13,7 @@ import asyncio
 import os
 import io
 import time
-import requests
+import logging
 from contextlib import asynccontextmanager
 
 from . import storage, auth, openrouter, security, documents, retrieval, config
@@ -22,9 +22,12 @@ from .council import (
     run_full_council, generate_conversation_title,
     stage1_collect_responses, stage1_collect_responses_six_hats,
     stage2_collect_rankings, stage2_collect_critiques,
-    stage3_synthesize_final, calculate_aggregate_rankings, resolve_active_models
+    stage3_synthesize_final, calculate_aggregate_rankings, resolve_active_models,
+    build_model_weight_profile, apply_round_to_model_profiles, serialize_model_weight_profile
 )
 from . import export
+
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -82,7 +85,7 @@ class CreateConversationRequest(BaseModel):
     @field_validator("framework")
     @classmethod
     def validate_framework(cls, v: str) -> str:
-        allowed = {"standard", "six_hats", "debate", "ensemble"}
+        allowed = {"standard", "six_hats", "debate", "ensemble", "heterogeneous"}
         if v not in allowed:
             raise ValueError(f"Framework must be one of: {', '.join(allowed)}")
         return v
@@ -250,8 +253,8 @@ async def delete_conversation(conversation_id: str, user_id: str = Depends(auth.
         return {"status": "success"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        print(f"Error deleting conversation: {e}")
+    except Exception:
+        logger.error("Error deleting conversation", exc_info=False)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -261,8 +264,8 @@ async def list_models(user_id: str = Depends(auth.get_current_user_id)):
     try:
         models = await openrouter.fetch_models()
         return models
-    except Exception as e:
-        print(f"Error fetching models: {e}")
+    except Exception:
+        logger.error("Error fetching models", exc_info=False)
         # Security: Do not leak internal error details to client
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -485,7 +488,8 @@ async def send_message(
         council_models=council_models,
         chairman_model=chairman_model,
         retrieval_context=retrieval_context,
-        retrieval_citations=citations
+        retrieval_citations=citations,
+        conversation_messages=conversation.get("messages")
     )
 
     # Add assistant message with all stages
@@ -565,10 +569,15 @@ async def _rerun_stage2_and_stage3(
     stage1_results: List[Dict[str, Any]],
     effective_models: List[str],
     chairman_model: Optional[str],
-    retrieval_context: str
+    retrieval_context: str,
+    conversation_messages: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     stage2_results: List[Dict[str, Any]] = []
     aggregate_rankings: List[Dict[str, Any]] = []
+    model_profiles = (
+        build_model_weight_profile(conversation_messages, effective_models)
+        if framework == "heterogeneous" else {}
+    )
 
     if framework == "ensemble":
         label_to_model = _build_response_label_mapping(stage1_results)
@@ -585,9 +594,20 @@ async def _rerun_stage2_and_stage3(
             stage1_results,
             effective_models,
             chairman_model,
-            retrieval_context=retrieval_context
+            retrieval_context=retrieval_context,
+            framework=framework,
+            model_profiles=model_profiles
         )
         aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+
+    updated_model_profiles = (
+        apply_round_to_model_profiles(
+            model_profiles,
+            aggregate_rankings,
+            [result["model"] for result in stage1_results]
+        )
+        if framework == "heterogeneous" and aggregate_rankings else model_profiles
+    )
 
     full_stage3_response = ""
     async for token in stage3_synthesize_final(
@@ -596,7 +616,8 @@ async def _rerun_stage2_and_stage3(
         stage2_results,
         chairman_model=chairman_model,
         mode=framework,
-        retrieval_context=retrieval_context
+        retrieval_context=retrieval_context,
+        aggregate_rankings=aggregate_rankings
     ):
         full_stage3_response += token
 
@@ -613,6 +634,13 @@ async def _rerun_stage2_and_stage3(
         "stage3": stage3_result,
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
+        "model_weight_profile": serialize_model_weight_profile(updated_model_profiles, effective_models)
+        if framework == "heterogeneous" else [],
+        "ballot_weighting": {
+            "mode": "confidence_x_rolling_performance",
+            "confidence_source": "stage2_self_report",
+            "history_source": "prior_conversation_rankings",
+        } if framework == "heterogeneous" else None,
     }
 
 
@@ -799,12 +827,17 @@ async def retry_failed_stage1_models(
                     stage1_results=merged_stage1,
                     effective_models=effective_models,
                     chairman_model=active_chairman_model,
-                    retrieval_context=retrieval_context
+                    retrieval_context=retrieval_context,
+                    conversation_messages=messages[:message_index]
                 )
                 target_message["stage2"] = refreshed_data["stage2"]
                 target_message["stage3"] = refreshed_data["stage3"]
                 metadata["label_to_model"] = refreshed_data["label_to_model"]
                 metadata["aggregate_rankings"] = refreshed_data["aggregate_rankings"]
+                if refreshed_data.get("model_weight_profile"):
+                    metadata["model_weight_profile"] = refreshed_data["model_weight_profile"]
+                if refreshed_data.get("ballot_weighting"):
+                    metadata["ballot_weighting"] = refreshed_data["ballot_weighting"]
                 metadata["synthesis_refreshed_at_ms"] = int(time.time() * 1000)
                 metadata["synthesis_refresh_duration_seconds"] = round(time.monotonic() - refresh_started_at, 3)
                 metadata.pop("synthesis_refresh_error", None)
@@ -850,6 +883,10 @@ async def send_message_stream(
     chairman_model = conversation.get("chairman_model")
     requested_council_models = list(council_models) if council_models else []
     effective_council_models = resolve_active_models(council_models)
+    model_profiles = (
+        build_model_weight_profile(conversation.get("messages"), effective_council_models)
+        if framework == "heterogeneous" else {}
+    )
 
     async def event_generator():
         overall_start = time.monotonic()
@@ -879,7 +916,7 @@ async def send_message_stream(
                 retrieval.build_retrieval_context(conversation_id, user_id, request.content)
             )
 
-            print(
+            logger.info(
                 f"[stream] conversation={conversation_id} framework={framework} "
                 f"requested_models={requested_council_models} effective_models={effective_council_models} "
                 f"chairman={chairman_model or config.CHAIRMAN_MODEL}"
@@ -918,7 +955,7 @@ async def send_message_stream(
                 "stage1_duration_seconds": stage1_duration,
             }
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results, 'metadata': stage1_meta})}\n\n"
-            print(
+            logger.info(
                 f"[stream] conversation={conversation_id} stage1_complete duration={stage1_duration}s "
                 f"responded={responded_council_models} errors={len(stage1_errors)}"
             )
@@ -933,6 +970,7 @@ async def send_message_stream(
             stage2_results = []
             aggregate_rankings = []
             label_to_model = {}
+            updated_model_profiles = model_profiles
             retrieval_meta = {"retrieval": {"citations": citations}}
             config_meta = {
                 "requested_council_models": requested_council_models,
@@ -940,6 +978,7 @@ async def send_message_stream(
                 "responded_council_models": responded_council_models,
                 "stage1_errors": stage1_errors,
             }
+            hetero_meta = {}
 
             if framework == "ensemble":
                 label_to_model = {f"Response {chr(65+i)}": r['model'] for i, r in enumerate(stage1_results)}
@@ -954,19 +993,38 @@ async def send_message_stream(
                  )
                  yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'mode': 'debate', **config_meta, **retrieval_meta}})}\n\n"
 
-            else: # standard and six_hats both use ranking for Stage 2
+            else: # standard, six_hats, and heterogeneous all use ranking for Stage 2
                  stage2_results, label_to_model = await stage2_collect_rankings(
                      request.content,
                      stage1_results,
                      effective_council_models,
                      chairman_model,
-                     retrieval_context=retrieval_context
+                     retrieval_context=retrieval_context,
+                     framework=framework,
+                     model_profiles=model_profiles
                  )
                  aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
-                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, **config_meta, **retrieval_meta}})}\n\n"
+                 if framework == "heterogeneous":
+                     updated_model_profiles = apply_round_to_model_profiles(
+                         model_profiles,
+                         aggregate_rankings,
+                         responded_council_models
+                     )
+                     hetero_meta = {
+                         "model_weight_profile": serialize_model_weight_profile(
+                             updated_model_profiles,
+                             effective_council_models
+                         ),
+                         "ballot_weighting": {
+                             "mode": "confidence_x_rolling_performance",
+                             "confidence_source": "stage2_self_report",
+                             "history_source": "prior_conversation_rankings",
+                         },
+                     }
+                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, **hetero_meta, **config_meta, **retrieval_meta}})}\n\n"
 
             stage2_duration = round(time.monotonic() - stage2_start, 3)
-            print(
+            logger.info(
                 f"[stream] conversation={conversation_id} stage2_complete duration={stage2_duration}s "
                 f"framework={framework}"
             )
@@ -981,7 +1039,8 @@ async def send_message_stream(
                 stage2_results,
                 chairman_model=chairman_model,
                 mode=framework,
-                retrieval_context=retrieval_context
+                retrieval_context=retrieval_context,
+                aggregate_rankings=aggregate_rankings
             ):
                 full_stage3_response += token
                 yield f"data: {json.dumps({'type': 'stage3_token', 'data': token})}\n\n"
@@ -995,7 +1054,7 @@ async def send_message_stream(
             }
             yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
             stage3_duration = round(time.monotonic() - stage3_start, 3)
-            print(f"[stream] conversation={conversation_id} stage3_complete duration={stage3_duration}s")
+            logger.info(f"[stream] conversation={conversation_id} stage3_complete duration={stage3_duration}s")
 
             # Wait for title generation if it was started
             if title_task:
@@ -1022,6 +1081,16 @@ async def send_message_stream(
                 },
                 **retrieval_meta
             }
+            if framework == "heterogeneous":
+                metadata["model_weight_profile"] = serialize_model_weight_profile(
+                    updated_model_profiles,
+                    effective_council_models
+                )
+                metadata["ballot_weighting"] = {
+                    "mode": "confidence_x_rolling_performance",
+                    "confidence_source": "stage2_self_report",
+                    "history_source": "prior_conversation_rankings",
+                }
             await storage.add_assistant_message(
                 conversation_id,
                 user_id,
@@ -1033,16 +1102,14 @@ async def send_message_stream(
 
             # Send completion event
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
-            print(
+            logger.info(
                 f"[stream] conversation={conversation_id} complete total={metadata['timing']['total_seconds']}s "
                 f"requested={requested_council_models} effective={effective_council_models} "
                 f"responded={responded_council_models}"
             )
 
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"Streaming error: {e}")
+        except Exception:
+            logger.error("Streaming error", exc_info=False)
             # Security: Do not leak internal error details to client
             yield f"data: {json.dumps({'type': 'error', 'error': 'An internal error occurred.'})}\n\n"
 

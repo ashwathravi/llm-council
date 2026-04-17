@@ -1,6 +1,7 @@
 /**
  * API client for the LLM Council backend.
  */
+import { logger } from '@/lib/logger';
 
 // Use localhost in development, relative path in production (same origin)
 const API_BASE = import.meta.env.DEV ? 'http://localhost:8001' : '';
@@ -243,7 +244,7 @@ export const api = {
               }
               onEvent(event.type, event);
             } catch (e) {
-              console.error('Failed to parse SSE event:', e);
+              logger.error('Failed to parse SSE event:', e);
             }
           }
         }
@@ -258,11 +259,11 @@ export const api = {
           }
           onEvent(event.type, event);
         } catch (e) {
-          console.error('Failed to parse (final) SSE event:', e);
+          logger.error('Failed to parse (final) SSE event:', e);
         }
       }
     } catch (error) {
-      console.error('SSE stream failed:', error);
+      logger.error('SSE stream failed:', error);
       if (!receivedTerminalEvent) {
         onEvent('error', {
           type: 'error',

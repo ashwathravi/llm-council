@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AuthContext } from './AuthContextDefinition';
+import { logger } from '@/lib/logger';
 
 export { AuthContext };
 
@@ -23,7 +24,7 @@ export const AuthProvider = ({ children }) => {
         // Dynamically import googleLogout to avoid bundling @react-oauth/google in main chunk
         import('@react-oauth/google').then(({ googleLogout }) => {
             googleLogout();
-        }).catch(err => console.error("Failed to load googleLogout", err));
+        }).catch(err => logger.error("Failed to load googleLogout", err));
 
         setToken(null);
         setUser(null);
