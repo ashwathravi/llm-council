@@ -21,10 +21,13 @@ jwt_secret = os.getenv("JWT_SECRET_KEY")
 if jwt_secret:
     SECRET_KEY = jwt_secret
 else:
-    # Fail fast if no secret is set across all environments
-    raise RuntimeError(
-        "CRITICAL SECURITY ERROR: JWT_SECRET_KEY is missing. "
-        "You must set a secure random string for JWT_SECRET_KEY to start the application."
+    # Secure Fallback: Generate a random secret if none is provided.
+    # Note: This will invalidate sessions on application restart and across multiple instances.
+    SECRET_KEY = os.urandom(32).hex()
+    logger.critical(
+        "JWT_SECRET_KEY is missing. A random secret key has been generated for this session. "
+        "To maintain persistent sessions and support multiple instances, you MUST set "
+        "a secure random string for JWT_SECRET_KEY in your environment variables."
     )
 
 ALGORITHM = "HS256"
