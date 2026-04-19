@@ -187,6 +187,69 @@ async def test_send_message_visual_review_uses_image_payload_and_filters_non_vis
 
 
 @pytest.mark.asyncio
+async def test_send_message_code_review_includes_uploaded_code_context(async_client):
+    conversation = {
+        "id": "conv-code",
+        "framework": "standard",
+        "session_type": "code_review",
+        "council_models": ["openai/gpt-5.2"],
+        "chairman_model": "chair-model",
+        "primary_artifacts": [
+            {
+                "id": "code-1",
+                "kind": "code",
+                "label": "app.py",
+                "source": "upload",
+                "status": "ready",
+                "filename": "app.py",
+                "mime_type": "text/x-python",
+                "size_bytes": 42,
+                "storage_path": "conv-code/code-1-app.py",
+                "line_count": 2,
+                "language": "Python",
+                "summary": "Python • 2 lines",
+            }
+        ],
+        "messages": [],
+    }
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.add_user_message", new_callable=AsyncMock), \
+             patch("backend.storage.update_conversation_title", new_callable=AsyncMock), \
+             patch("backend.storage.add_assistant_message", new_callable=AsyncMock), \
+             patch("backend.retrieval.build_retrieval_context", new_callable=AsyncMock) as mock_retrieval, \
+             patch("backend.main.generate_conversation_title", new_callable=AsyncMock) as mock_generate_title, \
+             patch("backend.main.run_full_council", new_callable=AsyncMock) as mock_run_council, \
+             patch("backend.code_artifacts.load_code_file", return_value="def foo():\n    return 1\n"):
+            mock_get_conversation.return_value = conversation
+            mock_generate_title.return_value = "Code Review"
+            mock_retrieval.return_value = ("retrieval context", [])
+            mock_run_council.return_value = (
+                [{"model": "openai/gpt-5.2", "response": "There is no issue here."}],
+                [],
+                {"model": "chair-model", "response": "Structured review."},
+                {},
+            )
+
+            response = await async_client.post(
+                "/api/conversations/conv-code/message",
+                json={"content": "Review this file"}
+            )
+
+            assert response.status_code == 200
+            run_args = mock_run_council.await_args
+            effective_context = run_args.kwargs["retrieval_context"]
+            assert "retrieval context" in effective_context
+            assert "CODE REVIEW ARTIFACT" in effective_context
+            assert "File: app.py" in effective_context
+            assert "1 | def foo():" in effective_context
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
 async def test_retry_failed_stage1_models_success(async_client):
     conversation = {
         "id": "conv-1",

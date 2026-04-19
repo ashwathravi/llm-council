@@ -16,7 +16,7 @@ import time
 import logging
 from contextlib import asynccontextmanager
 
-from . import storage, auth, openrouter, security, documents, retrieval, config, image_artifacts
+from . import storage, auth, openrouter, security, documents, retrieval, config, image_artifacts, code_artifacts
 from .database import init_db
 from .council import (
     run_full_council, generate_conversation_title,
@@ -169,9 +169,11 @@ class PrimaryArtifactMetadata(BaseModel):
     size_bytes: Optional[int] = Field(None, ge=0)
     width: Optional[int] = Field(None, ge=0)
     height: Optional[int] = Field(None, ge=0)
+    line_count: Optional[int] = Field(None, ge=0)
     summary: Optional[str] = Field(None, max_length=500)
     preview_url: Optional[str] = Field(None, max_length=500)
     storage_path: Optional[str] = Field(None, max_length=500)
+    language: Optional[str] = Field(None, max_length=80)
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -243,6 +245,11 @@ class ImageArtifactUploadResponse(BaseModel):
     errors: List[DocumentUploadError] = []
 
 
+class CodeArtifactUploadResponse(BaseModel):
+    artifacts: List[PrimaryArtifactMetadata]
+    errors: List[DocumentUploadError] = []
+
+
 CreateConversationRequest.model_rebuild()
 
 
@@ -268,6 +275,28 @@ def _get_ready_image_artifacts(primary_artifacts: Optional[List[Dict[str, Any]]]
             continue
         artifacts.append(artifact)
     return artifacts
+
+
+def _get_ready_code_artifacts(primary_artifacts: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    artifacts = []
+    for artifact in normalize_primary_artifacts(list(primary_artifacts or [])):
+        if artifact.get("kind") != "code":
+            continue
+        if artifact.get("status") != "ready":
+            continue
+        if not artifact.get("storage_path"):
+            continue
+        artifacts.append(artifact)
+    return artifacts
+
+
+def _get_file_backed_artifact_paths(primary_artifacts: Optional[List[Dict[str, Any]]]) -> List[str]:
+    paths: List[str] = []
+    for artifact in normalize_primary_artifacts(list(primary_artifacts or [])):
+        storage_path = artifact.get("storage_path")
+        if isinstance(storage_path, str) and storage_path.strip():
+            paths.append(storage_path.strip())
+    return paths
 
 
 def _build_user_message_content(conversation: Dict[str, Any], user_text: str) -> Any:
@@ -342,6 +371,43 @@ def _visual_review_requires_vision_models(conversation: Dict[str, Any], effectiv
             status_code=400,
             detail="Visual Review sessions require at least one vision-capable council model.",
         )
+
+
+async def _build_code_review_artifact_context(conversation: Dict[str, Any]) -> str:
+    if normalize_session_type(conversation.get("session_type")) != "code_review":
+        return ""
+
+    sections: List[str] = []
+    for artifact in _get_ready_code_artifacts(conversation.get("primary_artifacts")):
+        try:
+            content = await run_in_threadpool(code_artifacts.load_code_file, artifact["storage_path"])
+        except Exception:
+            logger.warning(
+                "Failed to load code artifact for review context",
+                extra={"artifact_id": artifact.get("id"), "conversation_id": conversation.get("id")},
+            )
+            continue
+
+        numbered_content = code_artifacts.format_code_context(
+            content,
+            max_lines=config.CODE_ARTIFACT_CONTEXT_MAX_LINES,
+            max_chars=config.CODE_ARTIFACT_CONTEXT_MAX_CHARS,
+        )
+        if not numbered_content:
+            continue
+
+        language = artifact.get("language") or "Text"
+        summary = artifact.get("summary") or f"{artifact.get('line_count', 0)} lines"
+        sections.append(
+            "CODE REVIEW ARTIFACT:\n"
+            f"- File: {artifact.get('label', artifact.get('filename', 'Artifact'))}\n"
+            f"- Language: {language}\n"
+            f"- Summary: {summary}\n"
+            "Use the numbered lines below when citing issues.\n"
+            f"```text\n{numbered_content}\n```"
+        )
+
+    return merge_context_blocks(*sections)
 
 
 @app.get("/api/health")
@@ -428,14 +494,10 @@ async def delete_conversation(conversation_id: str, user_id: str = Depends(auth.
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    image_paths = [
-        artifact.get("storage_path")
-        for artifact in _get_ready_image_artifacts(conversation.get("primary_artifacts"))
-        if artifact.get("storage_path")
-    ]
+    artifact_paths = _get_file_backed_artifact_paths(conversation.get("primary_artifacts"))
     try:
         await storage.delete_conversation(conversation_id, user_id)
-        for relative_path in image_paths:
+        for relative_path in artifact_paths:
             await run_in_threadpool(image_artifacts.delete_image_file, relative_path)
         return {"status": "success"}
     except ValueError as e:
@@ -726,6 +788,107 @@ async def delete_image_artifact(
     return {"status": "success"}
 
 
+@app.post(
+    "/api/conversations/{conversation_id}/artifacts/code-files",
+    response_model=CodeArtifactUploadResponse,
+    dependencies=[Depends(security.rate_limiter(requests_limit=10, time_window=60, scope="upload_docs"))]
+)
+async def upload_code_artifacts(
+    conversation_id: str,
+    files: List[UploadFile] = File(...),
+    user_id: str = Depends(auth.get_current_user_id)
+):
+    conversation = await storage.get_conversation(conversation_id, user_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if normalize_session_type(conversation.get("session_type")) != "code_review":
+        raise HTTPException(status_code=400, detail="Code file uploads are only supported in Code Review sessions.")
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    existing_code_artifacts = [
+        artifact
+        for artifact in normalize_primary_artifacts(conversation.get("primary_artifacts"))
+        if artifact.get("kind") == "code"
+    ]
+    if len(existing_code_artifacts) + len(files) > config.CODE_ARTIFACT_MAX_FILES_PER_CONVERSATION:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum {config.CODE_ARTIFACT_MAX_FILES_PER_CONVERSATION} code artifacts per conversation.",
+        )
+
+    uploaded_artifacts: List[Dict[str, Any]] = []
+    errors: List[Dict[str, str]] = []
+
+    for upload in files:
+        filename = upload.filename or "artifact.txt"
+        if not code_artifacts.is_supported_code_file(filename, upload.content_type):
+            errors.append({"filename": filename, "error": "Only text-based code, diff, and config files are supported."})
+            continue
+
+        content_bytes = await upload.read(config.CODE_ARTIFACT_MAX_FILE_SIZE_BYTES + 1)
+        if len(content_bytes) > config.CODE_ARTIFACT_MAX_FILE_SIZE_BYTES:
+            errors.append({"filename": filename, "error": "File exceeds the 200KB limit."})
+            continue
+        if len(content_bytes) == 0:
+            errors.append({"filename": filename, "error": "File is empty."})
+            continue
+
+        try:
+            text_content = code_artifacts.decode_text_content(content_bytes)
+        except ValueError as exc:
+            errors.append({"filename": filename, "error": str(exc)})
+            continue
+
+        artifact_id = str(uuid.uuid4())
+        storage_path = await run_in_threadpool(
+            code_artifacts.save_code_file,
+            conversation_id,
+            artifact_id,
+            filename,
+            text_content,
+        )
+        line_count = code_artifacts.count_lines(text_content)
+        language = code_artifacts.guess_language(filename)
+        artifact_record = {
+            "id": artifact_id,
+            "kind": "code",
+            "label": filename,
+            "source": "upload",
+            "status": "ready",
+            "filename": filename,
+            "mime_type": upload.content_type or "text/plain",
+            "size_bytes": len(content_bytes),
+            "storage_path": storage_path,
+            "line_count": line_count,
+            "language": language,
+            "summary": code_artifacts.build_summary(filename, text_content),
+        }
+        await storage.upsert_primary_artifact(conversation_id, user_id, artifact_record)
+        uploaded_artifacts.append(artifact_record)
+
+    return {"artifacts": uploaded_artifacts, "errors": errors}
+
+
+@app.delete("/api/conversations/{conversation_id}/artifacts/code/{artifact_id}")
+async def delete_code_artifact(
+    conversation_id: str,
+    artifact_id: str,
+    user_id: str = Depends(auth.get_current_user_id)
+):
+    conversation = await storage.get_conversation(conversation_id, user_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    artifact = await storage.get_primary_artifact(conversation_id, user_id, artifact_id)
+    if artifact is None or artifact.get("kind") != "code":
+        raise HTTPException(status_code=404, detail="Code artifact not found")
+
+    await run_in_threadpool(code_artifacts.delete_code_file, artifact.get("storage_path"))
+    await storage.remove_primary_artifact_by_id(conversation_id, user_id, artifact_id)
+    return {"status": "success"}
+
+
 @app.post("/api/conversations/{conversation_id}/message", dependencies=[Depends(security.rate_limiter(requests_limit=20, time_window=60, scope="chat"))])
 async def send_message(
     conversation_id: str,
@@ -768,6 +931,10 @@ async def send_message(
         request.content
     )
     effective_context = _build_effective_context(conversation, retrieval_context)
+    effective_context = merge_context_blocks(
+        effective_context,
+        await _build_code_review_artifact_context(conversation),
+    )
 
     stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
         history,
@@ -1050,6 +1217,10 @@ async def retry_failed_stage1_models(
             retry_query
         )
         effective_context = _build_effective_context(conversation, retrieval_context)
+        effective_context = merge_context_blocks(
+            effective_context,
+            await _build_code_review_artifact_context(conversation),
+        )
 
     retry_stage1_results: List[Dict[str, Any]] = []
     retry_stage1_errors: List[Dict[str, str]] = []
@@ -1218,6 +1389,10 @@ async def send_message_stream(
                 retrieval.build_retrieval_context(conversation_id, user_id, request.content)
             )
             effective_context = _build_effective_context(conversation, retrieval_context)
+            effective_context = merge_context_blocks(
+                effective_context,
+                await _build_code_review_artifact_context(conversation),
+            )
 
             logger.info(
                 f"[stream] conversation={conversation_id} framework={framework} "

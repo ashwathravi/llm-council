@@ -2,7 +2,7 @@ from unittest.mock import patch, AsyncMock
 
 import pytest
 
-from backend import documents, retrieval, storage, config, image_artifacts
+from backend import documents, retrieval, storage, config, image_artifacts, code_artifacts
 
 
 @pytest.mark.parametrize("filename, content_type, expected", [
@@ -222,6 +222,63 @@ async def test_upload_image_artifacts_endpoint(async_client, monkeypatch, tmp_pa
     assert conversation_payload["session_type"] == "visual_review"
     assert len(conversation_payload["primary_artifacts"]) == 1
     assert conversation_payload["primary_artifacts"][0]["kind"] == "image"
+
+    saved_path = tmp_path / "artifacts_temp" / conversation_payload["primary_artifacts"][0]["storage_path"]
+    assert saved_path.exists()
+
+    app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_upload_code_artifacts_endpoint(async_client, monkeypatch, tmp_path):
+    from backend.main import app
+    from backend import auth
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+
+    data_dir = str(tmp_path / "data_temp")
+    docs_dir = str(tmp_path / "documents_temp")
+    artifacts_dir = str(tmp_path / "artifacts_temp")
+    monkeypatch.setenv("DATABASE_URL", "")
+    monkeypatch.setattr(config, "DATA_DIR", data_dir)
+    monkeypatch.setattr(config, "DOCUMENTS_DIR", docs_dir)
+    monkeypatch.setattr(config, "ARTIFACT_FILES_DIR", artifacts_dir)
+    monkeypatch.setattr(storage, "DATA_DIR", data_dir)
+    monkeypatch.setattr(storage, "DOCUMENTS_DIR", docs_dir)
+    monkeypatch.setattr(image_artifacts, "ARTIFACT_FILES_DIR", artifacts_dir)
+    monkeypatch.setattr(code_artifacts, "ARTIFACT_FILES_DIR", artifacts_dir)
+
+    response = await async_client.post(
+        "/api/conversations",
+        json={
+            "framework": "standard",
+            "session_type": "code_review",
+            "council_models": [],
+            "chairman_model": None,
+        },
+    )
+    assert response.status_code == 200
+    conversation_id = response.json()["id"]
+
+    upload_response = await async_client.post(
+        f"/api/conversations/{conversation_id}/artifacts/code-files",
+        files=[("files", ("app.py", b"def foo():\n    return 1\n", "text/x-python"))]
+    )
+
+    assert upload_response.status_code == 200
+    payload = upload_response.json()
+    assert payload["errors"] == []
+    assert payload["artifacts"][0]["kind"] == "code"
+    assert payload["artifacts"][0]["language"] == "Python"
+    assert payload["artifacts"][0]["line_count"] == 2
+    assert payload["artifacts"][0]["storage_path"].startswith(f"{conversation_id}/")
+
+    conversation_response = await async_client.get(f"/api/conversations/{conversation_id}")
+    assert conversation_response.status_code == 200
+    conversation_payload = conversation_response.json()
+    assert conversation_payload["session_type"] == "code_review"
+    assert len(conversation_payload["primary_artifacts"]) == 1
+    assert conversation_payload["primary_artifacts"][0]["kind"] == "code"
 
     saved_path = tmp_path / "artifacts_temp" / conversation_payload["primary_artifacts"][0]["storage_path"]
     assert saved_path.exists()

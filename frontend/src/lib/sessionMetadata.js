@@ -33,7 +33,7 @@ export const SESSION_TYPE_LABELS = Object.fromEntries(
 export const SESSION_TYPE_PLACEHOLDERS = {
   general: 'Message the Council...',
   visual_review: 'Ask for a visual or UX critique...',
-  code_review: 'Ask for a code review, bug analysis, or implementation feedback...',
+  code_review: 'Paste a diff, repo slice, or ask for a code review...',
   build_spec: 'Ask the Council to plan, scope, or implement against a spec...',
   research_docs: 'Ask a question grounded in your attached source material...',
 };

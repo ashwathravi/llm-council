@@ -25,14 +25,18 @@ const ChatInput = memo(({
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const isVisualReview = sessionType === 'visual_review';
+  const isCodeReview = sessionType === 'code_review';
+  const artifactKind = isVisualReview ? 'image' : isCodeReview ? 'code' : 'document';
+  const uploadLabel = isVisualReview ? 'images' : isCodeReview ? 'code files' : 'PDFs';
+  const uploadLimit = isCodeReview ? 10 : 5;
   const primaryArtifactCount = getPrimaryArtifactCount(primaryArtifacts);
   const sessionTypeLabel = getSessionTypeLabel(sessionType);
   const inputPlaceholder = SESSION_TYPE_PLACEHOLDERS[sessionType] || SESSION_TYPE_PLACEHOLDERS.general;
   const displayedArtifacts = useMemo(
     () => (Array.isArray(primaryArtifacts) ? primaryArtifacts : []).filter((artifact) =>
-      artifact?.kind === (isVisualReview ? 'image' : 'document')
+      artifact?.kind === artifactKind
     ),
-    [isVisualReview, primaryArtifacts]
+    [artifactKind, primaryArtifacts]
   );
 
   // Auto-resize textarea
@@ -79,8 +83,8 @@ const ChatInput = memo(({
 
     if (!files.length || !conversationId) return;
 
-    if (displayedArtifacts.length + files.length > 5) {
-      setUploadError(isVisualReview ? 'Max 5 images per session.' : 'Max 5 PDFs per session.');
+    if (displayedArtifacts.length + files.length > uploadLimit) {
+      setUploadError(`Max ${uploadLimit} ${uploadLabel} per session.`);
       return;
     }
 
@@ -89,7 +93,11 @@ const ChatInput = memo(({
     setUploadProgress(0);
 
     try {
-      const upload = isVisualReview ? api.uploadImageArtifacts : api.uploadDocuments;
+      const upload = isVisualReview
+        ? api.uploadImageArtifacts
+        : isCodeReview
+          ? api.uploadCodeArtifacts
+          : api.uploadDocuments;
       const response = await upload(conversationId, files, (progress) => {
         setUploadProgress(Math.round(progress * 100));
       });
@@ -102,7 +110,7 @@ const ChatInput = memo(({
       await onConversationRefresh?.();
     } catch (error) {
       logger.error('Upload failed:', error);
-      setUploadError(error instanceof Error ? error.message : `Failed to upload ${isVisualReview ? 'images' : 'documents'}.`);
+      setUploadError(error instanceof Error ? error.message : `Failed to upload ${uploadLabel}.`);
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -114,13 +122,15 @@ const ChatInput = memo(({
     try {
       if (isVisualReview) {
         await api.deleteImageArtifact(conversationId, artifact.id);
+      } else if (isCodeReview) {
+        await api.deleteCodeArtifact(conversationId, artifact.id);
       } else if (artifact?.document_id) {
         await api.deleteDocument(conversationId, artifact.document_id);
       }
       await onConversationRefresh?.();
     } catch (error) {
       logger.error('Failed to remove artifact:', error);
-      setUploadError(`Failed to remove ${isVisualReview ? 'image' : 'document'}.`);
+      setUploadError(`Failed to remove ${isVisualReview ? 'image' : isCodeReview ? 'code artifact' : 'document'}.`);
     }
   };
 
@@ -166,7 +176,11 @@ const ChatInput = memo(({
                   <Badge key={artifact.id} variant="secondary" className="pl-2 pr-1 py-1 gap-2 h-7 font-normal">
                     <FileText className="h-3 w-3 text-muted-foreground" />
                     <span className="truncate max-w-[150px]">{artifact.label || artifact.filename}</span>
-                    <span className="text-xs text-muted-foreground ml-1">{formatBytes(artifact.size_bytes)}</span>
+                    <span className="text-xs text-muted-foreground ml-1">
+                      {isCodeReview
+                        ? (artifact.summary || formatBytes(artifact.size_bytes))
+                        : formatBytes(artifact.size_bytes)}
+                    </span>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
@@ -178,7 +192,7 @@ const ChatInput = memo(({
                           <X className="h-3 w-3" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent>Remove document</TooltipContent>
+                      <TooltipContent>{isCodeReview ? 'Remove code artifact' : 'Remove document'}</TooltipContent>
                     </Tooltip>
                   </Badge>
                 )
@@ -217,7 +231,9 @@ const ChatInput = memo(({
                   aria-disabled={!conversationId || uploading}
                 >
                   <Paperclip className="h-4 w-4" />
-                  <span className="sr-only">{isVisualReview ? 'Attach image artifact' : 'Attach PDF artifact'}</span>
+                  <span className="sr-only">
+                    {isVisualReview ? 'Attach image artifact' : isCodeReview ? 'Attach code artifact' : 'Attach PDF artifact'}
+                  </span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -227,6 +243,8 @@ const ChatInput = memo(({
                     ? "Uploading..."
                     : isVisualReview
                       ? "Attach image artifact (Max 5)"
+                      : isCodeReview
+                        ? "Attach code artifact (Max 10)"
                       : "Attach PDF artifact (Max 5)"}
               </TooltipContent>
             </Tooltip>
@@ -235,7 +253,13 @@ const ChatInput = memo(({
           <input
             ref={fileInputRef}
             type="file"
-            accept={isVisualReview ? 'image/png,image/jpeg,image/gif,image/webp' : 'application/pdf'}
+            accept={
+              isVisualReview
+                ? 'image/png,image/jpeg,image/gif,image/webp'
+                : isCodeReview
+                  ? '.c,.cc,.cpp,.cs,.css,.diff,.go,.h,.hpp,.html,.java,.js,.json,.jsx,.kt,.md,.mjs,.php,.py,.rb,.rs,.sh,.sql,.swift,.toml,.ts,.tsx,.txt,.yaml,.yml'
+                  : 'application/pdf'
+            }
             multiple
             className="hidden"
             onChange={handleFilesSelected}

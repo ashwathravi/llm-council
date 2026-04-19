@@ -406,6 +406,15 @@ export const api = {
     );
   },
 
+  uploadCodeArtifacts(conversationId, files, onProgress) {
+    return uploadFiles(
+      `${API_BASE}/api/conversations/${conversationId}/artifacts/code-files`,
+      files,
+      onProgress,
+      'Failed to upload code files'
+    );
+  },
+
   /**
    * Delete a document from a conversation.
    */
@@ -433,6 +442,20 @@ export const api = {
     );
     if (!response.ok) {
       throw new Error('Failed to delete image');
+    }
+    return response.json();
+  },
+
+  async deleteCodeArtifact(conversationId, artifactId) {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/artifacts/code/${artifactId}`,
+      {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      }
+    );
+    if (!response.ok) {
+      throw new Error('Failed to delete code artifact');
     }
     return response.json();
   },

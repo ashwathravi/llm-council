@@ -22,7 +22,7 @@ SESSION_TYPES: Dict[str, Dict[str, str]] = {
     "code_review": {
         "label": "Code Review",
         "focus": "Review repositories, diffs, code files, and implementation quality.",
-        "guidance": "Prioritize correctness, regressions, code structure, missing tests, and precise references to the affected artifacts.",
+        "guidance": "Prioritize correctness, regressions, code structure, missing tests, and cite file paths plus line numbers whenever the attached artifacts make them available.",
     },
     "build_spec": {
         "label": "Build/Spec",
@@ -105,12 +105,12 @@ def normalize_primary_artifact(artifact: Any) -> Optional[Dict[str, Any]]:
     if document_id:
         normalized["document_id"] = document_id
 
-    for key in ("filename", "mime_type", "summary", "preview_url", "storage_path"):
+    for key in ("filename", "mime_type", "summary", "preview_url", "storage_path", "language"):
         value = artifact.get(key)
         if isinstance(value, str) and value.strip():
             normalized[key] = value.strip()
 
-    for key in ("size_bytes", "width", "height"):
+    for key in ("size_bytes", "width", "height", "line_count"):
         value = artifact.get(key)
         if isinstance(value, int) and value >= 0:
             normalized[key] = value
