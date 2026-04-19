@@ -4,6 +4,7 @@ from collections import defaultdict
 import json
 import re
 from typing import List, Dict, Any, Tuple, Optional
+from .code_execution import build_execution_context_block, run_code_execution_loop
 from .openrouter import query_models_parallel, query_model, query_model_stream
 from .config import (
     COUNCIL_MODELS,
@@ -16,6 +17,7 @@ from .config import (
     TITLE_MODEL,
 )
 from .session_templates import get_deliverable_spec, get_rubric_spec
+from .session_context import normalize_execution_mode
 
 # Pre-compiled regex patterns for parsing model rankings
 NUMBERED_RESPONSE_RE = re.compile(r'\d+\.\s*Response [A-Z]', re.IGNORECASE)
@@ -915,6 +917,7 @@ async def run_full_council(
     chairman_model: str = None,
     session_type: Optional[str] = None,
     specialist_template_id: Optional[str] = None,
+    execution_mode: Optional[str] = None,
     primary_artifacts: Optional[List[Dict[str, Any]]] = None,
     retrieval_context: Optional[str] = None,
     retrieval_citations: Optional[List[Dict[str, Any]]] = None,
@@ -1015,6 +1018,18 @@ async def run_full_council(
         if framework == "heterogeneous" and aggregate_rankings else model_profiles
     )
 
+    execution_report = await run_code_execution_loop(
+        session_type=session_type,
+        execution_mode=execution_mode,
+        user_query=latest_query,
+        stage1_results=stage1_results,
+        stage2_results=stage2_results,
+        chairman_model=active_chairman_model,
+        primary_artifacts=primary_artifacts,
+        retrieval_context=retrieval_context,
+    )
+    execution_context = build_execution_context_block(execution_report)
+
     # Stage 3: Synthesize
     stage3_text = ""
     async for chunk in stage3_synthesize_final(
@@ -1026,6 +1041,7 @@ async def run_full_council(
         session_type=session_type,
         specialist_template_id=specialist_template_id,
         retrieval_context=retrieval_context,
+        execution_context=execution_context,
         aggregate_rankings=aggregate_rankings,
         aggregate_rubrics=aggregate_rubrics,
     ):
@@ -1053,6 +1069,8 @@ async def run_full_council(
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
         "aggregate_rubrics": aggregate_rubrics,
+        "execution_mode": normalize_execution_mode(execution_mode, session_type=session_type),
+        "execution": execution_report,
         "visual_findings": visual_findings,
         "stage1_errors": stage1_errors,
         "retrieval": {"citations": retrieval_citations or []},
@@ -1191,6 +1209,7 @@ async def stage3_synthesize_final(
     session_type: Optional[str] = None,
     specialist_template_id: Optional[str] = None,
     retrieval_context: Optional[str] = None,
+    execution_context: Optional[str] = None,
     aggregate_rankings: Optional[List[Dict[str, Any]]] = None,
     aggregate_rubrics: Optional[List[Dict[str, Any]]] = None,
 ):
@@ -1241,6 +1260,9 @@ async def stage3_synthesize_final(
     retrieval_block = ""
     if retrieval_context:
         retrieval_block = f"\nRETRIEVED DOCUMENT EXCERPTS:\n{retrieval_context}\n"
+    execution_block = ""
+    if execution_context:
+        execution_block = f"\n{execution_context}\n"
 
     weighted_consensus_block = ""
     if mode == "heterogeneous" and aggregate_rankings:
@@ -1299,6 +1321,7 @@ STAGE 1 - Individual Responses:
 
 {weighted_consensus_block}
 {rubric_summary_block}
+{execution_block}
 {visual_findings_block}
 {citation_guidance_block}
 {deliverable_block}

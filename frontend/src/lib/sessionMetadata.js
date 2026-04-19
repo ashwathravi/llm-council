@@ -38,8 +38,28 @@ export const SESSION_TYPE_PLACEHOLDERS = {
   research_docs: 'Ask a question grounded in your attached source material...',
 };
 
+export const EXECUTION_MODE_OPTIONS = [
+  {
+    id: 'disabled',
+    name: 'Disabled',
+    description: 'Standard code review only. No candidate patch or checks are attempted.',
+  },
+  {
+    id: 'safe_patch_checks',
+    name: 'Safe Patch + Checks',
+    description: 'Generate a candidate diff in a temp workspace and run guarded auto-detected checks.',
+  },
+];
+
+export const EXECUTION_MODE_LABELS = Object.fromEntries(
+  EXECUTION_MODE_OPTIONS.map((option) => [option.id, option.name])
+);
+
 export const getSessionTypeLabel = (sessionType) =>
   SESSION_TYPE_LABELS[sessionType] || SESSION_TYPE_LABELS.general;
+
+export const getExecutionModeLabel = (executionMode) =>
+  EXECUTION_MODE_LABELS[executionMode] || EXECUTION_MODE_LABELS.disabled;
 
 export const getPrimaryArtifactCount = (primaryArtifacts) =>
   Array.isArray(primaryArtifacts) ? primaryArtifacts.length : 0;

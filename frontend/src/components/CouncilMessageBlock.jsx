@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Trophy, Crown, BrainCircuit, FileImage, GitCompareArrows, RotateCcw, RefreshCw } from "lucide-react";
+import { AlertTriangle, Trophy, Crown, BrainCircuit, CheckCircle2, FileImage, GitCompareArrows, PauseCircle, RefreshCw, RotateCcw, Wrench, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import VisualReviewPanel from './VisualReviewPanel';
 
@@ -33,6 +33,16 @@ const rubricToneClass = (score) => {
 };
 
 const EMPTY_LIST = [];
+
+const executionToneClass = (status) => {
+  if (status === 'passed' || status === 'completed' || status === 'applied') {
+    return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+  }
+  if (status === 'failed') {
+    return 'border-destructive/30 bg-destructive/10 text-destructive';
+  }
+  return 'border-border bg-muted/50 text-muted-foreground';
+};
 
 // ⚡ Bolt: Extract and memoize Rankings tab content to prevent re-renders when Stage 3 is streaming
 const RankingsTabContent = memo(({ aggregateRankings, aggregateRubrics, framework, modelWeightProfile }) => {
@@ -123,6 +133,91 @@ const RankingsTabContent = memo(({ aggregateRankings, aggregateRubrics, framewor
           })
         ) : (
           <div className="text-muted-foreground italic">No rankings available for this session type.</div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+const ExecutionTabContent = memo(({ execution }) => {
+  const candidatePatch = execution?.candidate_patch || {};
+  const checks = Array.isArray(execution?.checks) ? execution.checks : EMPTY_LIST;
+  const summary = execution?.summary || {};
+
+  return (
+    <div className="p-6 space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Badge variant="secondary">{execution?.mode || 'execution'}</Badge>
+        <Badge variant="outline">Status: {execution?.status || 'unknown'}</Badge>
+        {checks.length > 0 && (
+          <>
+            <Badge variant="outline">{summary.passed || 0} passed</Badge>
+            <Badge variant="outline">{summary.failed || 0} failed</Badge>
+            <Badge variant="outline">{summary.skipped || 0} skipped</Badge>
+          </>
+        )}
+      </div>
+
+      {execution?.reason && (
+        <div className="rounded-md border bg-card/60 p-3 text-sm text-muted-foreground">
+          {execution.reason}
+        </div>
+      )}
+
+      <div className="space-y-2 rounded-md border bg-card/60 p-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h3 className="font-semibold">Candidate Patch</h3>
+          <Badge className={cn('border', executionToneClass(candidatePatch?.status))}>
+            {candidatePatch?.status || 'not_attempted'}
+          </Badge>
+        </div>
+        {Array.isArray(candidatePatch?.changed_files) && candidatePatch.changed_files.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {candidatePatch.changed_files.map((file) => (
+              <Badge key={file} variant="outline">{file}</Badge>
+            ))}
+          </div>
+        )}
+        {candidatePatch?.error && (
+          <p className="text-sm text-destructive">{candidatePatch.error}</p>
+        )}
+        {candidatePatch?.excerpt && (
+          <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs text-foreground">
+            <code>{candidatePatch.excerpt}</code>
+          </pre>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="font-semibold">Checks</h3>
+        {checks.length === 0 ? (
+          <div className="rounded-md border bg-card/60 p-4 text-sm text-muted-foreground">
+            No checks were recorded for this run.
+          </div>
+        ) : (
+          checks.map((check, index) => {
+            const status = check?.status || 'unknown';
+            const Icon = status === 'passed' ? CheckCircle2 : status === 'failed' ? XCircle : PauseCircle;
+            return (
+              <div key={`${check?.label || check?.command || 'check'}-${index}`} className="rounded-md border bg-card/60 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="font-medium">{check?.label || check?.command || 'Check'}</div>
+                    {check?.command && <div className="mt-1 text-xs text-muted-foreground">{check.command}</div>}
+                  </div>
+                  <Badge className={cn('border gap-1', executionToneClass(status))}>
+                    <Icon className="h-3 w-3" />
+                    {status}
+                  </Badge>
+                </div>
+                {check?.output && (
+                  <pre className="mt-3 overflow-x-auto rounded-md bg-muted p-3 text-xs text-foreground">
+                    <code>{check.output}</code>
+                  </pre>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     </div>
@@ -392,6 +487,9 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
   const aggregateRubrics = Array.isArray(metadata?.aggregate_rubrics)
     ? metadata.aggregate_rubrics
     : EMPTY_LIST;
+  const executionReport = metadata?.execution && metadata.execution.mode !== 'disabled'
+    ? metadata.execution
+    : null;
   const modelWeightProfile = Array.isArray(metadata?.model_weight_profile)
     ? metadata.model_weight_profile
     : [];
@@ -402,6 +500,7 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
     ? metadata.visual_findings
     : EMPTY_LIST;
   const hasVisualReviewTab = metadata?.session_type === 'visual_review' && visualArtifacts.length > 0;
+  const hasExecutionTab = Boolean(executionReport);
 
   const requestedCouncilModels = Array.isArray(metadata?.requested_council_models)
     ? metadata.requested_council_models
@@ -536,6 +635,12 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
                 Visual
               </TabsTrigger>
             )}
+            {hasExecutionTab && (
+              <TabsTrigger value="execution" className="gap-2">
+                <Wrench className="h-3.5 w-3.5 text-emerald-600" />
+                Execution
+              </TabsTrigger>
+            )}
             {hasComparisonDiff && (
               <TabsTrigger value="diff" className="gap-2">
                 <GitCompareArrows className="h-3.5 w-3.5 text-sky-500" />
@@ -630,6 +735,10 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
 
           <TabsContent value="visual" className="m-0 focus-visible:ring-0">
             <VisualReviewPanel artifacts={visualArtifacts} findings={visualFindings} />
+          </TabsContent>
+
+          <TabsContent value="execution" className="m-0 focus-visible:ring-0">
+            <ExecutionTabContent execution={executionReport} />
           </TabsContent>
 
           <TabsContent value="diff" className="m-0 focus-visible:ring-0">

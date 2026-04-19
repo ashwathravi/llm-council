@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Dict, Any, Optional
 import uuid
 import json
@@ -17,6 +17,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from . import storage, auth, openrouter, security, documents, retrieval, config, image_artifacts, code_artifacts
+from .code_execution import build_execution_context_block, run_code_execution_loop
 from .database import init_db
 from .council import (
     run_full_council, generate_conversation_title,
@@ -31,11 +32,14 @@ from .session_context import (
     ALLOWED_ARTIFACT_KINDS,
     ALLOWED_ARTIFACT_SOURCES,
     ALLOWED_ARTIFACT_STATUSES,
+    ALLOWED_EXECUTION_MODES,
     ALLOWED_SESSION_TYPES,
+    DEFAULT_EXECUTION_MODE,
     DEFAULT_SESSION_TYPE,
     build_primary_artifact_from_document,
     build_session_context_block,
     merge_context_blocks,
+    normalize_execution_mode,
     normalize_primary_artifacts,
     normalize_session_type,
 )
@@ -100,6 +104,7 @@ class CreateConversationRequest(BaseModel):
     framework: str = "standard"
     session_type: str = DEFAULT_SESSION_TYPE
     specialist_template_id: Optional[str] = Field(None, max_length=120)
+    execution_mode: str = DEFAULT_EXECUTION_MODE
     council_models: List[str] = Field(default=[], max_length=10)
     chairman_model: Optional[str] = Field(None, max_length=100)
     primary_artifacts: List["PrimaryArtifactMetadata"] = Field(default_factory=list, max_length=10)
@@ -119,6 +124,13 @@ class CreateConversationRequest(BaseModel):
             raise ValueError(f"Session type must be one of: {', '.join(sorted(ALLOWED_SESSION_TYPES))}")
         return v
 
+    @field_validator("execution_mode")
+    @classmethod
+    def validate_execution_mode(cls, v: str) -> str:
+        if v not in ALLOWED_EXECUTION_MODES:
+            raise ValueError(f"Execution mode must be one of: {', '.join(sorted(ALLOWED_EXECUTION_MODES))}")
+        return v
+
     @field_validator("council_models")
     @classmethod
     def validate_council_models(cls, v: List[str]) -> List[str]:
@@ -128,6 +140,12 @@ class CreateConversationRequest(BaseModel):
             if len(model) > 100:
                 raise ValueError("Model name too long")
         return v
+
+    @model_validator(mode="after")
+    def validate_execution_mode_scope(self) -> "CreateConversationRequest":
+        if self.session_type != "code_review" and self.execution_mode != DEFAULT_EXECUTION_MODE:
+            raise ValueError("Execution mode is only available for code review sessions.")
+        return self
 
 
 class SendMessageRequest(BaseModel):
@@ -158,6 +176,7 @@ class ConversationMetadata(BaseModel):
     framework: str = "standard"
     session_type: str = DEFAULT_SESSION_TYPE
     specialist_template_id: Optional[str] = None
+    execution_mode: str = DEFAULT_EXECUTION_MODE
     primary_artifact_count: int = 0
 
 
@@ -211,6 +230,7 @@ class Conversation(BaseModel):
     framework: str = "standard"
     session_type: str = DEFAULT_SESSION_TYPE
     specialist_template_id: Optional[str] = None
+    execution_mode: str = DEFAULT_EXECUTION_MODE
     council_models: Optional[List[str]] = None
     chairman_model: Optional[str] = None
     primary_artifacts: List[PrimaryArtifactMetadata] = Field(default_factory=list)
@@ -268,6 +288,27 @@ def _build_effective_context(
         conversation.get("primary_artifacts"),
     )
     return merge_context_blocks(session_context, retrieval_context)
+
+
+async def _run_code_execution_for_conversation(
+    conversation: Dict[str, Any],
+    *,
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    stage2_results: List[Dict[str, Any]],
+    retrieval_context: Optional[str],
+    chairman_model: Optional[str],
+) -> Dict[str, Any]:
+    return await run_code_execution_loop(
+        session_type=conversation.get("session_type"),
+        execution_mode=conversation.get("execution_mode"),
+        user_query=user_query,
+        stage1_results=stage1_results,
+        stage2_results=stage2_results,
+        chairman_model=chairman_model,
+        primary_artifacts=conversation.get("primary_artifacts"),
+        retrieval_context=retrieval_context,
+    )
 
 
 def _get_ready_image_artifacts(primary_artifacts: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
@@ -555,6 +596,7 @@ async def create_conversation(
         request.chairman_model,
         session_type=request.session_type,
         specialist_template_id=request.specialist_template_id,
+        execution_mode=request.execution_mode,
         primary_artifacts=[
             artifact.model_dump(exclude_none=True)
             for artifact in request.primary_artifacts
@@ -954,6 +996,7 @@ async def send_message(
         chairman_model=chairman_model,
         session_type=conversation.get("session_type"),
         specialist_template_id=conversation.get("specialist_template_id"),
+        execution_mode=conversation.get("execution_mode"),
         primary_artifacts=conversation.get("primary_artifacts"),
         retrieval_context=effective_context,
         retrieval_citations=citations,
@@ -964,6 +1007,10 @@ async def send_message(
     metadata["excluded_non_vision_models"] = excluded_non_vision_models
     metadata["session_type"] = conversation.get("session_type", DEFAULT_SESSION_TYPE)
     metadata["specialist_template_id"] = conversation.get("specialist_template_id")
+    metadata["execution_mode"] = normalize_execution_mode(
+        conversation.get("execution_mode"),
+        session_type=conversation.get("session_type"),
+    )
     metadata["specialist_template_label"] = get_template_label(
         conversation.get("specialist_template_id"),
         conversation.get("session_type"),
@@ -1050,6 +1097,7 @@ async def _rerun_stage2_and_stage3(
     chairman_model: Optional[str],
     session_type: Optional[str],
     specialist_template_id: Optional[str],
+    execution_mode: Optional[str],
     primary_artifacts: Optional[List[Dict[str, Any]]],
     retrieval_context: str,
     conversation_messages: Optional[List[Dict[str, Any]]] = None
@@ -1098,6 +1146,18 @@ async def _rerun_stage2_and_stage3(
         if framework == "heterogeneous" and aggregate_rankings else model_profiles
     )
 
+    execution_report = await run_code_execution_loop(
+        session_type=session_type,
+        execution_mode=execution_mode,
+        user_query=user_query,
+        stage1_results=stage1_results,
+        stage2_results=stage2_results,
+        chairman_model=chairman_model or config.CHAIRMAN_MODEL,
+        primary_artifacts=primary_artifacts,
+        retrieval_context=retrieval_context,
+    )
+    execution_context = build_execution_context_block(execution_report)
+
     full_stage3_response = ""
     async for token in stage3_synthesize_final(
         user_query,
@@ -1108,6 +1168,7 @@ async def _rerun_stage2_and_stage3(
         session_type=session_type,
         specialist_template_id=specialist_template_id,
         retrieval_context=retrieval_context,
+        execution_context=execution_context,
         aggregate_rankings=aggregate_rankings,
         aggregate_rubrics=aggregate_rubrics,
     ):
@@ -1134,6 +1195,7 @@ async def _rerun_stage2_and_stage3(
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
         "aggregate_rubrics": aggregate_rubrics,
+        "execution": execution_report,
         "visual_findings": visual_findings,
         "model_weight_profile": serialize_model_weight_profile(updated_model_profiles, effective_models)
         if framework == "heterogeneous" else [],
@@ -1322,6 +1384,10 @@ async def retry_failed_stage1_models(
     metadata["retrieval"] = {"citations": citations}
     metadata["session_type"] = conversation.get("session_type", DEFAULT_SESSION_TYPE)
     metadata["specialist_template_id"] = conversation.get("specialist_template_id")
+    metadata["execution_mode"] = normalize_execution_mode(
+        conversation.get("execution_mode"),
+        session_type=conversation.get("session_type"),
+    )
     metadata["specialist_template_label"] = get_template_label(
         conversation.get("specialist_template_id"),
         conversation.get("session_type"),
@@ -1357,6 +1423,7 @@ async def retry_failed_stage1_models(
                     chairman_model=active_chairman_model,
                     session_type=conversation.get("session_type"),
                     specialist_template_id=conversation.get("specialist_template_id"),
+                    execution_mode=conversation.get("execution_mode"),
                     primary_artifacts=conversation.get("primary_artifacts"),
                     retrieval_context=effective_context,
                     conversation_messages=messages[:message_index]
@@ -1366,6 +1433,7 @@ async def retry_failed_stage1_models(
                 metadata["label_to_model"] = refreshed_data["label_to_model"]
                 metadata["aggregate_rankings"] = refreshed_data["aggregate_rankings"]
                 metadata["aggregate_rubrics"] = refreshed_data["aggregate_rubrics"]
+                metadata["execution"] = refreshed_data["execution"]
                 metadata["visual_findings"] = refreshed_data["visual_findings"]
                 if refreshed_data.get("model_weight_profile"):
                     metadata["model_weight_profile"] = refreshed_data["model_weight_profile"]
@@ -1567,6 +1635,16 @@ async def send_message_stream(
                 f"framework={framework}"
             )
 
+            execution_report = await _run_code_execution_for_conversation(
+                conversation,
+                user_query=request.content,
+                stage1_results=stage1_results,
+                stage2_results=stage2_results,
+                retrieval_context=effective_context,
+                chairman_model=chairman_model or config.CHAIRMAN_MODEL,
+            )
+            execution_context = build_execution_context_block(execution_report)
+
             # Stage 3: Synthesize final answer (Streaming)
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
             stage3_start = time.monotonic()
@@ -1580,6 +1658,7 @@ async def send_message_stream(
                 session_type=conversation.get("session_type"),
                 specialist_template_id=conversation.get("specialist_template_id"),
                 retrieval_context=effective_context,
+                execution_context=execution_context,
                 aggregate_rankings=aggregate_rankings,
                 aggregate_rubrics=aggregate_rubrics,
             ):
@@ -1622,10 +1701,15 @@ async def send_message_stream(
                 "label_to_model": label_to_model,
                 "aggregate_rankings": aggregate_rankings,
                 "aggregate_rubrics": aggregate_rubrics,
+                "execution": execution_report,
                 "visual_findings": visual_findings,
                 "stage1_errors": stage1_errors,
                 "session_type": conversation.get("session_type", DEFAULT_SESSION_TYPE),
                 "specialist_template_id": conversation.get("specialist_template_id"),
+                "execution_mode": normalize_execution_mode(
+                    conversation.get("execution_mode"),
+                    session_type=conversation.get("session_type"),
+                ),
                 "specialist_template_label": get_template_label(
                     conversation.get("specialist_template_id"),
                     conversation.get("session_type"),

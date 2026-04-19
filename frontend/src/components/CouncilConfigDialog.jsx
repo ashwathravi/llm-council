@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowDown, ArrowUp, Check, Crown, Pencil, Pin, PinOff, Save, Settings2, Star, Trash2, Users, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { getSessionTypeLabel, SESSION_TYPE_OPTIONS } from '@/lib/sessionMetadata';
+import { EXECUTION_MODE_OPTIONS, getExecutionModeLabel, getSessionTypeLabel, SESSION_TYPE_OPTIONS } from '@/lib/sessionMetadata';
 import { getSpecialistTemplate, getSpecialistTemplateLabel, getTemplatesForSessionType } from '@/lib/specialistTemplates';
 
 const COUNCIL_TYPES = [
@@ -68,6 +68,8 @@ const CouncilConfigDialog = ({
   setSelectedSessionType,
   specialistTemplateId,
   setSpecialistTemplateId,
+  executionMode,
+  setExecutionMode,
   selectedFramework,
   setSelectedFramework,
   councilModels,
@@ -91,6 +93,7 @@ const CouncilConfigDialog = ({
   const [memberView, setMemberView] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const isVisualReview = selectedSessionType === 'visual_review';
+  const isCodeReview = selectedSessionType === 'code_review';
   const availableSpecialistTemplates = useMemo(
     () => getTemplatesForSessionType(selectedSessionType),
     [selectedSessionType]
@@ -145,6 +148,9 @@ const CouncilConfigDialog = ({
     if (getSpecialistTemplate(specialistTemplateId)?.sessionType !== nextSessionType) {
       setSpecialistTemplateId('');
     }
+    if (nextSessionType !== 'code_review') {
+      setExecutionMode('disabled');
+    }
     setActivePresetId(null);
   };
 
@@ -159,6 +165,9 @@ const CouncilConfigDialog = ({
       setSelectedSessionType(template.sessionType);
       setCouncilModels(filterCouncilModelsForSession(councilModels, template.sessionType));
     }
+    if (template.sessionType !== 'code_review') {
+      setExecutionMode('disabled');
+    }
     setSpecialistTemplateId(template.id);
     if (template.defaultFramework) {
       setSelectedFramework(template.defaultFramework);
@@ -171,6 +180,9 @@ const CouncilConfigDialog = ({
 
     const nextSessionType = preset.sessionType || 'general';
     const nextSpecialistTemplateId = preset.specialistTemplateId || '';
+    const nextExecutionMode = nextSessionType === 'code_review'
+      ? (preset.executionMode || 'disabled')
+      : 'disabled';
     const nextFramework = preset.framework || 'standard';
     const requestedChairman = preset.chairmanModel || '';
     const requestedCouncilModels = Array.isArray(preset.councilModels) ? preset.councilModels : [];
@@ -185,6 +197,7 @@ const CouncilConfigDialog = ({
 
     setSelectedSessionType(nextSessionType);
     setSpecialistTemplateId(nextSpecialistTemplateId);
+    setExecutionMode(nextExecutionMode);
     setSelectedFramework(nextFramework);
     setCouncilModels(validCouncilModels);
     setChairmanModel(requestedChairman && availableModelIds.has(requestedChairman) ? requestedChairman : '');
@@ -304,6 +317,7 @@ const CouncilConfigDialog = ({
   const renderReadOnlyConversationConfig = () => {
     const sessionType = readOnlyConfig?.sessionType || 'general';
     const readOnlyTemplateLabel = getSpecialistTemplateLabel(readOnlyConfig?.specialistTemplateId || '');
+    const readOnlyExecutionMode = readOnlyConfig?.executionMode || 'disabled';
     const framework = readOnlyConfig?.framework || 'standard';
     const selectedModels = Array.isArray(readOnlyConfig?.councilModels) ? readOnlyConfig.councilModels : [];
     const readOnlyChairman = readOnlyConfig?.chairmanModel || '';
@@ -337,6 +351,9 @@ const CouncilConfigDialog = ({
             <div className="flex flex-wrap gap-2">
               <Badge variant="secondary">{selectedModels.length} Selected Models</Badge>
               {readOnlyTemplateLabel && <Badge variant="secondary">{readOnlyTemplateLabel}</Badge>}
+              {sessionType === 'code_review' && readOnlyExecutionMode !== 'disabled' && (
+                <Badge variant="secondary">{getExecutionModeLabel(readOnlyExecutionMode)}</Badge>
+              )}
               <Badge variant="outline">Chairman: {readOnlyChairman ? getModelName(readOnlyChairman) : 'Auto'}</Badge>
               <Badge variant="outline">{primaryArtifacts.length} Primary Artifacts</Badge>
             </div>
@@ -507,6 +524,27 @@ const CouncilConfigDialog = ({
                       </CardContent>
                     </Card>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {isCodeReview && (
+              <div className="space-y-3 rounded-md border bg-card p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-semibold text-muted-foreground">Safe Execution Loop</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {EXECUTION_MODE_OPTIONS.find((option) => option.id === executionMode)?.description}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={executionMode === 'safe_patch_checks'}
+                    onCheckedChange={(checked) => {
+                      setExecutionMode(checked ? 'safe_patch_checks' : 'disabled');
+                      setActivePresetId(null);
+                    }}
+                    aria-label="Toggle safe execution loop"
+                  />
                 </div>
               </div>
             )}
@@ -696,6 +734,9 @@ const CouncilConfigDialog = ({
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {getSessionTypeLabel(preset.sessionType || 'general')} • {getFrameworkLabel(preset.framework)}
+                        {preset.sessionType === 'code_review' && preset.executionMode && preset.executionMode !== 'disabled'
+                          ? ` • ${getExecutionModeLabel(preset.executionMode)}`
+                          : ''}
                         {preset.specialistTemplateId ? ` • ${getSpecialistTemplateLabel(preset.specialistTemplateId)}` : ''}
                       </p>
                       <p className="text-xs text-muted-foreground">{preset.description}</p>

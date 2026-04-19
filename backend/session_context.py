@@ -8,6 +8,7 @@ import uuid
 from .session_templates import get_session_template
 
 DEFAULT_SESSION_TYPE = "general"
+DEFAULT_EXECUTION_MODE = "disabled"
 
 SESSION_TYPES: Dict[str, Dict[str, str]] = {
     "general": {
@@ -41,6 +42,17 @@ ALLOWED_SESSION_TYPES = set(SESSION_TYPES.keys())
 ALLOWED_ARTIFACT_KINDS = {"document", "image", "code", "spec", "note", "link"}
 ALLOWED_ARTIFACT_SOURCES = {"manual", "upload", "derived"}
 ALLOWED_ARTIFACT_STATUSES = {"draft", "processing", "ready", "failed"}
+EXECUTION_MODES: Dict[str, Dict[str, str]] = {
+    "disabled": {
+        "label": "Disabled",
+        "description": "Do not generate candidate patches or run checks.",
+    },
+    "safe_patch_checks": {
+        "label": "Safe Patch + Checks",
+        "description": "Generate a candidate diff in a temp workspace and run guarded auto-detected checks.",
+    },
+}
+ALLOWED_EXECUTION_MODES = set(EXECUTION_MODES.keys())
 
 
 def _now_iso() -> str:
@@ -58,6 +70,30 @@ def normalize_session_type(value: Optional[str]) -> str:
 def get_session_type_label(session_type: Optional[str]) -> str:
     normalized = normalize_session_type(session_type)
     return SESSION_TYPES[normalized]["label"]
+
+
+def normalize_execution_mode(
+    value: Optional[str],
+    *,
+    session_type: Optional[str] = None,
+) -> str:
+    normalized_session_type = normalize_session_type(session_type)
+    if isinstance(value, str):
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized in ALLOWED_EXECUTION_MODES:
+            if normalized_session_type != "code_review" and normalized != DEFAULT_EXECUTION_MODE:
+                return DEFAULT_EXECUTION_MODE
+            return normalized
+    return DEFAULT_EXECUTION_MODE
+
+
+def get_execution_mode_label(
+    execution_mode: Optional[str],
+    *,
+    session_type: Optional[str] = None,
+) -> str:
+    normalized = normalize_execution_mode(execution_mode, session_type=session_type)
+    return EXECUTION_MODES[normalized]["label"]
 
 
 def normalize_primary_artifact(artifact: Any) -> Optional[Dict[str, Any]]:

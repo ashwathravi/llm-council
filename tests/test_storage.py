@@ -43,6 +43,7 @@ async def test_create_and_get_conversation_file():
     assert created["user_id"] == user_id
     assert created["origin"] == "local" # or whatever default
     assert created["session_type"] == "general"
+    assert created["execution_mode"] == "disabled"
     assert created["primary_artifacts"] == []
     
     # Verify file exists
@@ -53,6 +54,7 @@ async def test_create_and_get_conversation_file():
     assert fetched is not None
     assert fetched["id"] == conv_id
     assert fetched["session_type"] == "general"
+    assert fetched["execution_mode"] == "disabled"
 
 @pytest.mark.asyncio
 async def test_add_message_file():

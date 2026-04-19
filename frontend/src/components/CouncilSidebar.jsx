@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Trash2, Plus, History, Settings, PanelLeftClose, PanelLeftOpen, Users } from "lucide-react";
 import CouncilConfigDialog from './CouncilConfigDialog';
 import { cn } from "@/lib/utils";
-import { getPrimaryArtifactCount, getSessionTypeLabel } from '@/lib/sessionMetadata';
+import { getExecutionModeLabel, getPrimaryArtifactCount, getSessionTypeLabel } from '@/lib/sessionMetadata';
 import { getSpecialistTemplate, getSpecialistTemplateLabel } from '@/lib/specialistTemplates';
 
 const FRAMEWORK_LABELS = {
@@ -48,6 +48,7 @@ const readSavedPresets = () => {
           description: typeof preset.description === 'string' ? preset.description : '',
           sessionType: typeof preset.sessionType === 'string' ? preset.sessionType : 'general',
           specialistTemplateId: typeof preset.specialistTemplateId === 'string' ? preset.specialistTemplateId : '',
+          executionMode: typeof preset.executionMode === 'string' ? preset.executionMode : 'disabled',
           framework: typeof preset.framework === 'string' ? preset.framework : 'standard',
           chairmanModel: typeof preset.chairmanModel === 'string' ? preset.chairmanModel : '',
           councilModels: Array.isArray(preset.councilModels) ? preset.councilModels : [],
@@ -89,6 +90,7 @@ const sameConfig = (left, right) => {
 
   if ((left.sessionType || 'general') !== (right.sessionType || 'general')) return false;
   if ((left.specialistTemplateId || '') !== (right.specialistTemplateId || '')) return false;
+  if ((left.executionMode || 'disabled') !== (right.executionMode || 'disabled')) return false;
   if (left.framework !== right.framework) return false;
   if ((left.chairmanModel || '') !== (right.chairmanModel || '')) return false;
   if (leftModels.length !== rightModels.length) return false;
@@ -124,6 +126,7 @@ const CouncilSidebar = memo(({
 }) => {
   const [selectedSessionType, setSelectedSessionType] = useState('general');
   const [selectedSpecialistTemplateId, setSelectedSpecialistTemplateId] = useState('');
+  const [executionMode, setExecutionMode] = useState('disabled');
   const [selectedFramework, setSelectedFramework] = useState('standard');
   const [models, setModels] = useState([]);
   const [chairmanModel, setChairmanModel] = useState('');
@@ -242,6 +245,7 @@ const CouncilSidebar = memo(({
     const configToSave = {
       sessionType: selectedSessionType,
       specialistTemplateId: selectedSpecialistTemplateId,
+      executionMode,
       framework: selectedFramework,
       councilModels,
       chairmanModel,
@@ -265,6 +269,7 @@ const CouncilSidebar = memo(({
       description: `Saved on ${new Date().toLocaleDateString()}`,
       sessionType: selectedSessionType,
       specialistTemplateId: selectedSpecialistTemplateId,
+      executionMode,
       framework: selectedFramework,
       chairmanModel,
       councilModels,
@@ -362,6 +367,9 @@ const CouncilSidebar = memo(({
     if (currentTemplate && currentTemplate.sessionType !== nextSessionType) {
       setSelectedSpecialistTemplateId('');
     }
+    if (nextSessionType !== 'code_review') {
+      setExecutionMode('disabled');
+    }
     if (nextSessionType !== 'visual_review') {
       return;
     }
@@ -399,6 +407,7 @@ const CouncilSidebar = memo(({
       await onNewConversation({
         sessionType: selectedSessionType,
         specialistTemplateId: selectedSpecialistTemplateId || null,
+        executionMode: selectedSessionType === 'code_review' ? executionMode : 'disabled',
         framework: selectedFramework,
         councilModels,
         chairmanModel: chairmanModel || null,
@@ -438,6 +447,7 @@ const CouncilSidebar = memo(({
   const activeConversationFramework = activeConversationMetadata?.framework;
   const activeConversationSessionType = activeConversationMetadata?.session_type || 'general';
   const activeConversationTemplateLabel = getSpecialistTemplateLabel(activeConversationMetadata?.specialist_template_id);
+  const activeConversationExecutionMode = activeConversationMetadata?.execution_mode || 'disabled';
   const activeFrameworkLabel = activeConversationFramework
     ? (FRAMEWORK_LABELS[activeConversationFramework] || activeConversationFramework)
     : 'No active conversation';
@@ -532,6 +542,11 @@ const CouncilSidebar = memo(({
                         {activeConversationTemplateLabel && (
                           <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
                             {activeConversationTemplateLabel}
+                          </span>
+                        )}
+                        {activeConversationSessionType === 'code_review' && activeConversationExecutionMode !== 'disabled' && (
+                          <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
+                            {getExecutionModeLabel(activeConversationExecutionMode)}
                           </span>
                         )}
                         <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
@@ -640,6 +655,7 @@ const CouncilSidebar = memo(({
         readOnlyConfig={{
           sessionType: activeConversationMetadata?.session_type || 'general',
           specialistTemplateId: activeConversationMetadata?.specialist_template_id || '',
+          executionMode: activeConversationExecutionMode,
           framework: activeConversationMetadata?.framework,
           councilModels: Array.isArray(activeConversationMetadata?.council_models) ? activeConversationMetadata.council_models : [],
           chairmanModel: activeConversationMetadata?.chairman_model || '',
@@ -652,6 +668,8 @@ const CouncilSidebar = memo(({
         setSelectedSessionType={handleSessionTypeChange}
         specialistTemplateId={selectedSpecialistTemplateId}
         setSpecialistTemplateId={setSelectedSpecialistTemplateId}
+        executionMode={executionMode}
+        setExecutionMode={setExecutionMode}
         selectedFramework={selectedFramework}
         setSelectedFramework={setSelectedFramework}
         councilModels={councilModels}

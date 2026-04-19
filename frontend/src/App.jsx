@@ -160,6 +160,7 @@ function App() {
   const conversationFramework = currentConversation?.framework;
   const conversationSessionType = currentConversation?.session_type;
   const conversationSpecialistTemplateId = currentConversation?.specialist_template_id;
+  const conversationExecutionMode = currentConversation?.execution_mode;
   const conversationCouncilModels = currentConversation?.council_models;
   const conversationChairmanModel = currentConversation?.chairman_model;
   const conversationPrimaryArtifacts = currentConversation?.primary_artifacts;
@@ -172,6 +173,7 @@ function App() {
       framework: conversationFramework,
       session_type: conversationSessionType,
       specialist_template_id: conversationSpecialistTemplateId,
+      execution_mode: conversationExecutionMode,
       council_models: conversationCouncilModels,
       chairman_model: conversationChairmanModel,
       primary_artifacts: conversationPrimaryArtifacts,
@@ -182,6 +184,7 @@ function App() {
     conversationFramework,
     conversationSessionType,
     conversationSpecialistTemplateId,
+    conversationExecutionMode,
     conversationCouncilModels,
     conversationChairmanModel,
     conversationPrimaryArtifacts,

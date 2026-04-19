@@ -15,6 +15,12 @@ def test_valid_session_types():
         req = CreateConversationRequest(session_type=session_type)
         assert req.session_type == session_type
 
+def test_valid_execution_modes():
+    """Test that allowed execution modes are accepted for code review sessions."""
+    for execution_mode in ["disabled", "safe_patch_checks"]:
+        req = CreateConversationRequest(session_type="code_review", execution_mode=execution_mode)
+        assert req.execution_mode == execution_mode
+
 def test_invalid_framework():
     """Test that an invalid framework raises a ValidationError."""
     with pytest.raises(ValidationError) as excinfo:
@@ -26,6 +32,18 @@ def test_invalid_session_type():
     with pytest.raises(ValidationError) as excinfo:
         CreateConversationRequest(session_type="invalid_session")
     assert "Session type must be one of" in str(excinfo.value)
+
+def test_invalid_execution_mode():
+    """Test that an invalid execution mode raises a ValidationError."""
+    with pytest.raises(ValidationError) as excinfo:
+        CreateConversationRequest(session_type="code_review", execution_mode="run_everything")
+    assert "Execution mode must be one of" in str(excinfo.value)
+
+def test_execution_mode_requires_code_review():
+    """Test that non-code-review sessions cannot enable the execution loop."""
+    with pytest.raises(ValidationError) as excinfo:
+        CreateConversationRequest(session_type="general", execution_mode="safe_patch_checks")
+    assert "Execution mode is only available for code review sessions." in str(excinfo.value)
 
 def test_valid_council_models():
     """Test that a valid list of council models is accepted."""
@@ -54,6 +72,7 @@ def test_default_values():
     req = CreateConversationRequest()
     assert req.framework == "standard"
     assert req.session_type == "general"
+    assert req.execution_mode == "disabled"
     assert req.council_models == []
     assert req.chairman_model is None
     assert req.primary_artifacts == []

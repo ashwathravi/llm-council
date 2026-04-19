@@ -264,6 +264,7 @@ async def test_create_conversation_persists_specialist_template(async_client):
                 "framework": "standard",
                 "session_type": "code_review",
                 "specialist_template_id": "code_security_review",
+                "execution_mode": "safe_patch_checks",
                 "council_models": ["openai/gpt-5.2"],
                 "chairman_model": None,
                 "primary_artifacts": [],
@@ -276,6 +277,7 @@ async def test_create_conversation_persists_specialist_template(async_client):
                     "framework": "standard",
                     "session_type": "code_review",
                     "specialist_template_id": "code_security_review",
+                    "execution_mode": "safe_patch_checks",
                     "council_models": ["openai/gpt-5.2"],
                 }
             )
@@ -284,7 +286,64 @@ async def test_create_conversation_persists_specialist_template(async_client):
             payload = response.json()
             assert payload["session_type"] == "code_review"
             assert payload["specialist_template_id"] == "code_security_review"
+            assert payload["execution_mode"] == "safe_patch_checks"
             assert mock_create_conversation.await_args.kwargs["specialist_template_id"] == "code_security_review"
+            assert mock_create_conversation.await_args.kwargs["execution_mode"] == "safe_patch_checks"
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_send_message_code_review_returns_execution_metadata(async_client):
+    conversation = {
+        "id": "conv-exec",
+        "framework": "standard",
+        "session_type": "code_review",
+        "specialist_template_id": "code_security_review",
+        "execution_mode": "safe_patch_checks",
+        "council_models": ["openai/gpt-5.2"],
+        "chairman_model": "chair-model",
+        "primary_artifacts": [],
+        "messages": [],
+    }
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.add_user_message", new_callable=AsyncMock), \
+             patch("backend.storage.update_conversation_title", new_callable=AsyncMock), \
+             patch("backend.storage.add_assistant_message", new_callable=AsyncMock), \
+             patch("backend.retrieval.build_retrieval_context", new_callable=AsyncMock) as mock_retrieval, \
+             patch("backend.main.generate_conversation_title", new_callable=AsyncMock) as mock_generate_title, \
+             patch("backend.main.run_full_council", new_callable=AsyncMock) as mock_run_council:
+            mock_get_conversation.return_value = conversation
+            mock_generate_title.return_value = "Exec Review"
+            mock_retrieval.return_value = ("", [])
+            mock_run_council.return_value = (
+                [{"model": "openai/gpt-5.2", "response": "Apply the patch."}],
+                [],
+                {"model": "chair-model", "response": "Use the candidate patch."},
+                {
+                    "execution": {
+                        "mode": "safe_patch_checks",
+                        "status": "completed",
+                        "candidate_patch": {"status": "applied", "changed_files": ["app.py"]},
+                        "checks": [],
+                        "summary": {"passed": 0, "failed": 0, "skipped": 0},
+                    },
+                },
+            )
+
+            response = await async_client.post(
+                "/api/conversations/conv-exec/message",
+                json={"content": "Review this change"}
+            )
+
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["metadata"]["execution_mode"] == "safe_patch_checks"
+            assert payload["metadata"]["execution"]["candidate_patch"]["status"] == "applied"
+            assert mock_run_council.await_args.kwargs["execution_mode"] == "safe_patch_checks"
     finally:
         app.dependency_overrides = {}
 
