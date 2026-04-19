@@ -78,11 +78,13 @@ async def test_build_retrieval_context_orders_results():
         {"id": "c2", "document_id": "doc-2", "page_number": 2, "text": "beta", "embedding": [0.0, 1.0]},
     ]
 
-    with patch("backend.storage.list_document_embeddings", new_callable=AsyncMock) as mock_embeddings, \
+    with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_conversation, \
+         patch("backend.storage.list_document_embeddings", new_callable=AsyncMock) as mock_embeddings, \
          patch("backend.storage.get_document_chunks_by_ids", new_callable=AsyncMock) as mock_chunks, \
          patch("backend.storage.list_documents", new_callable=AsyncMock) as mock_docs, \
          patch("backend.documents.embed_texts") as mock_embed:
 
+        mock_conversation.return_value = {"id": "conv", "primary_artifacts": []}
         mock_embeddings.return_value = chunks_meta
         mock_chunks.return_value = chunks_full
         mock_docs.return_value = [
@@ -108,11 +110,13 @@ async def test_build_retrieval_context_offloads_embedding_to_threadpool():
         {"id": "c1", "document_id": "doc-1", "page_number": 1, "text": "alpha", "embedding": [1.0, 0.0]},
     ]
 
-    with patch("backend.storage.list_document_embeddings", new_callable=AsyncMock) as mock_embeddings, \
+    with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_conversation, \
+         patch("backend.storage.list_document_embeddings", new_callable=AsyncMock) as mock_embeddings, \
          patch("backend.storage.get_document_chunks_by_ids", new_callable=AsyncMock) as mock_chunks, \
          patch("backend.storage.list_documents", new_callable=AsyncMock) as mock_docs, \
          patch("backend.retrieval.run_in_threadpool", new_callable=AsyncMock) as mock_threadpool:
 
+        mock_conversation.return_value = {"id": "conv", "primary_artifacts": []}
         mock_embeddings.return_value = chunks_meta
         mock_chunks.return_value = chunks_full
         mock_docs.return_value = [{"id": "doc-1", "filename": "alpha.pdf"}]
@@ -125,6 +129,38 @@ async def test_build_retrieval_context_offloads_embedding_to_threadpool():
 
         # Verify call to threadpool for embeddings
         mock_threadpool.assert_awaited_once_with(documents.embed_texts, ["query"])
+
+
+@pytest.mark.asyncio
+async def test_build_retrieval_context_includes_code_artifact_citations():
+    conversation = {
+        "id": "conv",
+        "primary_artifacts": [
+            {
+                "id": "code-1",
+                "kind": "code",
+                "label": "app.py",
+                "status": "ready",
+                "storage_path": "conv/code-1-app.py",
+            }
+        ],
+    }
+
+    with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_conversation, \
+         patch("backend.storage.list_document_embeddings", new_callable=AsyncMock) as mock_embeddings, \
+         patch("backend.code_artifacts.load_code_file", return_value="def foo():\n    return 1\n"):
+        mock_conversation.return_value = conversation
+        mock_embeddings.return_value = []
+
+        context, citations = await retrieval.build_retrieval_context("conv", "user", "foo return")
+
+        assert context is not None
+        assert "artifact excerpts" in context
+        assert "Source: app.py (lines 1-2)" in context
+        assert citations[0]["artifact_type"] == "code"
+        assert citations[0]["filename"] == "app.py"
+        assert citations[0]["line_start"] == 1
+        assert citations[0]["line_end"] == 2
 
 
 @pytest.mark.asyncio
