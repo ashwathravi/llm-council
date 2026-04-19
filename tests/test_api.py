@@ -116,6 +116,77 @@ async def test_create_conversation_invalid_session_type(async_client):
 
 
 @pytest.mark.asyncio
+async def test_send_message_visual_review_uses_image_payload_and_filters_non_vision(async_client):
+    conversation = {
+        "id": "conv-visual",
+        "framework": "standard",
+        "session_type": "visual_review",
+        "council_models": ["openai/gpt-5.2", "acme/text-only-model"],
+        "chairman_model": "chair-model",
+        "primary_artifacts": [
+            {
+                "id": "img-1",
+                "kind": "image",
+                "label": "mockup.png",
+                "source": "upload",
+                "status": "ready",
+                "filename": "mockup.png",
+                "mime_type": "image/png",
+                "size_bytes": 128,
+                "storage_path": "conv-visual/img-1.png",
+                "preview_url": "/artifact-files/conv-visual/img-1.png",
+            }
+        ],
+        "messages": [],
+    }
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.add_user_message", new_callable=AsyncMock) as mock_add_user_message, \
+             patch("backend.storage.update_conversation_title", new_callable=AsyncMock) as mock_update_title, \
+             patch("backend.storage.add_assistant_message", new_callable=AsyncMock) as mock_add_assistant_message, \
+             patch("backend.retrieval.build_retrieval_context", new_callable=AsyncMock) as mock_retrieval, \
+             patch("backend.main.generate_conversation_title", new_callable=AsyncMock) as mock_generate_title, \
+             patch("backend.main.run_full_council", new_callable=AsyncMock) as mock_run_council, \
+             patch("backend.image_artifacts.load_image_as_data_url", return_value="data:image/png;base64,abc"):
+            mock_get_conversation.return_value = conversation
+            mock_generate_title.return_value = "Visual Review"
+            mock_retrieval.return_value = ("", [])
+            mock_run_council.return_value = (
+                [{"model": "openai/gpt-5.2", "response": "The hierarchy is clear."}],
+                [],
+                {"model": "chair-model", "response": "Looks solid overall."},
+                {},
+            )
+
+            response = await async_client.post(
+                "/api/conversations/conv-visual/message",
+                json={"content": "Review this layout"}
+            )
+
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["metadata"]["effective_council_models"] == ["openai/gpt-5.2"]
+            assert payload["metadata"]["excluded_non_vision_models"] == ["acme/text-only-model"]
+
+            run_args = mock_run_council.await_args
+            history = run_args.args[0]
+            assert run_args.kwargs["council_models"] == ["openai/gpt-5.2"]
+            assert history[-1]["role"] == "user"
+            assert isinstance(history[-1]["content"], list)
+            assert history[-1]["content"][0]["type"] == "text"
+            assert history[-1]["content"][0]["text"] == "Review this layout"
+            assert history[-1]["content"][1]["type"] == "image_url"
+
+            mock_add_user_message.assert_awaited_once()
+            mock_update_title.assert_awaited_once()
+            mock_add_assistant_message.assert_awaited_once()
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
 async def test_retry_failed_stage1_models_success(async_client):
     conversation = {
         "id": "conv-1",

@@ -16,7 +16,7 @@ import time
 import logging
 from contextlib import asynccontextmanager
 
-from . import storage, auth, openrouter, security, documents, retrieval, config
+from . import storage, auth, openrouter, security, documents, retrieval, config, image_artifacts
 from .database import init_db
 from .council import (
     run_full_council, generate_conversation_title,
@@ -35,6 +35,8 @@ from .session_context import (
     build_primary_artifact_from_document,
     build_session_context_block,
     merge_context_blocks,
+    normalize_primary_artifacts,
+    normalize_session_type,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,11 @@ async def lifespan(app: FastAPI):
     await openrouter.close_client()
 
 app = FastAPI(title="LLM Council API", lifespan=lifespan)
+app.mount(
+    "/artifact-files",
+    StaticFiles(directory=str(image_artifacts.ensure_artifact_files_dir())),
+    name="artifact-files",
+)
 
 # Security Headers Middleware
 @app.middleware("http")
@@ -160,7 +167,11 @@ class PrimaryArtifactMetadata(BaseModel):
     filename: Optional[str] = Field(None, max_length=255)
     mime_type: Optional[str] = Field(None, max_length=120)
     size_bytes: Optional[int] = Field(None, ge=0)
+    width: Optional[int] = Field(None, ge=0)
+    height: Optional[int] = Field(None, ge=0)
     summary: Optional[str] = Field(None, max_length=500)
+    preview_url: Optional[str] = Field(None, max_length=500)
+    storage_path: Optional[str] = Field(None, max_length=500)
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -227,6 +238,11 @@ class DocumentUploadResponse(BaseModel):
     errors: List[DocumentUploadError] = []
 
 
+class ImageArtifactUploadResponse(BaseModel):
+    artifacts: List[PrimaryArtifactMetadata]
+    errors: List[DocumentUploadError] = []
+
+
 CreateConversationRequest.model_rebuild()
 
 
@@ -239,6 +255,93 @@ def _build_effective_context(
         conversation.get("primary_artifacts"),
     )
     return merge_context_blocks(session_context, retrieval_context)
+
+
+def _get_ready_image_artifacts(primary_artifacts: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    artifacts = []
+    for artifact in normalize_primary_artifacts(list(primary_artifacts or [])):
+        if artifact.get("kind") != "image":
+            continue
+        if artifact.get("status") != "ready":
+            continue
+        if not artifact.get("storage_path") or not artifact.get("mime_type"):
+            continue
+        artifacts.append(artifact)
+    return artifacts
+
+
+def _build_user_message_content(conversation: Dict[str, Any], user_text: str) -> Any:
+    if normalize_session_type(conversation.get("session_type")) != "visual_review":
+        return user_text
+
+    message_parts: List[Dict[str, Any]] = [{"type": "text", "text": user_text}]
+    for artifact in _get_ready_image_artifacts(conversation.get("primary_artifacts")):
+        try:
+            data_url = image_artifacts.load_image_as_data_url(
+                artifact["storage_path"],
+                artifact["mime_type"],
+            )
+        except Exception:
+            logger.warning(
+                "Failed to load image artifact for model input",
+                extra={"artifact_id": artifact.get("id"), "conversation_id": conversation.get("id")},
+            )
+            continue
+
+        message_parts.append({
+            "type": "image_url",
+            "image_url": {"url": data_url},
+        })
+
+    return message_parts if len(message_parts) > 1 else user_text
+
+
+def _build_conversation_history(
+    conversation: Dict[str, Any],
+    current_user_text: str,
+) -> List[Dict[str, Any]]:
+    history: List[Dict[str, Any]] = []
+    for msg in conversation.get("messages", []):
+        if msg.get("role") == "user":
+            history.append({"role": "user", "content": msg.get("content", "")})
+        elif msg.get("role") == "assistant":
+            stage3 = msg.get("stage3")
+            if isinstance(stage3, dict) and stage3.get("response"):
+                history.append({"role": "assistant", "content": stage3["response"]})
+
+    history.append({
+        "role": "user",
+        "content": _build_user_message_content(conversation, current_user_text),
+    })
+    return history
+
+
+def _resolve_stage1_models_for_conversation(conversation: Dict[str, Any]) -> tuple[List[str], List[str], List[str]]:
+    requested_council_models = list(conversation.get("council_models") or [])
+    effective_council_models = resolve_active_models(conversation.get("council_models"))
+    excluded_non_vision_models: List[str] = []
+
+    if normalize_session_type(conversation.get("session_type")) == "visual_review":
+        excluded_non_vision_models = [
+            model_id
+            for model_id in effective_council_models
+            if not openrouter.supports_vision_model(model_id)
+        ]
+        effective_council_models = [
+            model_id
+            for model_id in effective_council_models
+            if openrouter.supports_vision_model(model_id)
+        ]
+
+    return requested_council_models, effective_council_models, excluded_non_vision_models
+
+
+def _visual_review_requires_vision_models(conversation: Dict[str, Any], effective_models: List[str]) -> None:
+    if normalize_session_type(conversation.get("session_type")) == "visual_review" and not effective_models:
+        raise HTTPException(
+            status_code=400,
+            detail="Visual Review sessions require at least one vision-capable council model.",
+        )
 
 
 @app.get("/api/health")
@@ -321,8 +424,19 @@ async def list_conversations(user_id: str = Depends(auth.get_current_user_id)):
 @app.delete("/api/conversations/{conversation_id}")
 async def delete_conversation(conversation_id: str, user_id: str = Depends(auth.get_current_user_id)):
     """Delete a conversation."""
+    conversation = await storage.get_conversation(conversation_id, user_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    image_paths = [
+        artifact.get("storage_path")
+        for artifact in _get_ready_image_artifacts(conversation.get("primary_artifacts"))
+        if artifact.get("storage_path")
+    ]
     try:
         await storage.delete_conversation(conversation_id, user_id)
+        for relative_path in image_paths:
+            await run_in_threadpool(image_artifacts.delete_image_file, relative_path)
         return {"status": "success"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -515,6 +629,103 @@ async def delete_document(
     return {"status": "success"}
 
 
+@app.post(
+    "/api/conversations/{conversation_id}/artifacts/images",
+    response_model=ImageArtifactUploadResponse,
+    dependencies=[Depends(security.rate_limiter(requests_limit=10, time_window=60, scope="upload_docs"))]
+)
+async def upload_image_artifacts(
+    conversation_id: str,
+    files: List[UploadFile] = File(...),
+    user_id: str = Depends(auth.get_current_user_id)
+):
+    conversation = await storage.get_conversation(conversation_id, user_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if normalize_session_type(conversation.get("session_type")) != "visual_review":
+        raise HTTPException(status_code=400, detail="Image uploads are only supported in Visual Review sessions.")
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    existing_images = [
+        artifact
+        for artifact in normalize_primary_artifacts(conversation.get("primary_artifacts"))
+        if artifact.get("kind") == "image"
+    ]
+    if len(existing_images) + len(files) > config.IMAGE_MAX_FILES_PER_CONVERSATION:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum {config.IMAGE_MAX_FILES_PER_CONVERSATION} images per conversation.",
+        )
+
+    uploaded_artifacts: List[Dict[str, Any]] = []
+    errors: List[Dict[str, str]] = []
+
+    for upload in files:
+        filename = upload.filename or "image"
+        if not image_artifacts.is_supported_image_file(filename, upload.content_type):
+            errors.append({"filename": filename, "error": "Only PNG, JPEG, GIF, and WebP images are supported."})
+            continue
+
+        content = await upload.read(config.IMAGE_MAX_FILE_SIZE_BYTES + 1)
+        if len(content) > config.IMAGE_MAX_FILE_SIZE_BYTES:
+            errors.append({"filename": filename, "error": "File exceeds the 5MB limit."})
+            continue
+        if len(content) == 0:
+            errors.append({"filename": filename, "error": "File is empty."})
+            continue
+
+        detected_type = image_artifacts.detect_image_type(content)
+        if not detected_type:
+            errors.append({"filename": filename, "error": "Unsupported or invalid image file."})
+            continue
+
+        _, mime_type, extension = detected_type
+        artifact_id = str(uuid.uuid4())
+        relative_path = await run_in_threadpool(
+            image_artifacts.save_image_file,
+            conversation_id,
+            artifact_id,
+            content,
+            extension,
+        )
+        artifact_record = {
+            "id": artifact_id,
+            "kind": "image",
+            "label": filename,
+            "source": "upload",
+            "status": "ready",
+            "filename": filename,
+            "mime_type": mime_type,
+            "size_bytes": len(content),
+            "preview_url": image_artifacts.build_preview_url(relative_path),
+            "storage_path": relative_path,
+        }
+        await storage.upsert_primary_artifact(conversation_id, user_id, artifact_record)
+        uploaded_artifacts.append(artifact_record)
+
+    return {"artifacts": uploaded_artifacts, "errors": errors}
+
+
+@app.delete("/api/conversations/{conversation_id}/artifacts/images/{artifact_id}")
+async def delete_image_artifact(
+    conversation_id: str,
+    artifact_id: str,
+    user_id: str = Depends(auth.get_current_user_id)
+):
+    conversation = await storage.get_conversation(conversation_id, user_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    artifact = await storage.get_primary_artifact(conversation_id, user_id, artifact_id)
+    if artifact is None or artifact.get("kind") != "image":
+        raise HTTPException(status_code=404, detail="Image artifact not found")
+
+    await run_in_threadpool(image_artifacts.delete_image_file, artifact.get("storage_path"))
+    await storage.remove_primary_artifact_by_id(conversation_id, user_id, artifact_id)
+    return {"status": "success"}
+
+
 @app.post("/api/conversations/{conversation_id}/message", dependencies=[Depends(security.rate_limiter(requests_limit=20, time_window=60, scope="chat"))])
 async def send_message(
     conversation_id: str,
@@ -529,6 +740,11 @@ async def send_message(
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    requested_council_models, effective_council_models, excluded_non_vision_models = (
+        _resolve_stage1_models_for_conversation(conversation)
+    )
+    _visual_review_requires_vision_models(conversation, effective_council_models)
+
     # Check if this is the first message
     is_first_message = len(conversation["messages"]) == 0
 
@@ -542,21 +758,9 @@ async def send_message(
 
     # Run the 3-stage council process
     framework = conversation.get("framework", "standard")
-    council_models = conversation.get("council_models", [])
     chairman_model = conversation.get("chairman_model")
 
-    # Build conversation history
-    history = []
-    for msg in conversation["messages"]:
-        if msg["role"] == "user":
-            history.append({"role": "user", "content": msg["content"]})
-        elif msg["role"] == "assistant":
-            # Extract final response from stage 3
-            if "stage3" in msg and msg["stage3"] and "response" in msg["stage3"]:
-                history.append({"role": "assistant", "content": msg["stage3"]["response"]})
-    
-    # Append current user message
-    history.append({"role": "user", "content": request.content})
+    history = _build_conversation_history(conversation, request.content)
 
     retrieval_context, citations = await retrieval.build_retrieval_context(
         conversation_id,
@@ -568,12 +772,15 @@ async def send_message(
     stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
         history,
         framework=framework,
-        council_models=council_models,
+        council_models=effective_council_models,
         chairman_model=chairman_model,
         retrieval_context=effective_context,
         retrieval_citations=citations,
         conversation_messages=conversation.get("messages")
     )
+    metadata["requested_council_models"] = requested_council_models
+    metadata["effective_council_models"] = effective_council_models
+    metadata["excluded_non_vision_models"] = excluded_non_vision_models
     metadata["session_type"] = conversation.get("session_type", DEFAULT_SESSION_TYPE)
     metadata["primary_artifacts"] = conversation.get("primary_artifacts", [])
     metadata["primary_artifact_count"] = len(conversation.get("primary_artifacts") or [])
@@ -801,9 +1008,17 @@ async def retry_failed_stage1_models(
         request_seen.add(normalized_name)
         deduped_requested_models.append(normalized_name)
 
+    _, configured_effective_models, excluded_non_vision_models = _resolve_stage1_models_for_conversation(conversation)
+    _visual_review_requires_vision_models(conversation, configured_effective_models)
+
     effective_models = metadata.get("effective_council_models")
-    if not isinstance(effective_models, list) or not effective_models:
-        effective_models = resolve_active_models(conversation.get("council_models"))
+    if isinstance(effective_models, list) and effective_models:
+        allowed_effective_models = set(configured_effective_models)
+        effective_models = [model_name for model_name in effective_models if model_name in allowed_effective_models]
+    else:
+        effective_models = []
+    if not effective_models:
+        effective_models = configured_effective_models
     allowed_models = set(effective_models)
 
     retry_models = [model_name for model_name in deduped_requested_models if model_name in allowed_models]
@@ -824,6 +1039,10 @@ async def retry_failed_stage1_models(
         retry_query = history[-1]["content"] if history else ""
         if not retry_query.strip():
             raise HTTPException(status_code=400, detail="Cannot retry an empty prompt")
+        history[-1] = {
+            "role": "user",
+            "content": _build_user_message_content(conversation, retry_query),
+        }
 
         retrieval_context, citations = await retrieval.build_retrieval_context(
             conversation_id,
@@ -892,6 +1111,7 @@ async def retry_failed_stage1_models(
     metadata["session_type"] = conversation.get("session_type", DEFAULT_SESSION_TYPE)
     metadata["primary_artifacts"] = conversation.get("primary_artifacts", [])
     metadata["primary_artifact_count"] = len(conversation.get("primary_artifacts") or [])
+    metadata["excluded_non_vision_models"] = excluded_non_vision_models
 
     if conversation.get("framework") == "six_hats":
         metadata["retry_note"] = "Retry runs use direct model calls and do not re-assign Six Hats roles."
@@ -970,10 +1190,11 @@ async def send_message_stream(
     # Check if this is the first message
     is_first_message = len(conversation["messages"]) == 0
     framework = conversation.get("framework", "standard")
-    council_models = conversation.get("council_models", [])
     chairman_model = conversation.get("chairman_model")
-    requested_council_models = list(council_models) if council_models else []
-    effective_council_models = resolve_active_models(council_models)
+    requested_council_models, effective_council_models, excluded_non_vision_models = (
+        _resolve_stage1_models_for_conversation(conversation)
+    )
+    _visual_review_requires_vision_models(conversation, effective_council_models)
     model_profiles = (
         build_model_weight_profile(conversation.get("messages"), effective_council_models)
         if framework == "heterogeneous" else {}
@@ -987,17 +1208,7 @@ async def send_message_stream(
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
-            # Build conversation history
-            history = []
-            for msg in conversation["messages"]:
-                if msg["role"] == "user":
-                    history.append({"role": "user", "content": msg["content"]})
-                elif msg["role"] == "assistant":
-                    if "stage3" in msg and msg["stage3"] and "response" in msg["stage3"]:
-                        history.append({"role": "assistant", "content": msg["stage3"]["response"]})
-            
-            # Append current user message
-            history.append({"role": "user", "content": request.content})
+            history = _build_conversation_history(conversation, request.content)
 
             # ⚡ Bolt: Run storage (I/O) and retrieval (CPU/Network) in parallel
             # We use gather to ensure both complete before proceeding, propagating exceptions.
@@ -1042,6 +1253,7 @@ async def send_message_stream(
             stage1_meta = {
                 "requested_council_models": requested_council_models,
                 "effective_council_models": effective_council_models,
+                "excluded_non_vision_models": excluded_non_vision_models,
                 "responded_council_models": responded_council_models,
                 "stage1_errors": stage1_errors,
                 "stage1_duration_seconds": stage1_duration,
@@ -1067,6 +1279,7 @@ async def send_message_stream(
             config_meta = {
                 "requested_council_models": requested_council_models,
                 "effective_council_models": effective_council_models,
+                "excluded_non_vision_models": excluded_non_vision_models,
                 "responded_council_models": responded_council_models,
                 "stage1_errors": stage1_errors,
             }
@@ -1159,6 +1372,7 @@ async def send_message_stream(
                 "framework": framework,
                 "requested_council_models": requested_council_models,
                 "effective_council_models": effective_council_models,
+                "excluded_non_vision_models": excluded_non_vision_models,
                 "responded_council_models": responded_council_models,
                 "council_models": [r['model'] for r in stage1_results],
                 "chairman_model": chairman_model or config.CHAIRMAN_MODEL,

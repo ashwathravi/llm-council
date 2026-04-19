@@ -14,6 +14,7 @@ from .session_context import (
     DEFAULT_SESSION_TYPE,
     normalize_primary_artifacts,
     normalize_session_type,
+    normalize_primary_artifact,
     remove_primary_artifact_for_document_record,
     upsert_primary_artifact_record,
 )
@@ -801,6 +802,34 @@ async def remove_primary_artifact_for_document(conversation_id: str, user_id: st
         user_id,
         primary_artifacts=next_artifacts,
     )
+
+
+async def remove_primary_artifact_by_id(conversation_id: str, user_id: str, artifact_id: str):
+    conversation = await get_conversation(conversation_id, user_id)
+    if not conversation:
+        raise ValueError("Not found")
+
+    next_artifacts = [
+        artifact
+        for artifact in normalize_primary_artifacts(conversation.get("primary_artifacts"))
+        if artifact.get("id") != artifact_id
+    ]
+    return await update_conversation_context(
+        conversation_id,
+        user_id,
+        primary_artifacts=next_artifacts,
+    )
+
+
+async def get_primary_artifact(conversation_id: str, user_id: str, artifact_id: str) -> Optional[Dict[str, Any]]:
+    conversation = await get_conversation(conversation_id, user_id)
+    if not conversation:
+        return None
+
+    for artifact in normalize_primary_artifacts(conversation.get("primary_artifacts")):
+        if artifact.get("id") == artifact_id:
+            return normalize_primary_artifact(artifact)
+    return None
 
 async def create_document(conversation_id: str, user_id: str, filename: str, size_bytes: int):
     if os.getenv("DATABASE_URL"):

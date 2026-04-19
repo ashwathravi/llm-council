@@ -2,7 +2,7 @@
 import httpx
 import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
 
 DEFAULT_REFERER = "https://llm-council.local"
@@ -60,6 +60,53 @@ def _normalize_message_content(message: Dict[str, Any]) -> str:
     return content.strip()
 
 
+def supports_vision_model(model: Union[str, Dict[str, Any]]) -> bool:
+    model_id = ""
+    if isinstance(model, dict):
+        model_id = str(model.get("id") or "").lower()
+        architecture = model.get("architecture")
+        if isinstance(architecture, dict):
+            modality = architecture.get("modality")
+            if isinstance(modality, str) and "image" in modality.lower():
+                return True
+            input_modalities = architecture.get("input_modalities")
+            if isinstance(input_modalities, list) and any(
+                isinstance(item, str) and "image" in item.lower()
+                for item in input_modalities
+            ):
+                return True
+        for key in ("input_modalities", "modalities", "supported_parameters"):
+            value = model.get(key)
+            if isinstance(value, list) and any(
+                isinstance(item, str) and ("image" in item.lower() or "vision" in item.lower())
+                for item in value
+            ):
+                return True
+        name = model.get("name")
+        if isinstance(name, str):
+            model_id = f"{model_id} {name.lower()}".strip()
+    else:
+        model_id = str(model or "").lower()
+
+    heuristic_tokens = (
+        "gpt-4o",
+        "gpt-4.1",
+        "gpt-5",
+        "gemini",
+        "claude-3",
+        "claude-sonnet-4",
+        "claude-opus-4",
+        "grok-4",
+        "llava",
+        "pixtral",
+        "qwen-vl",
+        "gemma-3",
+        "kimi-vl",
+        "vision",
+    )
+    return any(token in model_id for token in heuristic_tokens)
+
+
 def _extract_error_message(response: httpx.Response) -> str:
     try:
         data = response.json()
@@ -109,7 +156,8 @@ async def fetch_models() -> List[Dict[str, Any]]:
                     "description": m.get("description", ""),
                     "context_length": m.get("context_length", 0),
                     "pricing": m.get("pricing", {}),
-                    "architecture": m.get("architecture", {})
+                    "architecture": m.get("architecture", {}),
+                    "supports_vision": supports_vision_model(m),
                 })
 
         models.sort(key=lambda x: x["name"])

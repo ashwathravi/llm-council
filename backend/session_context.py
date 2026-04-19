@@ -12,22 +12,27 @@ SESSION_TYPES: Dict[str, Dict[str, str]] = {
     "general": {
         "label": "General",
         "focus": "Flexible multi-model collaboration with optional supporting artifacts.",
+        "guidance": "Respond normally unless the attached artifacts clearly change the task framing.",
     },
     "visual_review": {
         "label": "Visual Review",
         "focus": "Critique screenshots, mockups, and visual UX artifacts.",
+        "guidance": "Ground observations in what is visibly present. Discuss hierarchy, layout, clarity, affordances, consistency, accessibility, and obvious UX friction.",
     },
     "code_review": {
         "label": "Code Review",
         "focus": "Review repositories, diffs, code files, and implementation quality.",
+        "guidance": "Prioritize correctness, regressions, code structure, missing tests, and precise references to the affected artifacts.",
     },
     "build_spec": {
         "label": "Build/Spec",
         "focus": "Plan against specs, briefs, requirements, and implementation handoffs.",
+        "guidance": "Turn artifacts into an execution plan with explicit assumptions, scope boundaries, and missing requirements.",
     },
     "research_docs": {
         "label": "Research/Docs",
         "focus": "Reason over documents, notes, and supporting source material.",
+        "guidance": "Cite source material explicitly and distinguish observations from inference.",
     },
 }
 
@@ -100,14 +105,15 @@ def normalize_primary_artifact(artifact: Any) -> Optional[Dict[str, Any]]:
     if document_id:
         normalized["document_id"] = document_id
 
-    for key in ("filename", "mime_type", "summary"):
+    for key in ("filename", "mime_type", "summary", "preview_url", "storage_path"):
         value = artifact.get(key)
         if isinstance(value, str) and value.strip():
             normalized[key] = value.strip()
 
-    size_bytes = artifact.get("size_bytes")
-    if isinstance(size_bytes, int) and size_bytes >= 0:
-        normalized["size_bytes"] = size_bytes
+    for key in ("size_bytes", "width", "height"):
+        value = artifact.get(key)
+        if isinstance(value, int) and value >= 0:
+            normalized[key] = value
 
     return normalized
 
@@ -226,6 +232,7 @@ def build_session_context_block(
         f"- Focus: {session_meta['focus']}\n"
         "PRIMARY ARTIFACTS:\n"
         f"{chr(10).join(artifact_lines)}\n"
+        f"REVIEW GUIDANCE:\n- {session_meta['guidance']}\n"
         "Treat the workspace type and primary artifacts as the default frame for analysis."
     )
 

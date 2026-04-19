@@ -73,12 +73,19 @@ DATA_DIR = "data/conversations"
 # Data directory for extracted document storage
 DOCUMENTS_DIR = "data/documents"
 
+# Data directory for uploaded image artifacts
+ARTIFACT_FILES_DIR = "data/artifacts"
+
 # Database Configuration
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # PDF upload limits
 PDF_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 PDF_MAX_FILES_PER_CONVERSATION = 5
+
+# Image upload limits
+IMAGE_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
+IMAGE_MAX_FILES_PER_CONVERSATION = 5
 
 # Chunking + retrieval config
 CHUNK_WORDS = 200

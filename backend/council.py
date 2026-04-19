@@ -25,6 +25,25 @@ DEFAULT_MODEL_PERFORMANCE = 0.5
 MIN_CONFIDENCE_WEIGHT = 0.25
 
 
+def _content_to_text(content: Any) -> str:
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text")
+            if isinstance(text, dict):
+                text = text.get("value") or text.get("text")
+            if isinstance(text, str) and text:
+                parts.append(text)
+        return "\n".join(parts).strip()
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    return str(content)
+
+
 def _apply_retrieval_context(messages: List[Dict[str, str]], retrieval_context: Optional[str]) -> List[Dict[str, str]]:
     if not retrieval_context:
         return messages
@@ -525,7 +544,11 @@ async def run_full_council(
     """
     # Extract latest user query for Stage 2/3 context
     # Assuming the last message is from the user
-    latest_query = messages[-1]['content'] if messages and messages[-1]['role'] == 'user' else "Unknown Query"
+    latest_query = (
+        _content_to_text(messages[-1].get("content"))
+        if messages and messages[-1]["role"] == "user"
+        else "Unknown Query"
+    )
 
     # Use provided models or fallback to config defaults
     requested_council_models = list(council_models) if council_models else []

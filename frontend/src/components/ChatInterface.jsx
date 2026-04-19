@@ -16,6 +16,7 @@ export default function ChatInterface({
   conversation,
   onSendMessage,
   onRetryFailedModels,
+  onConversationRefresh,
   isLoading,
   isMobile = false,
   isNavigatorOpen = false,
@@ -312,6 +313,7 @@ export default function ChatInterface({
           primaryArtifacts={conversation.primary_artifacts}
           isLoading={isLoading}
           onSendMessage={onSendMessage}
+          onConversationRefresh={onConversationRefresh}
         />
       </div>
 

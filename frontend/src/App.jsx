@@ -59,6 +59,11 @@ function App() {
     }
   }, []);
 
+  const handleRefreshCurrentConversation = useCallback(async () => {
+    if (!currentConversationId) return;
+    await loadConversation(currentConversationId);
+  }, [currentConversationId, loadConversation]);
+
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < mobileBreakpoint;
@@ -552,6 +557,7 @@ function App() {
             conversation={currentConversation}
             onSendMessage={handleSendMessage}
             onRetryFailedModels={handleRetryFailedModels}
+            onConversationRefresh={handleRefreshCurrentConversation}
             isLoading={isLoading}
             isMobile={isMobile}
             isNavigatorOpen={isNavigatorOpen}

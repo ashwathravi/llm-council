@@ -14,6 +14,48 @@ const getAuthHeaders = () => {
   };
 };
 
+const uploadFiles = (url, files, onProgress, errorMessage) => {
+  const formData = new FormData();
+  files.forEach(file => formData.append('files', file));
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(event.loaded / event.total);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch {
+          reject(new Error('Failed to parse upload response'));
+        }
+        return;
+      }
+
+      try {
+        const payload = JSON.parse(xhr.responseText);
+        reject(new Error(payload.detail || errorMessage));
+      } catch {
+        reject(new Error(errorMessage));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error(errorMessage));
+    xhr.send(formData);
+  });
+};
+
 export const api = {
   /**
    * Get public auth configuration.
@@ -86,6 +128,14 @@ export const api = {
       throw new Error('Failed to get status');
     }
     return response.json();
+  },
+
+  resolveUrl(path) {
+    if (!path) return path;
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    return `${API_BASE}${path}`;
   },
 
   /**
@@ -339,39 +389,21 @@ export const api = {
    * Upload PDF documents with progress callback.
    */
   uploadDocuments(conversationId, files, onProgress) {
-    const formData = new FormData();
-    files.forEach(file => formData.append('files', file));
+    return uploadFiles(
+      `${API_BASE}/api/conversations/${conversationId}/documents`,
+      files,
+      onProgress,
+      'Failed to upload documents'
+    );
+  },
 
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API_BASE}/api/conversations/${conversationId}/documents`);
-
-      const token = localStorage.getItem('auth_token');
-      if (token) {
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-      }
-
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable && onProgress) {
-          onProgress(event.loaded / event.total);
-        }
-      };
-
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            resolve(JSON.parse(xhr.responseText));
-          } catch {
-            reject(new Error('Failed to parse upload response'));
-          }
-        } else {
-          reject(new Error('Failed to upload documents'));
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Failed to upload documents'));
-      xhr.send(formData);
-    });
+  uploadImageArtifacts(conversationId, files, onProgress) {
+    return uploadFiles(
+      `${API_BASE}/api/conversations/${conversationId}/artifacts/images`,
+      files,
+      onProgress,
+      'Failed to upload images'
+    );
   },
 
   /**
@@ -387,6 +419,20 @@ export const api = {
     );
     if (!response.ok) {
       throw new Error('Failed to delete document');
+    }
+    return response.json();
+  },
+
+  async deleteImageArtifact(conversationId, artifactId) {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/artifacts/images/${artifactId}`,
+      {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      }
+    );
+    if (!response.ok) {
+      throw new Error('Failed to delete image');
     }
     return response.json();
   },

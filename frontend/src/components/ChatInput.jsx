@@ -1,5 +1,4 @@
-
-import React, { memo, useState, useEffect, useRef } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { logger } from '@/lib/logger';
 import { cn } from "@/lib/utils";
@@ -7,21 +6,34 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
-import { Paperclip, Send, X, FileText, Loader2 } from "lucide-react";
+import { FileImage, FileText, Loader2, Paperclip, Send, X } from "lucide-react";
 import { getPrimaryArtifactCount, getSessionTypeLabel, SESSION_TYPE_PLACEHOLDERS } from '@/lib/sessionMetadata';
 
-const ChatInput = memo(({ conversationId, sessionType = 'general', primaryArtifacts = [], isLoading, onSendMessage }) => {
+const ChatInput = memo(({
+  conversationId,
+  sessionType = 'general',
+  primaryArtifacts = [],
+  isLoading,
+  onSendMessage,
+  onConversationRefresh,
+}) => {
   const [input, setInput] = useState('');
-  const [documents, setDocuments] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
 
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const isVisualReview = sessionType === 'visual_review';
   const primaryArtifactCount = getPrimaryArtifactCount(primaryArtifacts);
   const sessionTypeLabel = getSessionTypeLabel(sessionType);
   const inputPlaceholder = SESSION_TYPE_PLACEHOLDERS[sessionType] || SESSION_TYPE_PLACEHOLDERS.general;
+  const displayedArtifacts = useMemo(
+    () => (Array.isArray(primaryArtifacts) ? primaryArtifacts : []).filter((artifact) =>
+      artifact?.kind === (isVisualReview ? 'image' : 'document')
+    ),
+    [isVisualReview, primaryArtifacts]
+  );
 
   // Auto-resize textarea
   useEffect(() => {
@@ -30,28 +42,6 @@ const ChatInput = memo(({ conversationId, sessionType = 'general', primaryArtifa
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
   }, [input]);
-
-  // Load documents
-  useEffect(() => {
-    setUploadError('');
-    setUploading(false);
-    setUploadProgress(0);
-    if (!conversationId) {
-      setDocuments([]);
-      return;
-    }
-
-    const loadDocuments = async () => {
-      try {
-        const docs = await api.listDocuments(conversationId);
-        setDocuments(docs);
-      } catch (error) {
-        logger.error('Failed to load documents:', error);
-      }
-    };
-
-    loadDocuments();
-  }, [conversationId]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -89,8 +79,8 @@ const ChatInput = memo(({ conversationId, sessionType = 'general', primaryArtifa
 
     if (!files.length || !conversationId) return;
 
-    if (documents.length + files.length > 5) {
-      setUploadError('Max 5 PDFs per session.');
+    if (displayedArtifacts.length + files.length > 5) {
+      setUploadError(isVisualReview ? 'Max 5 images per session.' : 'Max 5 PDFs per session.');
       return;
     }
 
@@ -99,7 +89,8 @@ const ChatInput = memo(({ conversationId, sessionType = 'general', primaryArtifa
     setUploadProgress(0);
 
     try {
-      const response = await api.uploadDocuments(conversationId, files, (progress) => {
+      const upload = isVisualReview ? api.uploadImageArtifacts : api.uploadDocuments;
+      const response = await upload(conversationId, files, (progress) => {
         setUploadProgress(Math.round(progress * 100));
       });
 
@@ -108,25 +99,28 @@ const ChatInput = memo(({ conversationId, sessionType = 'general', primaryArtifa
         setUploadError(errorText);
       }
 
-      const updatedDocuments = await api.listDocuments(conversationId);
-      setDocuments(updatedDocuments);
+      await onConversationRefresh?.();
     } catch (error) {
       logger.error('Upload failed:', error);
-      setUploadError('Failed to upload documents.');
+      setUploadError(error instanceof Error ? error.message : `Failed to upload ${isVisualReview ? 'images' : 'documents'}.`);
     } finally {
       setUploading(false);
       setUploadProgress(0);
     }
   };
 
-  const handleDeleteDocument = async (documentId) => {
+  const handleDeleteArtifact = async (artifact) => {
     if (!conversationId) return;
     try {
-      await api.deleteDocument(conversationId, documentId);
-      const updatedDocuments = await api.listDocuments(conversationId);
-      setDocuments(updatedDocuments);
-    } catch {
-      setUploadError('Failed to remove document.');
+      if (isVisualReview) {
+        await api.deleteImageArtifact(conversationId, artifact.id);
+      } else if (artifact?.document_id) {
+        await api.deleteDocument(conversationId, artifact.document_id);
+      }
+      await onConversationRefresh?.();
+    } catch (error) {
+      logger.error('Failed to remove artifact:', error);
+      setUploadError(`Failed to remove ${isVisualReview ? 'image' : 'document'}.`);
     }
   };
 
@@ -141,29 +135,53 @@ const ChatInput = memo(({ conversationId, sessionType = 'general', primaryArtifa
           <div className="text-xs text-destructive bg-destructive/10 p-2 rounded">{uploadError}</div>
         )}
 
-        {/* Document List */}
-        {(documents.length > 0 || uploading) && (
+        {/* Artifact List */}
+        {(displayedArtifacts.length > 0 || uploading) && (
           <TooltipProvider>
             <div className="flex flex-wrap gap-2">
-              {documents.map((doc) => (
-                <Badge key={doc.id} variant="secondary" className="pl-2 pr-1 py-1 gap-2 h-7 font-normal">
-                  <FileText className="h-3 w-3 text-muted-foreground" />
-                  <span className="truncate max-w-[150px]">{doc.filename}</span>
-                  <span className="text-xs text-muted-foreground ml-1">{formatBytes(doc.size_bytes)}</span>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteDocument(doc.id)}
-                        className="ml-1 rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        aria-label={`Remove ${doc.filename}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>Remove document</TooltipContent>
-                  </Tooltip>
-                </Badge>
+              {displayedArtifacts.map((artifact) => (
+                isVisualReview ? (
+                  <div key={artifact.id} className="group relative h-20 w-20 overflow-hidden rounded-md border bg-muted/20">
+                    {artifact.preview_url ? (
+                      <img
+                        src={api.resolveUrl(artifact.preview_url)}
+                        alt={artifact.label || artifact.filename || 'Uploaded image'}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                        <FileImage className="h-5 w-5" />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteArtifact(artifact)}
+                      className="absolute right-1 top-1 rounded-full bg-background/90 p-1 text-foreground shadow-sm opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={`Remove ${artifact.label || artifact.filename || 'image'}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <Badge key={artifact.id} variant="secondary" className="pl-2 pr-1 py-1 gap-2 h-7 font-normal">
+                    <FileText className="h-3 w-3 text-muted-foreground" />
+                    <span className="truncate max-w-[150px]">{artifact.label || artifact.filename}</span>
+                    <span className="text-xs text-muted-foreground ml-1">{formatBytes(artifact.size_bytes)}</span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteArtifact(artifact)}
+                          className="ml-1 rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          aria-label={`Remove ${artifact.label || artifact.filename}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Remove document</TooltipContent>
+                    </Tooltip>
+                  </Badge>
+                )
               ))}
 
               {uploading && (
@@ -199,7 +217,7 @@ const ChatInput = memo(({ conversationId, sessionType = 'general', primaryArtifa
                   aria-disabled={!conversationId || uploading}
                 >
                   <Paperclip className="h-4 w-4" />
-                  <span className="sr-only">Attach PDF artifact</span>
+                  <span className="sr-only">{isVisualReview ? 'Attach image artifact' : 'Attach PDF artifact'}</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -207,7 +225,9 @@ const ChatInput = memo(({ conversationId, sessionType = 'general', primaryArtifa
                   ? "Start a session to attach files"
                   : uploading
                     ? "Uploading..."
-                    : "Attach PDF artifact (Max 5)"}
+                    : isVisualReview
+                      ? "Attach image artifact (Max 5)"
+                      : "Attach PDF artifact (Max 5)"}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -215,7 +235,7 @@ const ChatInput = memo(({ conversationId, sessionType = 'general', primaryArtifa
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/pdf"
+            accept={isVisualReview ? 'image/png,image/jpeg,image/gif,image/webp' : 'application/pdf'}
             multiple
             className="hidden"
             onChange={handleFilesSelected}

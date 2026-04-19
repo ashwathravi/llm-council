@@ -87,6 +87,12 @@ const CouncilConfigDialog = ({
   const [activePresetId, setActivePresetId] = useState(null);
   const [memberView, setMemberView] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const isVisualReview = selectedSessionType === 'visual_review';
+
+  const visionCapableModelIds = useMemo(
+    () => new Set(models.filter((model) => model.supports_vision).map((model) => model.id)),
+    [models]
+  );
 
   const favoriteModelSet = useMemo(() => new Set(favoriteModels), [favoriteModels]);
 
@@ -120,6 +126,17 @@ const CouncilConfigDialog = ({
 
   const getModelName = (modelId) => models.find((model) => model.id === modelId)?.name || modelId;
 
+  const filterCouncilModelsForSession = (modelIds, sessionType) => {
+    if (sessionType !== 'visual_review') return modelIds;
+    return modelIds.filter((modelId) => visionCapableModelIds.has(modelId));
+  };
+
+  const applySessionType = (nextSessionType) => {
+    setSelectedSessionType(nextSessionType);
+    setCouncilModels(filterCouncilModelsForSession(councilModels, nextSessionType));
+    setActivePresetId(null);
+  };
+
   const applySavedPreset = (preset) => {
     setActivePresetId(preset.id);
 
@@ -129,9 +146,12 @@ const CouncilConfigDialog = ({
     const requestedCouncilModels = Array.isArray(preset.councilModels) ? preset.councilModels : [];
 
     const availableModelIds = new Set(models.map((model) => model.id));
-    const validCouncilModels = requestedCouncilModels
+    const validCouncilModels = filterCouncilModelsForSession(
+      requestedCouncilModels
       .filter((modelId) => availableModelIds.has(modelId))
-      .slice(0, maxCouncilModels);
+      .slice(0, maxCouncilModels),
+      nextSessionType
+    );
 
     setSelectedSessionType(nextSessionType);
     setSelectedFramework(nextFramework);
@@ -142,6 +162,9 @@ const CouncilConfigDialog = ({
 
   const toggleModel = (modelId) => {
     setActivePresetId(null);
+    if (isVisualReview && !visionCapableModelIds.has(modelId)) {
+      return;
+    }
 
     if (councilModels.includes(modelId)) {
       const updatedModels = councilModels.filter((id) => id !== modelId);
@@ -185,18 +208,24 @@ const CouncilConfigDialog = ({
       const isActive = councilModels.includes(model.id);
       const isChairman = chairmanModel === model.id;
       const isFavorite = favoriteModelSet.has(model.id);
+      const supportsVision = Boolean(model.supports_vision);
+      const isSelectionDisabled = isVisualReview && !supportsVision;
 
       return (
         <div key={model.id} className="flex items-center justify-between gap-3 p-3 border-b last:border-0 hover:bg-muted/30 transition-colors">
           <div className="flex items-center gap-3 min-w-0">
             <Switch
               checked={isActive}
+              disabled={isSelectionDisabled}
               onCheckedChange={() => toggleModel(model.id)}
               aria-label={`Select ${model.name}`}
             />
             <div className="min-w-0">
               <div className="text-sm font-medium flex items-center gap-2">
                 <span className="truncate">{model.name}</span>
+                <Badge variant={supportsVision ? 'secondary' : 'outline'} className="h-5 px-1.5 text-[10px]">
+                  {supportsVision ? 'Vision' : 'Text-only'}
+                </Badge>
                 {isChairman && (
                   <Badge variant="default" className="bg-amber-500 hover:bg-amber-600 text-white h-5 px-1.5 gap-0.5">
                     <Crown className="h-3 w-3" /> Chairman
@@ -351,18 +380,14 @@ const CouncilConfigDialog = ({
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      setSelectedSessionType(type.id);
-                      setActivePresetId(null);
+                      applySessionType(type.id);
                     }
                   }}
                   className={cn(
                     'cursor-pointer hover:bg-accent/50 transition-colors relative focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none',
                     selectedSessionType === type.id ? 'border-primary bg-accent/20' : ''
                   )}
-                  onClick={() => {
-                    setSelectedSessionType(type.id);
-                    setActivePresetId(null);
-                  }}
+                  onClick={() => applySessionType(type.id)}
                 >
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-2 mb-1">
@@ -418,6 +443,12 @@ const CouncilConfigDialog = ({
               <h3 className="text-sm font-semibold text-muted-foreground">Council Members</h3>
               <div className="text-xs text-muted-foreground">{councilModels.length}/{maxCouncilModels} Active</div>
             </div>
+
+            {isVisualReview && (
+              <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
+                Visual Review only enables vision-capable council members during Stage 1. Text-only models stay available as Chairman if you want them to synthesize the review.
+              </div>
+            )}
 
             <div className="relative">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />

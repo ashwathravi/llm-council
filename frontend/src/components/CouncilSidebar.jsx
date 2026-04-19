@@ -345,6 +345,20 @@ const CouncilSidebar = memo(({
     setChairmanModel(nextChairmanModel);
   };
 
+  const handleSessionTypeChange = (nextSessionType) => {
+    setSelectedSessionType(nextSessionType);
+    if (nextSessionType !== 'visual_review') {
+      return;
+    }
+
+    const visionCapableModelIds = new Set(
+      models.filter((model) => model.supports_vision).map((model) => model.id)
+    );
+    setCouncilModels((currentCouncilModels) =>
+      currentCouncilModels.filter((modelId) => visionCapableModelIds.has(modelId))
+    );
+  };
+
   const openCreateConfigDialog = (view) => {
     setConfigDialogMode('create');
     setConfigDialogView(view);
@@ -612,7 +626,7 @@ const CouncilSidebar = memo(({
         isStartingSession={isCreatingSession}
         models={models}
         selectedSessionType={selectedSessionType}
-        setSelectedSessionType={setSelectedSessionType}
+        setSelectedSessionType={handleSessionTypeChange}
         selectedFramework={selectedFramework}
         setSelectedFramework={setSelectedFramework}
         councilModels={councilModels}
