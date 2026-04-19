@@ -22,7 +22,8 @@ from .council import (
     run_full_council, generate_conversation_title,
     stage1_collect_responses, stage1_collect_responses_six_hats,
     stage2_collect_rankings, stage2_collect_critiques,
-    stage3_synthesize_final, calculate_aggregate_rankings, calculate_aggregate_rubrics, resolve_active_models,
+    stage3_synthesize_final, calculate_aggregate_rankings, calculate_aggregate_rubrics,
+    extract_visual_findings_from_response, resolve_active_models,
     build_model_weight_profile, apply_round_to_model_profiles, serialize_model_weight_profile
 )
 from . import export
@@ -949,6 +950,7 @@ async def send_message(
         chairman_model=chairman_model,
         session_type=conversation.get("session_type"),
         specialist_template_id=conversation.get("specialist_template_id"),
+        primary_artifacts=conversation.get("primary_artifacts"),
         retrieval_context=effective_context,
         retrieval_citations=citations,
         conversation_messages=conversation.get("messages")
@@ -1044,6 +1046,7 @@ async def _rerun_stage2_and_stage3(
     chairman_model: Optional[str],
     session_type: Optional[str],
     specialist_template_id: Optional[str],
+    primary_artifacts: Optional[List[Dict[str, Any]]],
     retrieval_context: str,
     conversation_messages: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
@@ -1109,6 +1112,13 @@ async def _rerun_stage2_and_stage3(
     if not full_stage3_response.strip():
         raise RuntimeError("The chairman model returned an empty response.")
 
+    visual_findings: List[Dict[str, Any]] = []
+    if session_type == "visual_review":
+        full_stage3_response, visual_findings = extract_visual_findings_from_response(
+            full_stage3_response,
+            primary_artifacts=primary_artifacts,
+        )
+
     stage3_result = {
         "model": chairman_model or config.CHAIRMAN_MODEL,
         "response": full_stage3_response
@@ -1120,6 +1130,7 @@ async def _rerun_stage2_and_stage3(
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
         "aggregate_rubrics": aggregate_rubrics,
+        "visual_findings": visual_findings,
         "model_weight_profile": serialize_model_weight_profile(updated_model_profiles, effective_models)
         if framework == "heterogeneous" else [],
         "ballot_weighting": {
@@ -1342,6 +1353,7 @@ async def retry_failed_stage1_models(
                     chairman_model=active_chairman_model,
                     session_type=conversation.get("session_type"),
                     specialist_template_id=conversation.get("specialist_template_id"),
+                    primary_artifacts=conversation.get("primary_artifacts"),
                     retrieval_context=effective_context,
                     conversation_messages=messages[:message_index]
                 )
@@ -1350,6 +1362,7 @@ async def retry_failed_stage1_models(
                 metadata["label_to_model"] = refreshed_data["label_to_model"]
                 metadata["aggregate_rankings"] = refreshed_data["aggregate_rankings"]
                 metadata["aggregate_rubrics"] = refreshed_data["aggregate_rubrics"]
+                metadata["visual_findings"] = refreshed_data["visual_findings"]
                 if refreshed_data.get("model_weight_profile"):
                     metadata["model_weight_profile"] = refreshed_data["model_weight_profile"]
                 if refreshed_data.get("ballot_weighting"):
@@ -1571,6 +1584,13 @@ async def send_message_stream(
 
             if not full_stage3_response.strip():
                 raise RuntimeError("The chairman model returned an empty response.")
+
+            visual_findings: List[Dict[str, Any]] = []
+            if conversation.get("session_type") == "visual_review":
+                full_stage3_response, visual_findings = extract_visual_findings_from_response(
+                    full_stage3_response,
+                    primary_artifacts=conversation.get("primary_artifacts"),
+                )
             
             stage3_result = {
                 "model": chairman_model or config.CHAIRMAN_MODEL,
@@ -1598,6 +1618,7 @@ async def send_message_stream(
                 "label_to_model": label_to_model,
                 "aggregate_rankings": aggregate_rankings,
                 "aggregate_rubrics": aggregate_rubrics,
+                "visual_findings": visual_findings,
                 "stage1_errors": stage1_errors,
                 "session_type": conversation.get("session_type", DEFAULT_SESSION_TYPE),
                 "specialist_template_id": conversation.get("specialist_template_id"),

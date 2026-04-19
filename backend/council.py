@@ -1,6 +1,7 @@
 """3-stage LLM Council orchestration."""
 
 from collections import defaultdict
+import json
 import re
 from typing import List, Dict, Any, Tuple, Optional
 from .openrouter import query_models_parallel, query_model, query_model_stream
@@ -22,6 +23,10 @@ RESPONSE_LABEL_RE = re.compile(r'Response\s+([A-Z])', re.IGNORECASE)
 CONFIDENCE_RE = re.compile(r'^\s*CONFIDENCE\s*:\s*(\d{1,3})\s*$', re.IGNORECASE | re.MULTILINE)
 RUBRIC_RESPONSE_RE = re.compile(r'^\s*(Response [A-Z])\s*:?\s*$', re.IGNORECASE)
 RUBRIC_SCORE_RE = re.compile(r'^\s*-\s*([A-Za-z][A-Za-z ]*[A-Za-z])\s*:\s*(\d{1,2})\s*$')
+VISUAL_FINDINGS_BLOCK_RE = re.compile(
+    r'VISUAL FINDINGS JSON:\s*```(?:json)?\s*(.*?)\s*```',
+    re.IGNORECASE | re.DOTALL,
+)
 
 DEFAULT_CONFIDENCE_SCORE = 50
 DEFAULT_MODEL_PERFORMANCE = 0.5
@@ -391,6 +396,102 @@ def _build_rubric_summary_block(aggregate_rubrics: Optional[List[Dict[str, Any]]
         + "\n".join(lines)
         + "\nUse rubric strengths, weak areas, and disagreement hotspots when they materially change the conclusion.\n"
     )
+
+
+def _normalize_visual_percent(
+    value: Any,
+    *,
+    fallback: float,
+    minimum: float = 0.0,
+    maximum: float = 100.0,
+) -> float:
+    if not isinstance(value, (int, float)):
+        return fallback
+    return max(minimum, min(maximum, float(value)))
+
+
+def extract_visual_findings_from_response(
+    response_text: str,
+    primary_artifacts: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[str, List[Dict[str, Any]]]:
+    if not isinstance(response_text, str) or not response_text.strip():
+        return "", []
+
+    match = VISUAL_FINDINGS_BLOCK_RE.search(response_text)
+    if not match:
+        return response_text.strip(), []
+
+    try:
+        payload = json.loads(match.group(1))
+    except Exception:
+        return response_text.strip(), []
+
+    if not isinstance(payload, list):
+        return response_text.strip(), []
+
+    image_artifacts = [
+        artifact
+        for artifact in (primary_artifacts or [])
+        if isinstance(artifact, dict) and artifact.get("kind") == "image"
+    ]
+    artifact_by_label = {}
+    for artifact in image_artifacts:
+        for key in ("label", "filename"):
+            value = artifact.get(key)
+            if isinstance(value, str) and value.strip():
+                artifact_by_label[value.strip().lower()] = artifact
+
+    findings: List[Dict[str, Any]] = []
+    for index, item in enumerate(payload, start=1):
+        if not isinstance(item, dict):
+            continue
+
+        artifact_label_value = item.get("artifact_label") or item.get("image") or item.get("artifact")
+        artifact = None
+        if isinstance(artifact_label_value, str):
+            artifact = artifact_by_label.get(artifact_label_value.strip().lower())
+        if artifact is None:
+            continue
+
+        title = str(item.get("title") or item.get("issue") or "").strip()
+        comment = str(item.get("comment") or item.get("description") or "").strip()
+        if not title and not comment:
+            continue
+
+        severity = str(item.get("severity") or "medium").strip().lower()
+        if severity not in {"low", "medium", "high"}:
+            severity = "medium"
+
+        width = _normalize_visual_percent(
+            item.get("w") if item.get("w") is not None else item.get("width"),
+            fallback=12.0,
+            minimum=6.0,
+        )
+        height = _normalize_visual_percent(
+            item.get("h") if item.get("h") is not None else item.get("height"),
+            fallback=10.0,
+            minimum=6.0,
+        )
+        x = _normalize_visual_percent(item.get("x"), fallback=50.0, maximum=100.0 - width)
+        y = _normalize_visual_percent(item.get("y"), fallback=50.0, maximum=100.0 - height)
+
+        findings.append({
+            "id": f"visual-finding-{index}",
+            "artifact_id": artifact.get("id"),
+            "artifact_label": artifact.get("label") or artifact.get("filename") or "Image",
+            "title": title or comment[:80] or f"Finding {index}",
+            "comment": comment or title,
+            "severity": severity,
+            "x": round(x, 2),
+            "y": round(y, 2),
+            "w": round(width, 2),
+            "h": round(height, 2),
+        })
+
+    cleaned_response = (
+        response_text[:match.start()] + response_text[match.end():]
+    ).strip()
+    return cleaned_response or response_text.strip(), findings
 
 
 def _fallback_title_from_query(user_query: str) -> str:
@@ -814,6 +915,7 @@ async def run_full_council(
     chairman_model: str = None,
     session_type: Optional[str] = None,
     specialist_template_id: Optional[str] = None,
+    primary_artifacts: Optional[List[Dict[str, Any]]] = None,
     retrieval_context: Optional[str] = None,
     retrieval_citations: Optional[List[Dict[str, Any]]] = None,
     conversation_messages: Optional[List[Dict[str, Any]]] = None
@@ -929,6 +1031,13 @@ async def run_full_council(
     ):
         stage3_text += chunk
 
+    visual_findings: List[Dict[str, Any]] = []
+    if session_type == "visual_review":
+        stage3_text, visual_findings = extract_visual_findings_from_response(
+            stage3_text,
+            primary_artifacts=primary_artifacts,
+        )
+
     stage3_result = {
         "model": active_chairman_model,
         "response": stage3_text,
@@ -944,6 +1053,7 @@ async def run_full_council(
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
         "aggregate_rubrics": aggregate_rubrics,
+        "visual_findings": visual_findings,
         "stage1_errors": stage1_errors,
         "retrieval": {"citations": retrieval_citations or []},
     }
@@ -1150,6 +1260,17 @@ async def stage3_synthesize_final(
                 )
         weighted_consensus_block = "WEIGHTED CONSENSUS SUMMARY:\n" + "\n".join(summary_lines) + "\n"
     rubric_summary_block = _build_rubric_summary_block(aggregate_rubrics)
+    visual_findings_block = ""
+    if session_type == "visual_review":
+        visual_findings_block = """VISUAL FINDINGS APPENDIX:
+- After the main answer, append a fenced JSON block introduced by the exact heading "VISUAL FINDINGS JSON:".
+- Return an array of up to 6 findings.
+- Each finding must include: artifact_label, title, comment, severity, x, y, w, h.
+- Use the exact image labels from the PRIMARY ARTIFACTS list.
+- Coordinates must be normalized percentages from 0 to 100. x/y are the top-left corner. w/h are region size percentages.
+- Severity must be one of low, medium, or high.
+- If there are no concrete visual findings, return an empty array.
+"""
 
     deliverable_spec = get_deliverable_spec(session_type, specialist_template_id)
     deliverable_block = (
@@ -1172,6 +1293,7 @@ STAGE 1 - Individual Responses:
 
 {weighted_consensus_block}
 {rubric_summary_block}
+{visual_findings_block}
 {deliverable_block}
 
 Your task: {instruction}

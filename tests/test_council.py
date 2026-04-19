@@ -127,6 +127,27 @@ async def test_stage3_synthesis_includes_rubric_summary():
     assert "Performance spread 2.0" in prompt
 
 
+@pytest.mark.asyncio
+async def test_stage3_synthesis_visual_review_requests_visual_findings_json():
+    async def mock_stream(*args, **kwargs):
+        yield "Final"
+
+    with patch("backend.council.query_model_stream", side_effect=mock_stream) as mock_stream_fn:
+        async for _token in council.stage3_synthesize_final(
+            "Review this mockup",
+            [{"model": "gpt-4", "response": "Resp"}],
+            [{"model": "claude-3", "ranking": "Feedback"}],
+            "chairman-model",
+            session_type="visual_review",
+        ):
+            pass
+
+    prompt = mock_stream_fn.call_args.args[1][0]["content"]
+    assert "VISUAL FINDINGS JSON" in prompt
+    assert "artifact_label" in prompt
+    assert "Coordinates must be normalized percentages" in prompt
+
+
 def test_parse_confidence_from_text():
     assert council.parse_confidence_from_text("FINAL RANKING:\n1. Response A\nCONFIDENCE: 82") == 82
     assert council.parse_confidence_from_text("confidence: 150") == 100
@@ -192,6 +213,49 @@ def test_calculate_aggregate_rubrics_summarizes_scores():
     correctness = next(item for item in aggregate[0]["criteria"] if item["key"] == "correctness")
     assert correctness["average_score"] == 4.5
     assert correctness["spread"] == 1
+
+
+def test_extract_visual_findings_from_response_strips_json_appendix():
+    response = """Summary of the design issues.
+
+VISUAL FINDINGS JSON:
+```json
+[
+  {
+    "artifact_label": "mockup-a.png",
+    "title": "CTA lacks contrast",
+    "comment": "The primary button blends into the card background.",
+    "severity": "high",
+    "x": 62,
+    "y": 18,
+    "w": 20,
+    "h": 12
+  }
+]
+```"""
+
+    cleaned, findings = council.extract_visual_findings_from_response(
+        response,
+        primary_artifacts=[
+            {"id": "img-a", "kind": "image", "label": "mockup-a.png"},
+        ],
+    )
+
+    assert cleaned == "Summary of the design issues."
+    assert findings == [
+        {
+            "id": "visual-finding-1",
+            "artifact_id": "img-a",
+            "artifact_label": "mockup-a.png",
+            "title": "CTA lacks contrast",
+            "comment": "The primary button blends into the card background.",
+            "severity": "high",
+            "x": 62.0,
+            "y": 18.0,
+            "w": 20.0,
+            "h": 12.0,
+        }
+    ]
 
 
 @pytest.mark.asyncio

@@ -5,8 +5,9 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Trophy, Crown, BrainCircuit, GitCompareArrows, RotateCcw, RefreshCw } from "lucide-react";
+import { AlertTriangle, Trophy, Crown, BrainCircuit, FileImage, GitCompareArrows, RotateCcw, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import VisualReviewPanel from './VisualReviewPanel';
 
 // ⚡ Bolt: Memoize markdown rendering to prevent re-parsing on every parent re-render
 const MarkdownContent = memo(({ content }) => (
@@ -394,6 +395,13 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
   const modelWeightProfile = Array.isArray(metadata?.model_weight_profile)
     ? metadata.model_weight_profile
     : [];
+  const visualArtifacts = Array.isArray(metadata?.primary_artifacts)
+    ? metadata.primary_artifacts.filter((artifact) => artifact?.kind === 'image' && artifact?.preview_url)
+    : EMPTY_LIST;
+  const visualFindings = Array.isArray(metadata?.visual_findings)
+    ? metadata.visual_findings
+    : EMPTY_LIST;
+  const hasVisualReviewTab = metadata?.session_type === 'visual_review' && visualArtifacts.length > 0;
 
   const requestedCouncilModels = Array.isArray(metadata?.requested_council_models)
     ? metadata.requested_council_models
@@ -522,6 +530,12 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
                 Rankings
               </TabsTrigger>
             )}
+            {hasVisualReviewTab && (
+              <TabsTrigger value="visual" className="gap-2">
+                <FileImage className="h-3.5 w-3.5 text-sky-500" />
+                Visual
+              </TabsTrigger>
+            )}
             {hasComparisonDiff && (
               <TabsTrigger value="diff" className="gap-2">
                 <GitCompareArrows className="h-3.5 w-3.5 text-sky-500" />
@@ -612,6 +626,10 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
               framework={metadata?.framework}
               modelWeightProfile={modelWeightProfile}
             />
+          </TabsContent>
+
+          <TabsContent value="visual" className="m-0 focus-visible:ring-0">
+            <VisualReviewPanel artifacts={visualArtifacts} findings={visualFindings} />
           </TabsContent>
 
           <TabsContent value="diff" className="m-0 focus-visible:ring-0">
