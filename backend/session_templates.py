@@ -14,6 +14,8 @@ SESSION_TEMPLATES: Dict[str, Dict[str, object]] = {
         "council_lenses": ["UX reviewer", "Visual designer", "Accessibility reviewer", "Product manager", "Brand reviewer"],
         "evaluation_criteria": ["Hierarchy", "Clarity", "Affordances", "Accessibility", "Consistency", "Task flow"],
         "synthesis_instruction": "Prioritize the most consequential issues, explain the user impact, and suggest practical design fixes.",
+        "deliverable_format": "Design critique output",
+        "deliverable_instruction": "Use sections titled Summary, What's Working, Issues by Priority, and Recommended Fixes.",
     },
     "visual_accessibility_review": {
         "id": "visual_accessibility_review",
@@ -24,6 +26,8 @@ SESSION_TEMPLATES: Dict[str, Dict[str, object]] = {
         "council_lenses": ["Accessibility reviewer", "UX reviewer", "QA reviewer", "Product manager"],
         "evaluation_criteria": ["Contrast", "Legibility", "Focus order", "Touch targets", "State visibility", "Error prevention"],
         "synthesis_instruction": "Call out accessibility defects first, note severity, and separate blockers from polish issues.",
+        "deliverable_format": "UX fixes list",
+        "deliverable_instruction": "Use sections titled Accessibility Risks, High-Priority Fixes, and Follow-up Improvements.",
     },
     "visual_pm_review": {
         "id": "visual_pm_review",
@@ -34,6 +38,8 @@ SESSION_TEMPLATES: Dict[str, Dict[str, object]] = {
         "council_lenses": ["Product manager", "UX reviewer", "Brand reviewer", "Growth reviewer"],
         "evaluation_criteria": ["Intent clarity", "Decision friction", "Value communication", "Trust", "CTA strength"],
         "synthesis_instruction": "Summarize the top product risks, expected user confusion, and the highest-leverage next design changes.",
+        "deliverable_format": "UX fixes list",
+        "deliverable_instruction": "Use sections titled Product Readout, Top UX Fixes, and Suggested Experiments.",
     },
     "code_senior_review": {
         "id": "code_senior_review",
@@ -44,6 +50,8 @@ SESSION_TEMPLATES: Dict[str, Dict[str, object]] = {
         "council_lenses": ["Senior engineer", "Maintainer", "QA reviewer", "Architect"],
         "evaluation_criteria": ["Correctness", "Regression risk", "Maintainability", "Tests", "Clarity"],
         "synthesis_instruction": "Return a findings-first review, ordered by severity, with clear file and line references when available.",
+        "deliverable_format": "PR review summary",
+        "deliverable_instruction": "Use sections titled Findings, Open Questions, and Recommended Next Steps. Put findings first.",
     },
     "code_security_review": {
         "id": "code_security_review",
@@ -54,6 +62,8 @@ SESSION_TEMPLATES: Dict[str, Dict[str, object]] = {
         "council_lenses": ["Security reviewer", "Senior engineer", "Maintainer"],
         "evaluation_criteria": ["Input validation", "Auth and authz", "Secrets handling", "Trust boundaries", "Abuse cases"],
         "synthesis_instruction": "Highlight exploitable or trust-boundary issues first, then note lower-severity hardening gaps.",
+        "deliverable_format": "Bug triage summary",
+        "deliverable_instruction": "Use sections titled Security Findings, Severity Triage, and Remediation Notes.",
     },
     "code_performance_review": {
         "id": "code_performance_review",
@@ -64,6 +74,8 @@ SESSION_TEMPLATES: Dict[str, Dict[str, object]] = {
         "council_lenses": ["Performance reviewer", "Senior engineer", "Architect"],
         "evaluation_criteria": ["Time complexity", "I/O cost", "Memory pressure", "Latency risk", "Scalability"],
         "synthesis_instruction": "Prioritize issues by expected runtime impact and call out the concrete path or workload that triggers them.",
+        "deliverable_format": "Patch plan or implementation handoff",
+        "deliverable_instruction": "Use sections titled Performance Risks, Patch Plan, and Validation Steps.",
     },
     "code_architecture_review": {
         "id": "code_architecture_review",
@@ -74,6 +86,8 @@ SESSION_TEMPLATES: Dict[str, Dict[str, object]] = {
         "council_lenses": ["Architect", "Senior engineer", "DX reviewer", "Maintainer"],
         "evaluation_criteria": ["Separation of concerns", "Dependency direction", "Extensibility", "Cohesion", "Operational clarity"],
         "synthesis_instruction": "Separate immediate bugs from architectural debt and propose the smallest structural changes with high payoff.",
+        "deliverable_format": "Refactor roadmap",
+        "deliverable_instruction": "Use sections titled Immediate Risks, Structural Debt, and Refactor Roadmap.",
     },
 }
 
@@ -107,3 +121,36 @@ def list_session_templates(session_type: Optional[str] = None) -> List[Dict[str,
     if session_type:
         templates = [template for template in templates if template.get("session_type") == session_type]
     return templates
+
+
+DEFAULT_DELIVERABLES: Dict[str, Dict[str, str]] = {
+    "visual_review": {
+        "label": "Design critique output",
+        "instruction": "Use sections titled Summary, What's Working, Issues by Priority, and Recommended Fixes.",
+    },
+    "code_review": {
+        "label": "PR review summary",
+        "instruction": "Use sections titled Findings, Open Questions, and Recommended Next Steps. Put findings first.",
+    },
+    "build_spec": {
+        "label": "Patch plan or implementation handoff",
+        "instruction": "Use sections titled Scope, Proposed Approach, Risks, and Implementation Plan.",
+    },
+    "research_docs": {
+        "label": "Research synthesis",
+        "instruction": "Use sections titled Answer, Evidence, and Caveats or Open Questions.",
+    },
+}
+
+
+def get_deliverable_spec(session_type: Optional[str], template_id: Optional[str] = None) -> Dict[str, str]:
+    template = get_session_template(template_id, session_type=session_type)
+    if template and template.get("deliverable_format") and template.get("deliverable_instruction"):
+        return {
+            "label": str(template["deliverable_format"]),
+            "instruction": str(template["deliverable_instruction"]),
+        }
+    return DEFAULT_DELIVERABLES.get(session_type or "", {
+        "label": "Final synthesis",
+        "instruction": "Use a concise, practical structure with headings and action-oriented conclusions.",
+    })

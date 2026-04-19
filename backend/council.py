@@ -14,6 +14,7 @@ from .config import (
     FAST_LOCAL_TITLE,
     TITLE_MODEL,
 )
+from .session_templates import get_deliverable_spec
 
 # Pre-compiled regex patterns for parsing model rankings
 NUMBERED_RESPONSE_RE = re.compile(r'\d+\.\s*Response [A-Z]', re.IGNORECASE)
@@ -535,6 +536,8 @@ async def run_full_council(
     framework: str = "standard",
     council_models: list = None,
     chairman_model: str = None,
+    session_type: Optional[str] = None,
+    specialist_template_id: Optional[str] = None,
     retrieval_context: Optional[str] = None,
     retrieval_citations: Optional[List[Dict[str, Any]]] = None,
     conversation_messages: Optional[List[Dict[str, Any]]] = None
@@ -636,6 +639,8 @@ async def run_full_council(
         stage2_results,
         active_chairman_model,
         mode=framework,
+        session_type=session_type,
+        specialist_template_id=specialist_template_id,
         retrieval_context=retrieval_context,
         aggregate_rankings=aggregate_rankings
     ):
@@ -789,6 +794,8 @@ async def stage3_synthesize_final(
     stage2_results: List[Dict[str, Any]],
     chairman_model: str = None,
     mode: str = "standard",
+    session_type: Optional[str] = None,
+    specialist_template_id: Optional[str] = None,
     retrieval_context: Optional[str] = None,
     aggregate_rankings: Optional[List[Dict[str, Any]]] = None
 ):
@@ -858,6 +865,14 @@ async def stage3_synthesize_final(
                 )
         weighted_consensus_block = "WEIGHTED CONSENSUS SUMMARY:\n" + "\n".join(summary_lines) + "\n"
 
+    deliverable_spec = get_deliverable_spec(session_type, specialist_template_id)
+    deliverable_block = (
+        "FINAL DELIVERABLE FORMAT:\n"
+        f"- Deliverable: {deliverable_spec['label']}\n"
+        f"- Structure: {deliverable_spec['instruction']}\n"
+        "- Do not return a generic essay. Follow the requested structure explicitly.\n"
+    )
+
     chairman_prompt = f"""You are the Chairman of an LLM Council.
     
 Original Question: {user_query}
@@ -870,6 +885,7 @@ STAGE 1 - Individual Responses:
 {stage2_text}
 
 {weighted_consensus_block}
+{deliverable_block}
 
 Your task: {instruction}
 

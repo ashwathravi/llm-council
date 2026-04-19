@@ -947,6 +947,8 @@ async def send_message(
         framework=framework,
         council_models=effective_council_models,
         chairman_model=chairman_model,
+        session_type=conversation.get("session_type"),
+        specialist_template_id=conversation.get("specialist_template_id"),
         retrieval_context=effective_context,
         retrieval_citations=citations,
         conversation_messages=conversation.get("messages")
@@ -1040,6 +1042,8 @@ async def _rerun_stage2_and_stage3(
     stage1_results: List[Dict[str, Any]],
     effective_models: List[str],
     chairman_model: Optional[str],
+    session_type: Optional[str],
+    specialist_template_id: Optional[str],
     retrieval_context: str,
     conversation_messages: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
@@ -1087,6 +1091,8 @@ async def _rerun_stage2_and_stage3(
         stage2_results,
         chairman_model=chairman_model,
         mode=framework,
+        session_type=session_type,
+        specialist_template_id=specialist_template_id,
         retrieval_context=retrieval_context,
         aggregate_rankings=aggregate_rankings
     ):
@@ -1325,6 +1331,8 @@ async def retry_failed_stage1_models(
                     stage1_results=merged_stage1,
                     effective_models=effective_models,
                     chairman_model=active_chairman_model,
+                    session_type=conversation.get("session_type"),
+                    specialist_template_id=conversation.get("specialist_template_id"),
                     retrieval_context=effective_context,
                     conversation_messages=messages[:message_index]
                 )
@@ -1535,6 +1543,8 @@ async def send_message_stream(
                 stage2_results,
                 chairman_model=chairman_model,
                 mode=framework,
+                session_type=conversation.get("session_type"),
+                specialist_template_id=conversation.get("specialist_template_id"),
                 retrieval_context=effective_context,
                 aggregate_rankings=aggregate_rankings
             ):

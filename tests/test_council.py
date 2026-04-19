@@ -51,6 +51,51 @@ async def test_stage3_synthesis():
         assert full_response == "Final Answer"
 
 
+@pytest.mark.asyncio
+async def test_stage3_synthesis_uses_template_deliverable_format():
+    async def mock_stream(*args, **kwargs):
+        yield "Final"
+
+    with patch("backend.council.query_model_stream", side_effect=mock_stream) as mock_stream_fn:
+        full_response = ""
+        async for token in council.stage3_synthesize_final(
+            "Review this patch",
+            [{"model": "gpt-4", "response": "Looks risky"}],
+            [{"model": "claude-3", "ranking": "Response A has an auth bug"}],
+            "chairman-model",
+            session_type="code_review",
+            specialist_template_id="code_security_review",
+        ):
+            full_response += token
+
+    assert full_response == "Final"
+    prompt = mock_stream_fn.call_args.args[1][0]["content"]
+    assert "FINAL DELIVERABLE FORMAT" in prompt
+    assert "Bug triage summary" in prompt
+    assert "Security Findings" in prompt
+    assert "Do not return a generic essay" in prompt
+
+
+@pytest.mark.asyncio
+async def test_stage3_synthesis_uses_session_default_deliverable_format():
+    async def mock_stream(*args, **kwargs):
+        yield "Final"
+
+    with patch("backend.council.query_model_stream", side_effect=mock_stream) as mock_stream_fn:
+        async for _token in council.stage3_synthesize_final(
+            "Summarize the spec",
+            [{"model": "gpt-4", "response": "Here is the plan"}],
+            [],
+            "chairman-model",
+            session_type="build_spec",
+        ):
+            pass
+
+    prompt = mock_stream_fn.call_args.args[1][0]["content"]
+    assert "Patch plan or implementation handoff" in prompt
+    assert "Implementation Plan" in prompt
+
+
 def test_parse_confidence_from_text():
     assert council.parse_confidence_from_text("FINAL RANKING:\n1. Response A\nCONFIDENCE: 82") == 82
     assert council.parse_confidence_from_text("confidence: 150") == 100
