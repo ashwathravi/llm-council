@@ -38,6 +38,7 @@ from .session_context import (
     normalize_primary_artifacts,
     normalize_session_type,
 )
+from .session_templates import get_template_label
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,7 @@ class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
     framework: str = "standard"
     session_type: str = DEFAULT_SESSION_TYPE
+    specialist_template_id: Optional[str] = Field(None, max_length=120)
     council_models: List[str] = Field(default=[], max_length=10)
     chairman_model: Optional[str] = Field(None, max_length=100)
     primary_artifacts: List["PrimaryArtifactMetadata"] = Field(default_factory=list, max_length=10)
@@ -154,6 +156,7 @@ class ConversationMetadata(BaseModel):
     title: str
     framework: str = "standard"
     session_type: str = DEFAULT_SESSION_TYPE
+    specialist_template_id: Optional[str] = None
     primary_artifact_count: int = 0
 
 
@@ -206,6 +209,7 @@ class Conversation(BaseModel):
     title: str
     framework: str = "standard"
     session_type: str = DEFAULT_SESSION_TYPE
+    specialist_template_id: Optional[str] = None
     council_models: Optional[List[str]] = None
     chairman_model: Optional[str] = None
     primary_artifacts: List[PrimaryArtifactMetadata] = Field(default_factory=list)
@@ -259,6 +263,7 @@ def _build_effective_context(
 ) -> str:
     session_context = build_session_context_block(
         conversation.get("session_type"),
+        conversation.get("specialist_template_id"),
         conversation.get("primary_artifacts"),
     )
     return merge_context_blocks(session_context, retrieval_context)
@@ -544,6 +549,7 @@ async def create_conversation(
         request.council_models,
         request.chairman_model,
         session_type=request.session_type,
+        specialist_template_id=request.specialist_template_id,
         primary_artifacts=[
             artifact.model_dump(exclude_none=True)
             for artifact in request.primary_artifacts
@@ -949,6 +955,11 @@ async def send_message(
     metadata["effective_council_models"] = effective_council_models
     metadata["excluded_non_vision_models"] = excluded_non_vision_models
     metadata["session_type"] = conversation.get("session_type", DEFAULT_SESSION_TYPE)
+    metadata["specialist_template_id"] = conversation.get("specialist_template_id")
+    metadata["specialist_template_label"] = get_template_label(
+        conversation.get("specialist_template_id"),
+        conversation.get("session_type"),
+    )
     metadata["primary_artifacts"] = conversation.get("primary_artifacts", [])
     metadata["primary_artifact_count"] = len(conversation.get("primary_artifacts") or [])
 
@@ -1280,6 +1291,11 @@ async def retry_failed_stage1_models(
     metadata["stage1_retry_history"] = retry_history
     metadata["retrieval"] = {"citations": citations}
     metadata["session_type"] = conversation.get("session_type", DEFAULT_SESSION_TYPE)
+    metadata["specialist_template_id"] = conversation.get("specialist_template_id")
+    metadata["specialist_template_label"] = get_template_label(
+        conversation.get("specialist_template_id"),
+        conversation.get("session_type"),
+    )
     metadata["primary_artifacts"] = conversation.get("primary_artifacts", [])
     metadata["primary_artifact_count"] = len(conversation.get("primary_artifacts") or [])
     metadata["excluded_non_vision_models"] = excluded_non_vision_models
@@ -1555,6 +1571,11 @@ async def send_message_stream(
                 "aggregate_rankings": aggregate_rankings,
                 "stage1_errors": stage1_errors,
                 "session_type": conversation.get("session_type", DEFAULT_SESSION_TYPE),
+                "specialist_template_id": conversation.get("specialist_template_id"),
+                "specialist_template_label": get_template_label(
+                    conversation.get("specialist_template_id"),
+                    conversation.get("session_type"),
+                ),
                 "primary_artifacts": conversation.get("primary_artifacts", []),
                 "primary_artifact_count": len(conversation.get("primary_artifacts") or []),
                 "timing": {

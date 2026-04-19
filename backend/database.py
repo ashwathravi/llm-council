@@ -29,6 +29,7 @@ class ConversationModel(Base):
     chairman_model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     messages: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, default=list)
     session_type: Mapped[Optional[str]] = mapped_column(String, nullable=True, default="general")
+    specialist_template_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     primary_artifacts: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSON, nullable=True, default=list)
     
     # Origin tracking
@@ -170,6 +171,9 @@ def _ensure_conversation_schema(sync_conn):
 
     if "session_type" not in existing_columns:
         sync_conn.execute(text("ALTER TABLE conversations ADD COLUMN session_type VARCHAR"))
+
+    if "specialist_template_id" not in existing_columns:
+        sync_conn.execute(text("ALTER TABLE conversations ADD COLUMN specialist_template_id VARCHAR"))
 
     if "primary_artifacts" not in existing_columns:
         json_type = JSON().compile(dialect=sync_conn.dialect)

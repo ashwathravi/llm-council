@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
 import { getPrimaryArtifactCount, getSessionTypeLabel } from '@/lib/sessionMetadata';
+import { getSpecialistTemplateLabel } from '@/lib/specialistTemplates';
 
 const FRAMEWORK_LABELS = {
   standard: 'Standard Council',
@@ -27,6 +28,7 @@ const ChatHeader = memo(({
   conversationId,
   framework,
   sessionType,
+  specialistTemplateId,
   primaryArtifacts,
   councilModels,
   chairmanModel,
@@ -38,6 +40,7 @@ const ChatHeader = memo(({
   const primaryArtifactCount = getPrimaryArtifactCount(primaryArtifacts);
   const frameworkLabel = FRAMEWORK_LABELS[framework] || framework || 'Standard Council';
   const sessionTypeLabel = getSessionTypeLabel(sessionType);
+  const specialistTemplateLabel = getSpecialistTemplateLabel(specialistTemplateId);
   const chairmanLabel = chairmanModel || 'Auto';
 
   const handleExport = async (format) => {
@@ -83,6 +86,7 @@ const ChatHeader = memo(({
         <h3 className="font-semibold text-lg leading-none tracking-tight">{title || 'New Conversation'}</h3>
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="secondary" className="text-xs">{sessionTypeLabel}</Badge>
+          {specialistTemplateLabel && <Badge variant="secondary" className="text-xs">{specialistTemplateLabel}</Badge>}
           <Badge variant="secondary" className="text-xs">{frameworkLabel}</Badge>
           <Badge variant="outline" className="text-xs">{selectedCount} models</Badge>
           <Badge variant="outline" className="text-xs">{primaryArtifactCount} artifacts</Badge>

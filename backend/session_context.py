@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional
 import uuid
+from .session_templates import get_session_template
 
 DEFAULT_SESSION_TYPE = "general"
 
@@ -208,10 +209,12 @@ def remove_primary_artifact_for_document_record(
 
 def build_session_context_block(
     session_type: Optional[str],
+    specialist_template_id: Optional[str],
     primary_artifacts: Optional[Iterable[Dict[str, Any]]],
 ) -> str:
     normalized_type = normalize_session_type(session_type)
     session_meta = SESSION_TYPES[normalized_type]
+    specialist_template = get_session_template(specialist_template_id, session_type=normalized_type)
     artifacts = normalize_primary_artifacts(list(primary_artifacts or []))
 
     artifact_lines = []
@@ -226,10 +229,24 @@ def build_session_context_block(
             "- No primary artifacts are attached yet. Fall back to the user's messages when needed."
         ]
 
+    template_block = ""
+    if specialist_template:
+        council_lenses = specialist_template.get("council_lenses") or []
+        evaluation_criteria = specialist_template.get("evaluation_criteria") or []
+        template_block = (
+            "SPECIALIST TEMPLATE:\n"
+            f"- Template: {specialist_template.get('label')}\n"
+            f"- Focus: {specialist_template.get('description')}\n"
+            f"- Specialist Lenses: {', '.join(council_lenses)}\n"
+            f"- Evaluation Criteria: {', '.join(evaluation_criteria)}\n"
+            f"- Final Synthesis: {specialist_template.get('synthesis_instruction')}\n"
+        )
+
     return (
         "SESSION WORKSPACE:\n"
         f"- Type: {session_meta['label']}\n"
         f"- Focus: {session_meta['focus']}\n"
+        f"{template_block}"
         "PRIMARY ARTIFACTS:\n"
         f"{chr(10).join(artifact_lines)}\n"
         f"REVIEW GUIDANCE:\n- {session_meta['guidance']}\n"

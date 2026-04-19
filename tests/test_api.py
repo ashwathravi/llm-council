@@ -192,6 +192,7 @@ async def test_send_message_code_review_includes_uploaded_code_context(async_cli
         "id": "conv-code",
         "framework": "standard",
         "session_type": "code_review",
+        "specialist_template_id": "code_security_review",
         "council_models": ["openai/gpt-5.2"],
         "chairman_model": "chair-model",
         "primary_artifacts": [
@@ -242,9 +243,48 @@ async def test_send_message_code_review_includes_uploaded_code_context(async_cli
             run_args = mock_run_council.await_args
             effective_context = run_args.kwargs["retrieval_context"]
             assert "retrieval context" in effective_context
+            assert "SPECIALIST TEMPLATE:" in effective_context
+            assert "Security Review Council" in effective_context
             assert "CODE REVIEW ARTIFACT" in effective_context
             assert "File: app.py" in effective_context
             assert "1 | def foo():" in effective_context
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_create_conversation_persists_specialist_template(async_client):
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.create_conversation", new_callable=AsyncMock) as mock_create_conversation:
+            mock_create_conversation.return_value = {
+                "id": "conv-template",
+                "created_at": "2026-04-19T00:00:00",
+                "title": "New Conversation",
+                "framework": "standard",
+                "session_type": "code_review",
+                "specialist_template_id": "code_security_review",
+                "council_models": ["openai/gpt-5.2"],
+                "chairman_model": None,
+                "primary_artifacts": [],
+                "messages": [],
+            }
+
+            response = await async_client.post(
+                "/api/conversations",
+                json={
+                    "framework": "standard",
+                    "session_type": "code_review",
+                    "specialist_template_id": "code_security_review",
+                    "council_models": ["openai/gpt-5.2"],
+                }
+            )
+
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["session_type"] == "code_review"
+            assert payload["specialist_template_id"] == "code_security_review"
+            assert mock_create_conversation.await_args.kwargs["specialist_template_id"] == "code_security_review"
     finally:
         app.dependency_overrides = {}
 

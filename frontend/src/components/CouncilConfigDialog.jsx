@@ -10,6 +10,7 @@ import { ArrowDown, ArrowUp, Check, Crown, Pencil, Pin, PinOff, Save, Settings2,
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { getSessionTypeLabel, SESSION_TYPE_OPTIONS } from '@/lib/sessionMetadata';
+import { getSpecialistTemplate, getSpecialistTemplateLabel, getTemplatesForSessionType } from '@/lib/specialistTemplates';
 
 const COUNCIL_TYPES = [
   {
@@ -65,6 +66,8 @@ const CouncilConfigDialog = ({
   models,
   selectedSessionType,
   setSelectedSessionType,
+  specialistTemplateId,
+  setSpecialistTemplateId,
   selectedFramework,
   setSelectedFramework,
   councilModels,
@@ -88,6 +91,11 @@ const CouncilConfigDialog = ({
   const [memberView, setMemberView] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const isVisualReview = selectedSessionType === 'visual_review';
+  const availableSpecialistTemplates = useMemo(
+    () => getTemplatesForSessionType(selectedSessionType),
+    [selectedSessionType]
+  );
+  const selectedSpecialistTemplate = getSpecialistTemplate(specialistTemplateId);
 
   const visionCapableModelIds = useMemo(
     () => new Set(models.filter((model) => model.supports_vision).map((model) => model.id)),
@@ -134,6 +142,27 @@ const CouncilConfigDialog = ({
   const applySessionType = (nextSessionType) => {
     setSelectedSessionType(nextSessionType);
     setCouncilModels(filterCouncilModelsForSession(councilModels, nextSessionType));
+    if (getSpecialistTemplate(specialistTemplateId)?.sessionType !== nextSessionType) {
+      setSpecialistTemplateId('');
+    }
+    setActivePresetId(null);
+  };
+
+  const applySpecialistTemplate = (template) => {
+    if (!template) {
+      setSpecialistTemplateId('');
+      setActivePresetId(null);
+      return;
+    }
+
+    if (template.sessionType !== selectedSessionType) {
+      setSelectedSessionType(template.sessionType);
+      setCouncilModels(filterCouncilModelsForSession(councilModels, template.sessionType));
+    }
+    setSpecialistTemplateId(template.id);
+    if (template.defaultFramework) {
+      setSelectedFramework(template.defaultFramework);
+    }
     setActivePresetId(null);
   };
 
@@ -141,6 +170,7 @@ const CouncilConfigDialog = ({
     setActivePresetId(preset.id);
 
     const nextSessionType = preset.sessionType || 'general';
+    const nextSpecialistTemplateId = preset.specialistTemplateId || '';
     const nextFramework = preset.framework || 'standard';
     const requestedChairman = preset.chairmanModel || '';
     const requestedCouncilModels = Array.isArray(preset.councilModels) ? preset.councilModels : [];
@@ -154,6 +184,7 @@ const CouncilConfigDialog = ({
     );
 
     setSelectedSessionType(nextSessionType);
+    setSpecialistTemplateId(nextSpecialistTemplateId);
     setSelectedFramework(nextFramework);
     setCouncilModels(validCouncilModels);
     setChairmanModel(requestedChairman && availableModelIds.has(requestedChairman) ? requestedChairman : '');
@@ -272,6 +303,7 @@ const CouncilConfigDialog = ({
 
   const renderReadOnlyConversationConfig = () => {
     const sessionType = readOnlyConfig?.sessionType || 'general';
+    const readOnlyTemplateLabel = getSpecialistTemplateLabel(readOnlyConfig?.specialistTemplateId || '');
     const framework = readOnlyConfig?.framework || 'standard';
     const selectedModels = Array.isArray(readOnlyConfig?.councilModels) ? readOnlyConfig.councilModels : [];
     const readOnlyChairman = readOnlyConfig?.chairmanModel || '';
@@ -304,6 +336,7 @@ const CouncilConfigDialog = ({
             <h3 className="text-sm font-semibold text-muted-foreground">Summary</h3>
             <div className="flex flex-wrap gap-2">
               <Badge variant="secondary">{selectedModels.length} Selected Models</Badge>
+              {readOnlyTemplateLabel && <Badge variant="secondary">{readOnlyTemplateLabel}</Badge>}
               <Badge variant="outline">Chairman: {readOnlyChairman ? getModelName(readOnlyChairman) : 'Auto'}</Badge>
               <Badge variant="outline">{primaryArtifacts.length} Primary Artifacts</Badge>
             </div>
@@ -439,6 +472,45 @@ const CouncilConfigDialog = ({
           </div>
 
           <div className="space-y-3">
+            {availableSpecialistTemplates.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-muted-foreground">Specialist Templates</h3>
+                  {selectedSpecialistTemplate && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => applySpecialistTemplate(null)}>
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {availableSpecialistTemplates.map((template) => (
+                    <Card
+                      key={template.id}
+                      role="button"
+                      aria-pressed={specialistTemplateId === template.id}
+                      tabIndex={0}
+                      className={cn(
+                        'cursor-pointer hover:bg-accent/50 transition-colors relative focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none',
+                        specialistTemplateId === template.id ? 'border-primary bg-accent/20' : ''
+                      )}
+                      onClick={() => applySpecialistTemplate(template)}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <div className="font-semibold text-primary">{template.name}</div>
+                          {specialistTemplateId === template.id && <Check className="h-4 w-4 text-primary" />}
+                        </div>
+                        <p className="text-sm text-foreground/90">{template.description}</p>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Default framework: {getFrameworkLabel(template.defaultFramework)}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-muted-foreground">Council Members</h3>
               <div className="text-xs text-muted-foreground">{councilModels.length}/{maxCouncilModels} Active</div>
@@ -624,6 +696,7 @@ const CouncilConfigDialog = ({
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {getSessionTypeLabel(preset.sessionType || 'general')} • {getFrameworkLabel(preset.framework)}
+                        {preset.specialistTemplateId ? ` • ${getSpecialistTemplateLabel(preset.specialistTemplateId)}` : ''}
                       </p>
                       <p className="text-xs text-muted-foreground">{preset.description}</p>
                     </CardContent>

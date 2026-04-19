@@ -244,6 +244,7 @@ export default function ChatInterface({
           conversationId={conversation.id}
           framework={conversation.framework}
           sessionType={conversation.session_type}
+          specialistTemplateId={conversation.specialist_template_id}
           primaryArtifacts={conversation.primary_artifacts}
           councilModels={conversation.council_models}
           chairmanModel={conversation.chairman_model}
