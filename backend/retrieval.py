@@ -14,7 +14,11 @@ from .session_context import normalize_primary_artifacts
 
 logger = logging.getLogger(__name__)
 TOKEN_RE = re.compile(r"[A-Za-z0-9_./:-]+")
-SYMBOL_RE = re.compile(r"^\s*(?:def|class|function|func|fn|interface|type|struct|enum)\s+([A-Za-z0-9_]+)", re.MULTILINE)
+ARCHITECTURE_QUERY_TOKENS = {
+    "architecture", "architectural", "module", "modules", "boundary", "boundaries",
+    "dependency", "dependencies", "layer", "layers", "structure", "structural",
+    "refactor", "design", "integration", "flow", "cross", "multi", "system",
+}
 
 def _build_context(citations: List[Dict[str, Any]]) -> str:
     if not citations:
@@ -36,10 +40,21 @@ def _build_context(citations: List[Dict[str, Any]]) -> str:
         if item.get("artifact_type") == "code":
             line_start = item.get("line_start")
             line_end = item.get("line_end")
+            symbol_name = item.get("symbol")
+            chunk_type = item.get("chunk_type")
             if line_start and line_end and line_start != line_end:
-                source_label = f"Source: {item['filename']} (lines {line_start}-{line_end})"
+                line_fragment = f"lines {line_start}-{line_end}"
             elif line_start:
-                source_label = f"Source: {item['filename']} (line {line_start})"
+                line_fragment = f"line {line_start}"
+            else:
+                line_fragment = None
+
+            if chunk_type == "file_overview" and line_fragment:
+                source_label = f"Source: {item['filename']} (overview, {line_fragment})"
+            elif symbol_name and line_fragment:
+                source_label = f"Source: {item['filename']}::{symbol_name} ({line_fragment})"
+            elif line_fragment:
+                source_label = f"Source: {item['filename']} ({line_fragment})"
             else:
                 source_label = f"Source: {item['filename']}"
         elif item.get("artifact_type") == "image":
@@ -60,17 +75,109 @@ def _tokenize(text: str) -> set[str]:
     }
 
 
-def _extract_symbol_names(content: str) -> List[str]:
-    return SYMBOL_RE.findall(content or "")
+def _is_architecture_query(query_tokens: set[str]) -> bool:
+    return bool(query_tokens & ARCHITECTURE_QUERY_TOKENS)
 
 
-def _chunk_code_artifact(content: str, filename: str, *, chunk_lines: int = 40, overlap_lines: int = 10) -> List[Dict[str, Any]]:
+def _build_file_overview_chunk(content: str, filename: str) -> Dict[str, Any]:
     lines = content.splitlines()
-    if not lines:
+    symbol_index = code_artifacts.extract_symbol_index(content)
+    import_paths = code_artifacts.extract_import_paths(content)
+    max_lines = min(len(lines), 80)
+    overview_text = "\n".join(lines[:max_lines])
+    symbol_outline = ", ".join(
+        f"{item['kind']} {item['name']}"
+        for item in symbol_index[:8]
+    ) or "None"
+    import_outline = ", ".join(import_paths[:8]) or "None"
+    search_text = "\n".join([
+        filename,
+        f"Imports: {import_outline}",
+        f"Symbols: {symbol_outline}",
+        overview_text,
+    ])
+    return {
+        "filename": filename,
+        "line_start": 1,
+        "line_end": max_lines,
+        "text": overview_text,
+        "search_text": search_text,
+        "symbols": [item["name"] for item in symbol_index],
+        "imports": import_paths,
+        "path_tokens": code_artifacts.extract_path_tokens(filename),
+        "chunk_type": "file_overview",
+        "symbol_kind": None,
+        "symbol_name": None,
+    }
+
+
+def _chunk_symbol_span(
+    lines: List[str],
+    filename: str,
+    symbol: Dict[str, Any],
+    import_paths: List[str],
+    *,
+    chunk_lines: int = 80,
+    overlap_lines: int = 20,
+) -> List[Dict[str, Any]]:
+    start_index = max(0, int(symbol["line_start"]) - 1)
+    end_index = min(len(lines), int(symbol["line_end"]))
+    selected_lines = lines[start_index:end_index]
+    if not selected_lines:
         return []
 
     chunks: List[Dict[str, Any]] = []
     step = max(1, chunk_lines - overlap_lines)
+    for offset in range(0, len(selected_lines), step):
+        window = selected_lines[offset:offset + chunk_lines]
+        if not window:
+            continue
+        line_start = start_index + offset + 1
+        line_end = line_start + len(window) - 1
+        text = "\n".join(window)
+        chunks.append({
+            "filename": filename,
+            "line_start": line_start,
+            "line_end": line_end,
+            "text": text,
+            "search_text": "\n".join([
+                filename,
+                symbol.get("kind") or "",
+                symbol.get("name") or "",
+                symbol.get("signature") or "",
+                " ".join(import_paths),
+                text,
+            ]),
+            "symbols": [symbol.get("name")] if symbol.get("name") else [],
+            "imports": import_paths,
+            "path_tokens": code_artifacts.extract_path_tokens(filename),
+            "chunk_type": "symbol",
+            "symbol_kind": symbol.get("kind"),
+            "symbol_name": symbol.get("name"),
+        })
+        if line_end >= end_index:
+            break
+    return chunks
+
+
+def _build_code_chunks(content: str, filename: str) -> List[Dict[str, Any]]:
+    lines = content.splitlines()
+    if not lines:
+        return []
+
+    symbol_index = code_artifacts.extract_symbol_index(content)
+    import_paths = code_artifacts.extract_import_paths(content)
+    chunks: List[Dict[str, Any]] = [_build_file_overview_chunk(content, filename)]
+
+    if symbol_index:
+        for symbol in symbol_index:
+            chunks.extend(_chunk_symbol_span(lines, filename, symbol, import_paths))
+        return chunks
+
+    chunk_lines = 50
+    overlap_lines = 10
+    step = max(1, chunk_lines - overlap_lines)
+    path_tokens = code_artifacts.extract_path_tokens(filename)
     for start in range(0, len(lines), step):
         selected = lines[start:start + chunk_lines]
         if not selected:
@@ -83,11 +190,62 @@ def _chunk_code_artifact(content: str, filename: str, *, chunk_lines: int = 40, 
             "line_start": line_start,
             "line_end": line_end,
             "text": text,
-            "symbols": _extract_symbol_names(text),
+            "search_text": "\n".join([filename, " ".join(import_paths), text]),
+            "symbols": [],
+            "imports": import_paths,
+            "path_tokens": path_tokens,
+            "chunk_type": "file_window",
+            "symbol_kind": None,
+            "symbol_name": None,
         })
         if line_end >= len(lines):
             break
     return chunks
+
+
+def _score_code_chunk(chunk: Dict[str, Any], query_tokens: set[str], *, architecture_query: bool) -> float:
+    search_tokens = _tokenize(chunk.get("search_text", ""))
+    symbol_tokens = {token.lower() for token in chunk.get("symbols", []) if isinstance(token, str)}
+    path_tokens = {token.lower() for token in chunk.get("path_tokens", []) if isinstance(token, str)}
+    import_tokens = _tokenize(" ".join(chunk.get("imports", [])))
+
+    lexical_overlap = len(query_tokens & search_tokens)
+    symbol_overlap = len(query_tokens & symbol_tokens)
+    path_overlap = len(query_tokens & path_tokens)
+    import_overlap = len(query_tokens & import_tokens)
+
+    score = lexical_overlap + (symbol_overlap * 2.5) + (path_overlap * 1.75) + (import_overlap * 1.25)
+    if architecture_query and chunk.get("chunk_type") == "file_overview":
+        score += 2.0
+    elif architecture_query and chunk.get("chunk_type") == "symbol":
+        score += 0.5
+    return float(score)
+
+
+def _limit_code_citations(citations: List[Dict[str, Any]], *, architecture_query: bool) -> List[Dict[str, Any]]:
+    if not architecture_query:
+        return citations[:RETRIEVAL_TOP_K]
+
+    selected: List[Dict[str, Any]] = []
+    seen_filenames = set()
+
+    for citation in citations:
+        filename = citation.get("filename")
+        if filename in seen_filenames:
+            continue
+        seen_filenames.add(filename)
+        selected.append(citation)
+        if len(selected) >= RETRIEVAL_TOP_K:
+            return selected
+
+    for citation in citations:
+        if citation in selected:
+            continue
+        selected.append(citation)
+        if len(selected) >= RETRIEVAL_TOP_K:
+            break
+
+    return selected
 
 
 async def _build_document_citations(
@@ -155,6 +313,7 @@ async def _build_code_citations(
     query_tokens = _tokenize(query)
     if not query_tokens:
         return []
+    architecture_query = _is_architecture_query(query_tokens)
 
     citations: List[Dict[str, Any]] = []
     for artifact in normalize_primary_artifacts(conversation.get("primary_artifacts")):
@@ -170,36 +329,51 @@ async def _build_code_citations(
             logger.warning("Failed to load code artifact for retrieval", extra={"artifact_id": artifact.get("id")})
             continue
 
-        for chunk in _chunk_code_artifact(content, artifact.get("label") or artifact.get("filename") or "code"):
-            chunk_tokens = _tokenize(chunk["text"])
-            filename_tokens = _tokenize(chunk["filename"])
-            symbol_tokens = {symbol.lower() for symbol in chunk.get("symbols", [])}
-            overlap = len(query_tokens & (chunk_tokens | filename_tokens | symbol_tokens))
-            if overlap == 0:
+        filename = artifact.get("label") or artifact.get("filename") or "code"
+        for chunk in _build_code_chunks(content, filename):
+            score = _score_code_chunk(chunk, query_tokens, architecture_query=architecture_query)
+            if score <= 0:
                 continue
-            snippet = documents.truncate_text(
+
+            code_excerpt = documents.truncate_text(
                 code_artifacts.format_code_context(
                     chunk["text"],
                     max_lines=25,
                     max_chars=RETRIEVAL_MAX_CHARS_PER_CHUNK,
+                    line_start=chunk["line_start"],
                 ),
                 RETRIEVAL_MAX_CHARS_PER_CHUNK,
             )
-            if not snippet:
+            if not code_excerpt:
                 continue
+
+            snippet_parts = []
+            if chunk.get("chunk_type") == "file_overview":
+                imports = chunk.get("imports") or []
+                symbols = chunk.get("symbols") or []
+                snippet_parts.append(f"Imports: {', '.join(imports[:6]) or 'None'}")
+                snippet_parts.append(f"Top-level symbols: {', '.join(symbols[:8]) or 'None'}")
+            elif chunk.get("symbol_name"):
+                snippet_parts.append(
+                    f"Symbol: {chunk.get('symbol_kind') or 'symbol'} {chunk['symbol_name']}"
+                )
+            snippet_parts.append(code_excerpt)
+            snippet = "\n".join(part for part in snippet_parts if part).strip()
+
             citations.append({
                 "artifact_type": "code",
                 "artifact_id": artifact.get("id"),
                 "filename": chunk["filename"],
                 "line_start": chunk["line_start"],
                 "line_end": chunk["line_end"],
-                "symbol": chunk.get("symbols", [None])[0],
+                "symbol": chunk.get("symbol_name"),
+                "chunk_type": chunk.get("chunk_type"),
                 "snippet": snippet,
-                "score": float(overlap),
+                "score": score,
             })
 
     citations.sort(key=lambda item: item.get("score", 0.0), reverse=True)
-    return citations[:RETRIEVAL_TOP_K]
+    return _limit_code_citations(citations, architecture_query=architecture_query)
 
 
 def _build_image_citations(conversation: Dict[str, Any], query: str) -> List[Dict[str, Any]]:

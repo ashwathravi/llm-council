@@ -404,11 +404,15 @@ async def _build_code_review_artifact_context(conversation: Dict[str, Any]) -> s
 
         language = artifact.get("language") or "Text"
         summary = artifact.get("summary") or f"{artifact.get('line_count', 0)} lines"
+        symbols = code_artifacts.extract_symbol_index(content)
+        imports = code_artifacts.extract_import_paths(content)
         sections.append(
             "CODE REVIEW ARTIFACT:\n"
             f"- File: {artifact.get('label', artifact.get('filename', 'Artifact'))}\n"
             f"- Language: {language}\n"
             f"- Summary: {summary}\n"
+            f"- Top-level symbols: {', '.join(symbol['name'] for symbol in symbols[:8]) or 'None'}\n"
+            f"- Imports: {', '.join(imports[:8]) or 'None'}\n"
             "Use the numbered lines below when citing issues.\n"
             f"```text\n{numbered_content}\n```"
         )

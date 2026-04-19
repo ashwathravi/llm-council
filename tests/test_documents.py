@@ -156,11 +156,11 @@ async def test_build_retrieval_context_includes_code_artifact_citations():
 
         assert context is not None
         assert "artifact excerpts" in context
-        assert "Source: app.py (lines 1-2)" in context
-        assert citations[0]["artifact_type"] == "code"
-        assert citations[0]["filename"] == "app.py"
-        assert citations[0]["line_start"] == 1
-        assert citations[0]["line_end"] == 2
+        assert "Source: app.py (overview, lines 1-2)" in context
+        assert "Source: app.py::foo (lines 1-2)" in context
+        assert all(citation["artifact_type"] == "code" for citation in citations)
+        assert any(citation["filename"] == "app.py" for citation in citations)
+        assert any(citation["line_start"] == 1 and citation["line_end"] == 2 for citation in citations)
 
 
 @pytest.mark.asyncio

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from .config import ARTIFACT_FILES_DIR
 
@@ -47,6 +48,25 @@ LANGUAGE_BY_EXTENSION = {
     ".yaml": "YAML",
     ".yml": "YAML",
 }
+
+SYMBOL_PATTERNS = [
+    ("class", re.compile(r"^\s*(?:export\s+)?(?:default\s+)?class\s+([A-Za-z_][A-Za-z0-9_]*)")),
+    ("interface", re.compile(r"^\s*(?:export\s+)?interface\s+([A-Za-z_][A-Za-z0-9_]*)")),
+    ("type", re.compile(r"^\s*(?:export\s+)?type\s+([A-Za-z_][A-Za-z0-9_]*)")),
+    ("enum", re.compile(r"^\s*(?:export\s+)?enum\s+([A-Za-z_][A-Za-z0-9_]*)")),
+    ("struct", re.compile(r"^\s*struct\s+([A-Za-z_][A-Za-z0-9_]*)")),
+    ("function", re.compile(r"^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)")),
+    ("function", re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)")),
+    ("function", re.compile(r"^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_][A-Za-z0-9_]*)")),
+    ("function", re.compile(r"^\s*(?:pub\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)")),
+    ("function", re.compile(r"^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_][A-Za-z0-9_]*)\s*=>")),
+]
+
+IMPORT_RE = re.compile(
+    r"^\s*(?:from\s+([A-Za-z0-9_./:-]+)\s+import|import\s+([A-Za-z0-9_./:-]+)|#include\s+[<\"]([^>\"]+)[>\"]|use\s+([A-Za-z0-9_:]+))",
+    re.MULTILINE,
+)
+PATH_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 
 
 def ensure_artifact_files_dir() -> Path:
@@ -93,12 +113,62 @@ def count_lines(content: str) -> int:
     return len(content.splitlines())
 
 
+def extract_symbol_index(content: str) -> List[Dict[str, Any]]:
+    lines = content.splitlines()
+    if not lines:
+        return []
+
+    symbols: List[Dict[str, Any]] = []
+    for line_number, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        for kind, pattern in SYMBOL_PATTERNS:
+            match = pattern.match(line)
+            if not match:
+                continue
+            symbols.append({
+                "kind": kind,
+                "name": match.group(1),
+                "line_start": line_number,
+                "signature": stripped[:200],
+            })
+            break
+
+    for index, symbol in enumerate(symbols):
+        next_symbol = symbols[index + 1] if index + 1 < len(symbols) else None
+        line_end = (next_symbol["line_start"] - 1) if next_symbol else len(lines)
+        symbol["line_end"] = max(symbol["line_start"], line_end)
+
+    return symbols
+
+
+def extract_import_paths(content: str) -> List[str]:
+    imports = []
+    for match in IMPORT_RE.finditer(content or ""):
+        for group in match.groups():
+            if group:
+                imports.append(group.strip())
+                break
+    return imports
+
+
+def extract_path_tokens(filename: Optional[str]) -> List[str]:
+    if not isinstance(filename, str) or not filename.strip():
+        return []
+    return [token.lower() for token in PATH_TOKEN_RE.findall(filename) if token]
+
+
 def build_summary(filename: Optional[str], content: str) -> str:
     line_count = count_lines(content)
     language = guess_language(filename)
+    symbol_count = len(extract_symbol_index(content))
+    symbol_fragment = ""
+    if symbol_count:
+        symbol_fragment = f" • {symbol_count} symbol{'s' if symbol_count != 1 else ''}"
     if language:
-        return f"{language} • {line_count} lines"
-    return f"{line_count} lines"
+        return f"{language} • {line_count} lines{symbol_fragment}"
+    return f"{line_count} lines{symbol_fragment}"
 
 
 def save_code_file(conversation_id: str, artifact_id: str, filename: str, content: str) -> str:
@@ -136,7 +206,7 @@ def delete_code_file(relative_path: Optional[str]) -> None:
         target.unlink()
 
 
-def format_code_context(content: str, *, max_lines: int, max_chars: int) -> str:
+def format_code_context(content: str, *, max_lines: int, max_chars: int, line_start: int = 1) -> str:
     if not content:
         return ""
 
@@ -145,7 +215,7 @@ def format_code_context(content: str, *, max_lines: int, max_chars: int) -> str:
         lines = lines[:max_lines]
         lines.append("... [truncated]")
 
-    numbered_lines = [f"{index + 1:4} | {line}" for index, line in enumerate(lines)]
+    numbered_lines = [f"{line_start + index:4} | {line}" for index, line in enumerate(lines)]
     formatted = "\n".join(numbered_lines)
     if len(formatted) > max_chars:
         return f"{formatted[:max_chars].rstrip()}\n... [truncated]"

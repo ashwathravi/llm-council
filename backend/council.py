@@ -1271,6 +1271,12 @@ async def stage3_synthesize_final(
 - Severity must be one of low, medium, or high.
 - If there are no concrete visual findings, return an empty array.
 """
+    citation_guidance_block = ""
+    if session_type == "code_review":
+        citation_guidance_block = """CODE CITATION RULES:
+- When you call out a concrete issue, reference the provided filename and line range whenever one is available.
+- If only a file-level overview citation is available, cite the filename and explain that the concern spans the broader module.
+"""
 
     deliverable_spec = get_deliverable_spec(session_type, specialist_template_id)
     deliverable_block = (
@@ -1294,6 +1300,7 @@ STAGE 1 - Individual Responses:
 {weighted_consensus_block}
 {rubric_summary_block}
 {visual_findings_block}
+{citation_guidance_block}
 {deliverable_block}
 
 Your task: {instruction}
