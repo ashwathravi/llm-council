@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowDown, ArrowUp, Check, Crown, Pencil, Pin, PinOff, Save, Settings2, Star, Trash2, Users, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { getSessionTypeLabel, SESSION_TYPE_OPTIONS } from '@/lib/sessionMetadata';
 
 const COUNCIL_TYPES = [
   {
@@ -62,6 +63,8 @@ const CouncilConfigDialog = ({
   onStartSession,
   isStartingSession = false,
   models,
+  selectedSessionType,
+  setSelectedSessionType,
   selectedFramework,
   setSelectedFramework,
   councilModels,
@@ -120,6 +123,7 @@ const CouncilConfigDialog = ({
   const applySavedPreset = (preset) => {
     setActivePresetId(preset.id);
 
+    const nextSessionType = preset.sessionType || 'general';
     const nextFramework = preset.framework || 'standard';
     const requestedChairman = preset.chairmanModel || '';
     const requestedCouncilModels = Array.isArray(preset.councilModels) ? preset.councilModels : [];
@@ -129,6 +133,7 @@ const CouncilConfigDialog = ({
       .filter((modelId) => availableModelIds.has(modelId))
       .slice(0, maxCouncilModels);
 
+    setSelectedSessionType(nextSessionType);
     setSelectedFramework(nextFramework);
     setCouncilModels(validCouncilModels);
     setChairmanModel(requestedChairman && availableModelIds.has(requestedChairman) ? requestedChairman : '');
@@ -237,13 +242,25 @@ const CouncilConfigDialog = ({
   };
 
   const renderReadOnlyConversationConfig = () => {
+    const sessionType = readOnlyConfig?.sessionType || 'general';
     const framework = readOnlyConfig?.framework || 'standard';
     const selectedModels = Array.isArray(readOnlyConfig?.councilModels) ? readOnlyConfig.councilModels : [];
     const readOnlyChairman = readOnlyConfig?.chairmanModel || '';
+    const primaryArtifacts = Array.isArray(readOnlyConfig?.primaryArtifacts) ? readOnlyConfig.primaryArtifacts : [];
 
     return (
       <div className="flex-1 overflow-y-auto px-6 py-2">
         <div className="space-y-6 pb-6">
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-muted-foreground">Workspace Type</h3>
+            <Card className="border-primary/30 bg-accent/10">
+              <CardContent className="p-4">
+                <div className="font-semibold text-primary">{getSessionTypeLabel(sessionType)}</div>
+                <p className="text-sm text-muted-foreground mt-1">This workspace framing is frozen for the active session.</p>
+              </CardContent>
+            </Card>
+          </div>
+
           <div className="space-y-3">
             <h3 className="text-sm font-semibold text-muted-foreground">Council Type</h3>
             <Card className="border-primary/30 bg-accent/10">
@@ -259,6 +276,7 @@ const CouncilConfigDialog = ({
             <div className="flex flex-wrap gap-2">
               <Badge variant="secondary">{selectedModels.length} Selected Models</Badge>
               <Badge variant="outline">Chairman: {readOnlyChairman ? getModelName(readOnlyChairman) : 'Auto'}</Badge>
+              <Badge variant="outline">{primaryArtifacts.length} Primary Artifacts</Badge>
             </div>
           </div>
 
@@ -272,6 +290,24 @@ const CouncilConfigDialog = ({
                   <div key={modelId} className="text-sm">
                     <span className="font-medium">{getModelName(modelId)}</span>
                     <span className="text-xs text-muted-foreground ml-2">{modelId}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3 rounded-md border bg-card p-4">
+            <h3 className="text-sm font-semibold text-muted-foreground">Primary Artifacts</h3>
+            {primaryArtifacts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No primary artifacts are attached to this session yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {primaryArtifacts.map((artifact) => (
+                  <div key={artifact.id || `${artifact.kind}-${artifact.label}`} className="text-sm">
+                    <span className="font-medium">{artifact.label}</span>
+                    <span className="text-xs text-muted-foreground ml-2">
+                      {artifact.kind} • {artifact.status || 'ready'}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -303,6 +339,43 @@ const CouncilConfigDialog = ({
 
       <div className="flex-1 overflow-y-auto px-6 py-2">
         <TabsContent value="new_config" className="mt-0 space-y-6 pb-6">
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-muted-foreground">Workspace Type</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {SESSION_TYPE_OPTIONS.map((type) => (
+                <Card
+                  key={type.id}
+                  role="button"
+                  aria-pressed={selectedSessionType === type.id}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedSessionType(type.id);
+                      setActivePresetId(null);
+                    }
+                  }}
+                  className={cn(
+                    'cursor-pointer hover:bg-accent/50 transition-colors relative focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none',
+                    selectedSessionType === type.id ? 'border-primary bg-accent/20' : ''
+                  )}
+                  onClick={() => {
+                    setSelectedSessionType(type.id);
+                    setActivePresetId(null);
+                  }}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <div className="font-semibold text-primary">{type.name}</div>
+                      {selectedSessionType === type.id && <Check className="h-4 w-4 text-primary" />}
+                    </div>
+                    <p className="text-sm text-foreground/90">{type.description}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-3">
             <h3 className="text-sm font-semibold text-muted-foreground">Council Types</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -518,6 +591,9 @@ const CouncilConfigDialog = ({
                           </Button>
                         </div>
                       </div>
+                      <p className="text-xs text-muted-foreground">
+                        {getSessionTypeLabel(preset.sessionType || 'general')} • {getFrameworkLabel(preset.framework)}
+                      </p>
                       <p className="text-xs text-muted-foreground">{preset.description}</p>
                     </CardContent>
                   </Card>
@@ -566,12 +642,12 @@ const CouncilConfigDialog = ({
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
         <DialogHeader className="p-6 pb-2">
           <DialogTitle className="text-xl">
-            {mode === 'read_only' ? 'Active Conversation Council' : 'Council Configuration'}
+            {mode === 'read_only' ? 'Active Session Setup' : 'Session Setup'}
           </DialogTitle>
           <DialogDescription>
             {mode === 'read_only'
-              ? 'Conversation configuration is read-only after session creation.'
-              : 'Configure council type, members, favorites, and selection preferences before starting a session.'}
+              ? 'Workspace and council configuration are read-only after session creation.'
+              : 'Choose a workspace type, configure the council, and save reusable presets before starting a session.'}
           </DialogDescription>
         </DialogHeader>
 

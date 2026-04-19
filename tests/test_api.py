@@ -93,6 +93,29 @@ async def test_create_conversation_invalid_framework(async_client):
 
 
 @pytest.mark.asyncio
+async def test_create_conversation_invalid_session_type(async_client):
+    """Test that creating a conversation with an invalid session type returns 422."""
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        response = await async_client.post(
+            "/api/conversations",
+            json={
+                "framework": "standard",
+                "session_type": "bad_session_type",
+                "council_models": ["model1"]
+            }
+        )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "detail" in data
+        assert any("session_type" in error["loc"] for error in data["detail"])
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
 async def test_retry_failed_stage1_models_success(async_client):
     conversation = {
         "id": "conv-1",

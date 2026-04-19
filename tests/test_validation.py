@@ -9,11 +9,23 @@ def test_valid_frameworks():
         req = CreateConversationRequest(framework=framework)
         assert req.framework == framework
 
+def test_valid_session_types():
+    """Test that all allowed session types are accepted."""
+    for session_type in ["general", "visual_review", "code_review", "build_spec", "research_docs"]:
+        req = CreateConversationRequest(session_type=session_type)
+        assert req.session_type == session_type
+
 def test_invalid_framework():
     """Test that an invalid framework raises a ValidationError."""
     with pytest.raises(ValidationError) as excinfo:
         CreateConversationRequest(framework="invalid_framework")
     assert "Framework must be one of" in str(excinfo.value)
+
+def test_invalid_session_type():
+    """Test that an invalid session type raises a ValidationError."""
+    with pytest.raises(ValidationError) as excinfo:
+        CreateConversationRequest(session_type="invalid_session")
+    assert "Session type must be one of" in str(excinfo.value)
 
 def test_valid_council_models():
     """Test that a valid list of council models is accepted."""
@@ -41,8 +53,10 @@ def test_default_values():
     """Test the default values of CreateConversationRequest."""
     req = CreateConversationRequest()
     assert req.framework == "standard"
+    assert req.session_type == "general"
     assert req.council_models == []
     assert req.chairman_model is None
+    assert req.primary_artifacts == []
 
 def test_message_content_length_limit():
     """Test that message content exceeding 50KB raises a ValidationError."""

@@ -10,10 +10,27 @@ from sqlalchemy import delete, insert
 from sqlalchemy.orm.attributes import flag_modified
 from .config import DATA_DIR, APP_ORIGIN, DOCUMENTS_DIR
 from .database import AsyncSessionLocal, ConversationModel, DocumentModel, DocumentChunkModel, init_db
+from .session_context import (
+    DEFAULT_SESSION_TYPE,
+    normalize_primary_artifacts,
+    normalize_session_type,
+    remove_primary_artifact_for_document_record,
+    upsert_primary_artifact_record,
+)
+
+_UNSET = object()
 
 # --- Database Storage Helpers ---
 
-async def db_create_conversation(user_id: str, conversation_id: str, framework: str, council_models: list, chairman_model: str) -> Dict[str, Any]:
+async def db_create_conversation(
+    user_id: str,
+    conversation_id: str,
+    framework: str,
+    council_models: list,
+    chairman_model: str,
+    session_type: str = DEFAULT_SESSION_TYPE,
+    primary_artifacts: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     async with AsyncSessionLocal() as session:
         new_conv = ConversationModel(
             id=conversation_id,
@@ -21,6 +38,8 @@ async def db_create_conversation(user_id: str, conversation_id: str, framework: 
             framework=framework,
             council_models=council_models,
             chairman_model=chairman_model,
+            session_type=normalize_session_type(session_type),
+            primary_artifacts=normalize_primary_artifacts(primary_artifacts),
             origin=APP_ORIGIN,
             messages=[]
         )
@@ -46,7 +65,9 @@ async def db_list_conversations(user_id: str) -> List[Dict[str, Any]]:
                 ConversationModel.id,
                 ConversationModel.created_at,
                 ConversationModel.title,
-                ConversationModel.framework
+                ConversationModel.framework,
+                ConversationModel.session_type,
+                ConversationModel.primary_artifacts,
             )
             .where(ConversationModel.user_id == user_id)
             .order_by(ConversationModel.created_at.desc())
@@ -58,6 +79,8 @@ async def db_list_conversations(user_id: str) -> List[Dict[str, Any]]:
                 "created_at": c.created_at.isoformat(),
                 "title": c.title,
                 "framework": c.framework,
+                "session_type": normalize_session_type(c.session_type),
+                "primary_artifact_count": len(normalize_primary_artifacts(c.primary_artifacts)),
             }
             for c in conversations
         ]
@@ -131,6 +154,31 @@ async def db_delete_conversation(conversation_id: str, user_id: str):
         
         await session.delete(conv)
         await session.commit()
+
+
+async def db_update_conversation_context(
+    conversation_id: str,
+    user_id: str,
+    *,
+    session_type: Any = _UNSET,
+    primary_artifacts: Any = _UNSET,
+) -> Dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(ConversationModel).where(ConversationModel.id == conversation_id))
+        conv = result.scalar_one_or_none()
+        if not conv or conv.user_id != user_id:
+            raise ValueError("Unauthorized")
+
+        if session_type is not _UNSET:
+            conv.session_type = normalize_session_type(session_type)
+
+        if primary_artifacts is not _UNSET:
+            conv.primary_artifacts = normalize_primary_artifacts(primary_artifacts)
+            flag_modified(conv, "primary_artifacts")
+
+        await session.commit()
+        await session.refresh(conv)
+        return _model_to_dict(conv)
 
 async def db_create_document(
     conversation_id: str,
@@ -304,7 +352,9 @@ def _model_to_dict(model: ConversationModel) -> Dict[str, Any]:
         "council_models": model.council_models,
         "chairman_model": model.chairman_model,
         "messages": model.messages,
-        "origin": model.origin
+        "origin": model.origin,
+        "session_type": normalize_session_type(model.session_type),
+        "primary_artifacts": normalize_primary_artifacts(model.primary_artifacts),
     }
 
 def _document_to_dict(model: DocumentModel) -> Dict[str, Any]:
@@ -347,9 +397,30 @@ def get_conversation_path(conversation_id: str) -> str:
         raise ValueError("Invalid conversation ID")
     return os.path.join(DATA_DIR, f"{conversation_id}.json")
 
-def file_create_conversation(conversation_id: str, user_id: str, framework: str, council_models: list, chairman_model: str) -> Dict[str, Any]:
+def _hydrate_conversation_dict(conversation: Dict[str, Any]) -> Dict[str, Any]:
+    hydrated = dict(conversation or {})
+    hydrated["session_type"] = normalize_session_type(hydrated.get("session_type"))
+    hydrated["primary_artifacts"] = normalize_primary_artifacts(hydrated.get("primary_artifacts"))
+    hydrated.setdefault("title", "New Conversation")
+    hydrated.setdefault("framework", "standard")
+    hydrated.setdefault("council_models", [])
+    hydrated.setdefault("chairman_model", None)
+    hydrated.setdefault("messages", [])
+    hydrated.setdefault("origin", APP_ORIGIN)
+    return hydrated
+
+
+def file_create_conversation(
+    conversation_id: str,
+    user_id: str,
+    framework: str,
+    council_models: list,
+    chairman_model: str,
+    session_type: str = DEFAULT_SESSION_TYPE,
+    primary_artifacts: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     ensure_data_dir()
-    conversation = {
+    conversation = _hydrate_conversation_dict({
         "id": conversation_id,
         "user_id": user_id,
         "created_at": datetime.utcnow().isoformat(),
@@ -358,8 +429,10 @@ def file_create_conversation(conversation_id: str, user_id: str, framework: str,
         "council_models": council_models,
         "chairman_model": chairman_model,
         "messages": [],
-        "origin": APP_ORIGIN
-    }
+        "origin": APP_ORIGIN,
+        "session_type": session_type,
+        "primary_artifacts": primary_artifacts or [],
+    })
     with open(get_conversation_path(conversation_id), 'w') as f:
         json.dump(conversation, f, indent=2)
     return conversation
@@ -370,10 +443,11 @@ def file_get_conversation(conversation_id: str, user_id: str) -> Optional[Dict[s
     with open(path, 'r') as f:
         data = json.load(f)
         if data.get("user_id") != user_id: return None
-        return data
+        return _hydrate_conversation_dict(data)
 
 def file_save_conversation(conversation: Dict[str, Any]):
     ensure_data_dir()
+    conversation = _hydrate_conversation_dict(conversation)
     with open(get_conversation_path(conversation['id']), 'w') as f:
         json.dump(conversation, f, indent=2)
 
@@ -414,15 +488,39 @@ def file_list_conversations(user_id: str) -> List[Dict[str, Any]]:
             with open(path, 'r') as f:
                 data = json.load(f)
                 if data.get("user_id") == user_id:
+                    hydrated = _hydrate_conversation_dict(data)
                     conversations.append({
-                        "id": data["id"],
-                        "created_at": data["created_at"],
-                        "title": data.get("title", "New Conversation"),
-                        "framework": data.get("framework", "standard"),
+                        "id": hydrated["id"],
+                        "created_at": hydrated["created_at"],
+                        "title": hydrated["title"],
+                        "framework": hydrated["framework"],
+                        "session_type": hydrated["session_type"],
+                        "primary_artifact_count": len(hydrated["primary_artifacts"]),
                     })
         except Exception: continue
     conversations.sort(key=lambda x: x["created_at"], reverse=True)
     return conversations
+
+
+def file_update_conversation_context(
+    conversation_id: str,
+    user_id: str,
+    *,
+    session_type: Any = _UNSET,
+    primary_artifacts: Any = _UNSET,
+) -> Dict[str, Any]:
+    conv = file_get_conversation(conversation_id, user_id)
+    if not conv:
+        raise ValueError("Not found")
+
+    if session_type is not _UNSET:
+        conv["session_type"] = normalize_session_type(session_type)
+
+    if primary_artifacts is not _UNSET:
+        conv["primary_artifacts"] = normalize_primary_artifacts(primary_artifacts)
+
+    file_save_conversation(conv)
+    return conv
 
 # --- File Document Storage ---
 
@@ -559,11 +657,35 @@ def file_delete_document(conversation_id: str, document_id: str, user_id: str):
 # If we switch to DB, we MUST make these functions async.
 # This means we need to refactor `main.py` to `await` storage calls.
 
-async def create_conversation(conversation_id: str, user_id: str, framework: str = "standard", council_models: list = None, chairman_model: str = None):
+async def create_conversation(
+    conversation_id: str,
+    user_id: str,
+    framework: str = "standard",
+    council_models: list = None,
+    chairman_model: str = None,
+    session_type: str = DEFAULT_SESSION_TYPE,
+    primary_artifacts: Optional[List[Dict[str, Any]]] = None,
+):
     if os.getenv("DATABASE_URL"):
-        return await db_create_conversation(user_id, conversation_id, framework, council_models, chairman_model)
+        return await db_create_conversation(
+            user_id,
+            conversation_id,
+            framework,
+            council_models,
+            chairman_model,
+            session_type=session_type,
+            primary_artifacts=primary_artifacts,
+        )
     else:
-        return file_create_conversation(conversation_id, user_id, framework, council_models, chairman_model)
+        return file_create_conversation(
+            conversation_id,
+            user_id,
+            framework,
+            council_models,
+            chairman_model,
+            session_type=session_type,
+            primary_artifacts=primary_artifacts,
+        )
 
 async def get_conversation(conversation_id: str, user_id: str):
     if os.getenv("DATABASE_URL"):
@@ -619,11 +741,66 @@ async def update_conversation_title(conversation_id: str, user_id: str, title: s
         conv["title"] = title
         file_save_conversation(conv)
 
+
+async def update_conversation_context(
+    conversation_id: str,
+    user_id: str,
+    *,
+    session_type: Any = _UNSET,
+    primary_artifacts: Any = _UNSET,
+):
+    if os.getenv("DATABASE_URL"):
+        return await db_update_conversation_context(
+            conversation_id,
+            user_id,
+            session_type=session_type,
+            primary_artifacts=primary_artifacts,
+        )
+    else:
+        return file_update_conversation_context(
+            conversation_id,
+            user_id,
+            session_type=session_type,
+            primary_artifacts=primary_artifacts,
+        )
+
 async def delete_conversation(conversation_id: str, user_id: str):
     if os.getenv("DATABASE_URL"):
         await db_delete_conversation(conversation_id, user_id)
     else:
         file_delete_conversation(conversation_id, user_id)
+
+
+async def upsert_primary_artifact(conversation_id: str, user_id: str, artifact: Dict[str, Any]):
+    conversation = await get_conversation(conversation_id, user_id)
+    if not conversation:
+        raise ValueError("Not found")
+
+    next_artifacts = upsert_primary_artifact_record(
+        conversation.get("primary_artifacts"),
+        artifact,
+    )
+    return await update_conversation_context(
+        conversation_id,
+        user_id,
+        primary_artifacts=next_artifacts,
+    )
+
+
+async def remove_primary_artifact_for_document(conversation_id: str, user_id: str, document_id: str):
+    conversation = await get_conversation(conversation_id, user_id)
+    if not conversation:
+        raise ValueError("Not found")
+
+    next_artifacts = remove_primary_artifact_for_document_record(
+        conversation.get("primary_artifacts"),
+        document_id,
+    )
+    return await update_conversation_context(
+        conversation_id,
+        user_id,
+        primary_artifacts=next_artifacts,
+    )
 
 async def create_document(conversation_id: str, user_id: str, filename: str, size_bytes: int):
     if os.getenv("DATABASE_URL"):

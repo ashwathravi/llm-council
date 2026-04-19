@@ -230,7 +230,7 @@ export default function ChatInterface({
           <BrainCircuit className="h-16 w-16 opacity-50" />
         </div>
         <h2 className="text-2xl font-bold mb-2">Welcome to LLM Council</h2>
-        <p className="max-w-md">Create a new conversation from the sidebar to begin consulting with multiple AI models simultaneously.</p>
+        <p className="max-w-md">Create a new session from the sidebar to work with multiple AI models around a shared workspace and artifacts.</p>
       </div>
     );
   }
@@ -242,6 +242,8 @@ export default function ChatInterface({
           title={conversation.title}
           conversationId={conversation.id}
           framework={conversation.framework}
+          sessionType={conversation.session_type}
+          primaryArtifacts={conversation.primary_artifacts}
           councilModels={conversation.council_models}
           chairmanModel={conversation.chairman_model}
           navigatorItemCount={outlineItems.length}
@@ -256,8 +258,8 @@ export default function ChatInterface({
           >
             {conversation.messages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground opacity-70">
-                <h2 className="text-xl font-semibold mb-2">Start a conversation</h2>
-                <p>Ask a question to consult the LLM Council</p>
+                <h2 className="text-xl font-semibold mb-2">Start this session</h2>
+                <p>Ask a question or attach supporting artifacts to focus the Council.</p>
               </div>
             ) : (
               conversation.messages.map((msg, index) => {
@@ -306,6 +308,8 @@ export default function ChatInterface({
 
         <ChatInput
           conversationId={conversation.id}
+          sessionType={conversation.session_type}
+          primaryArtifacts={conversation.primary_artifacts}
           isLoading={isLoading}
           onSendMessage={onSendMessage}
         />

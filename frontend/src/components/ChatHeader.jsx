@@ -12,6 +12,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
+import { getPrimaryArtifactCount, getSessionTypeLabel } from '@/lib/sessionMetadata';
 
 const FRAMEWORK_LABELS = {
   standard: 'Standard Council',
@@ -25,6 +26,8 @@ const ChatHeader = memo(({
   title,
   conversationId,
   framework,
+  sessionType,
+  primaryArtifacts,
   councilModels,
   chairmanModel,
   navigatorItemCount = 0,
@@ -32,7 +35,9 @@ const ChatHeader = memo(({
   const { toast } = useToast();
   const [copied, setCopied] = React.useState(false);
   const selectedCount = Array.isArray(councilModels) ? councilModels.length : 0;
+  const primaryArtifactCount = getPrimaryArtifactCount(primaryArtifacts);
   const frameworkLabel = FRAMEWORK_LABELS[framework] || framework || 'Standard Council';
+  const sessionTypeLabel = getSessionTypeLabel(sessionType);
   const chairmanLabel = chairmanModel || 'Auto';
 
   const handleExport = async (format) => {
@@ -77,8 +82,10 @@ const ChatHeader = memo(({
       <div className="space-y-2 min-w-0">
         <h3 className="font-semibold text-lg leading-none tracking-tight">{title || 'New Conversation'}</h3>
         <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="secondary" className="text-xs">{sessionTypeLabel}</Badge>
           <Badge variant="secondary" className="text-xs">{frameworkLabel}</Badge>
           <Badge variant="outline" className="text-xs">{selectedCount} models</Badge>
+          <Badge variant="outline" className="text-xs">{primaryArtifactCount} artifacts</Badge>
           <Badge variant="outline" className="text-xs">Chairman: {chairmanLabel}</Badge>
           <Badge variant="outline" className="text-xs">{navigatorItemCount} turns</Badge>
         </div>

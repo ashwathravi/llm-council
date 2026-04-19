@@ -162,4 +162,11 @@ async def test_upload_documents_endpoint(async_client, monkeypatch, tmp_path):
         assert payload["documents"][0]["status"] == "ready"
         assert payload["errors"] == []
 
+    conversation_response = await async_client.get(f"/api/conversations/{conversation_id}")
+    assert conversation_response.status_code == 200
+    conversation_payload = conversation_response.json()
+    assert conversation_payload["session_type"] == "general"
+    assert len(conversation_payload["primary_artifacts"]) == 1
+    assert conversation_payload["primary_artifacts"][0]["document_id"] == payload["documents"][0]["id"]
+
     app.dependency_overrides = {}

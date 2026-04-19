@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Trash2, Plus, History, Settings, PanelLeftClose, PanelLeftOpen, Users } from "lucide-react";
 import CouncilConfigDialog from './CouncilConfigDialog';
 import { cn } from "@/lib/utils";
+import { getPrimaryArtifactCount, getSessionTypeLabel } from '@/lib/sessionMetadata';
 
 const FRAMEWORK_LABELS = {
   standard: 'Standard Council',
@@ -44,6 +45,7 @@ const readSavedPresets = () => {
           id: typeof preset.id === 'string' && preset.id.trim() ? preset.id : fallbackId,
           name: typeof preset.name === 'string' && preset.name.trim() ? preset.name : `Preset ${index + 1}`,
           description: typeof preset.description === 'string' ? preset.description : '',
+          sessionType: typeof preset.sessionType === 'string' ? preset.sessionType : 'general',
           framework: typeof preset.framework === 'string' ? preset.framework : 'standard',
           chairmanModel: typeof preset.chairmanModel === 'string' ? preset.chairmanModel : '',
           councilModels: Array.isArray(preset.councilModels) ? preset.councilModels : [],
@@ -83,6 +85,7 @@ const sameConfig = (left, right) => {
   const leftModels = normalizeModelList(left.councilModels);
   const rightModels = normalizeModelList(right.councilModels);
 
+  if ((left.sessionType || 'general') !== (right.sessionType || 'general')) return false;
   if (left.framework !== right.framework) return false;
   if ((left.chairmanModel || '') !== (right.chairmanModel || '')) return false;
   if (leftModels.length !== rightModels.length) return false;
@@ -116,6 +119,7 @@ const CouncilSidebar = memo(({
   isOpen,
   onClose,
 }) => {
+  const [selectedSessionType, setSelectedSessionType] = useState('general');
   const [selectedFramework, setSelectedFramework] = useState('standard');
   const [models, setModels] = useState([]);
   const [chairmanModel, setChairmanModel] = useState('');
@@ -213,19 +217,21 @@ const CouncilSidebar = memo(({
   };
 
   const buildDefaultPresetName = () => {
+    const sessionTypeName = getSessionTypeLabel(selectedSessionType);
     const councilTypeName = FRAMEWORK_LABELS[selectedFramework] || selectedFramework;
     const memberCount = councilModels.length;
     const chairmanName = models.find((model) => model.id === chairmanModel)?.name || chairmanModel;
 
     if (chairmanModel) {
-      return `${councilTypeName} - ${memberCount} members - ${chairmanName}`;
+      return `${sessionTypeName} - ${councilTypeName} - ${memberCount} members - ${chairmanName}`;
     }
 
-    return `${councilTypeName} - ${memberCount} members`;
+    return `${sessionTypeName} - ${councilTypeName} - ${memberCount} members`;
   };
 
   const saveNewPreset = () => {
     const configToSave = {
+      sessionType: selectedSessionType,
       framework: selectedFramework,
       councilModels,
       chairmanModel,
@@ -247,6 +253,7 @@ const CouncilSidebar = memo(({
       id: Date.now().toString(),
       name,
       description: `Saved on ${new Date().toLocaleDateString()}`,
+      sessionType: selectedSessionType,
       framework: selectedFramework,
       chairmanModel,
       councilModels,
@@ -360,7 +367,13 @@ const CouncilSidebar = memo(({
   const handleStartSession = async () => {
     setIsCreatingSession(true);
     try {
-      await onNewConversation(selectedFramework, councilModels, chairmanModel || null);
+      await onNewConversation({
+        sessionType: selectedSessionType,
+        framework: selectedFramework,
+        councilModels,
+        chairmanModel: chairmanModel || null,
+        primaryArtifacts: [],
+      });
       setShowConfigDialog(false);
       if (isMobile) onClose();
     } catch (error) {
@@ -393,12 +406,14 @@ const CouncilSidebar = memo(({
   };
 
   const activeConversationFramework = activeConversationMetadata?.framework;
+  const activeConversationSessionType = activeConversationMetadata?.session_type || 'general';
   const activeFrameworkLabel = activeConversationFramework
     ? (FRAMEWORK_LABELS[activeConversationFramework] || activeConversationFramework)
     : 'No active conversation';
   const activeConversationModels = Array.isArray(activeConversationMetadata?.council_models)
     ? activeConversationMetadata.council_models
     : [];
+  const activePrimaryArtifactCount = getPrimaryArtifactCount(activeConversationMetadata?.primary_artifacts);
   const activeConversationChairman = activeConversationMetadata?.chairman_model || '';
   const activeChairmanName = activeConversationChairman ? getModelName(activeConversationChairman) : 'Auto';
 
@@ -481,10 +496,10 @@ const CouncilSidebar = memo(({
                       <div className="flex min-w-0 flex-1 flex-col items-start text-left text-xs">
                         <span className="w-full truncate">Manage Council</span>
                         <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
-                          {activeFrameworkLabel}
+                          {getSessionTypeLabel(activeConversationSessionType)} • {activeFrameworkLabel}
                         </span>
                         <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
-                          {activeConversationModels.length} Members • {activeChairmanName}
+                          {activeConversationModels.length} Members • {activeChairmanName} • {activePrimaryArtifactCount} artifacts
                         </span>
                       </div>
                     )}
@@ -519,7 +534,14 @@ const CouncilSidebar = memo(({
                         title={conversation.title}
                       >
                         <History className="h-4 w-4 text-muted-foreground shrink-0" />
-                        {!isCollapsed && <span className="min-w-0 truncate flex-1">{conversation.title}</span>}
+                        {!isCollapsed && (
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate">{conversation.title}</div>
+                            <div className="truncate text-[10px] font-normal text-muted-foreground">
+                              {getSessionTypeLabel(conversation.session_type)} • {conversation.primary_artifact_count || 0} artifacts
+                            </div>
+                          </div>
+                        )}
                       </button>
 
                       {!isCollapsed && (
@@ -580,13 +602,17 @@ const CouncilSidebar = memo(({
         onOpenChange={handleDialogOpenChange}
         mode={configDialogMode}
         readOnlyConfig={{
+          sessionType: activeConversationMetadata?.session_type || 'general',
           framework: activeConversationMetadata?.framework,
           councilModels: Array.isArray(activeConversationMetadata?.council_models) ? activeConversationMetadata.council_models : [],
           chairmanModel: activeConversationMetadata?.chairman_model || '',
+          primaryArtifacts: Array.isArray(activeConversationMetadata?.primary_artifacts) ? activeConversationMetadata.primary_artifacts : [],
         }}
         onStartSession={handleStartSession}
         isStartingSession={isCreatingSession}
         models={models}
+        selectedSessionType={selectedSessionType}
+        setSelectedSessionType={setSelectedSessionType}
         selectedFramework={selectedFramework}
         setSelectedFramework={setSelectedFramework}
         councilModels={councilModels}

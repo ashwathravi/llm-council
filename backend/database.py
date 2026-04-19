@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional, Any, Dict
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, DateTime, JSON, text, Integer, Text, Index
+from sqlalchemy import String, DateTime, JSON, text, Integer, Text, Index, inspect
 from sqlalchemy.engine.url import make_url
 from .config import DATABASE_URL
 
@@ -28,6 +28,8 @@ class ConversationModel(Base):
     council_models: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
     chairman_model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     messages: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, default=list)
+    session_type: Mapped[Optional[str]] = mapped_column(String, nullable=True, default="general")
+    primary_artifacts: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSON, nullable=True, default=list)
     
     # Origin tracking
     origin: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -153,6 +155,25 @@ async def init_db():
     if engine:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(_ensure_conversation_schema)
+
+
+def _ensure_conversation_schema(sync_conn):
+    inspector = inspect(sync_conn)
+    if "conversations" not in inspector.get_table_names():
+        return
+
+    existing_columns = {
+        column["name"]
+        for column in inspector.get_columns("conversations")
+    }
+
+    if "session_type" not in existing_columns:
+        sync_conn.execute(text("ALTER TABLE conversations ADD COLUMN session_type VARCHAR"))
+
+    if "primary_artifacts" not in existing_columns:
+        json_type = JSON().compile(dialect=sync_conn.dialect)
+        sync_conn.execute(text(f"ALTER TABLE conversations ADD COLUMN primary_artifacts {json_type}"))
 
 async def get_db_session():
     """Dependency for getting async session."""

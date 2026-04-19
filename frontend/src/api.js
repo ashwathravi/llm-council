@@ -105,7 +105,13 @@ export const api = {
   /**
    * Create a new conversation.
    */
-  async createConversation(framework = 'standard', councilModels = [], chairmanModel = null) {
+  async createConversation({
+    framework = 'standard',
+    councilModels = [],
+    chairmanModel = null,
+    sessionType = 'general',
+    primaryArtifacts = [],
+  } = {}) {
     const response = await fetch(`${API_BASE}/api/conversations`, {
       method: 'POST',
       headers: {
@@ -114,8 +120,10 @@ export const api = {
       },
       body: JSON.stringify({
         framework,
+        session_type: sessionType,
         council_models: councilModels,
-        chairman_model: chairmanModel
+        chairman_model: chairmanModel,
+        primary_artifacts: primaryArtifacts,
       }),
     });
     if (!response.ok) {

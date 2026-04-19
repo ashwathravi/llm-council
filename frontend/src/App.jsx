@@ -113,10 +113,10 @@ function App() {
     }
   }, [currentConversationId, loadConversation, user]);
 
-  const handleNewConversation = useCallback(async (framework, councilModels, chairmanModel) => {
+  const handleNewConversation = useCallback(async (sessionConfig) => {
     setIsLoading(true);
     try {
-      const data = await api.createConversation(framework, councilModels, chairmanModel);
+      const data = await api.createConversation(sessionConfig);
       setConversations(prev => [data, ...prev]);
       setCurrentConversationId(data.id);
       setCurrentConversation(data);
@@ -153,8 +153,10 @@ function App() {
   const conversationId = currentConversation?.id;
   const conversationTitle = currentConversation?.title;
   const conversationFramework = currentConversation?.framework;
+  const conversationSessionType = currentConversation?.session_type;
   const conversationCouncilModels = currentConversation?.council_models;
   const conversationChairmanModel = currentConversation?.chairman_model;
+  const conversationPrimaryArtifacts = currentConversation?.primary_artifacts;
 
   const activeConversationMetadata = useMemo(() => {
     if (!conversationId) return null;
@@ -162,15 +164,19 @@ function App() {
       id: conversationId,
       title: conversationTitle,
       framework: conversationFramework,
+      session_type: conversationSessionType,
       council_models: conversationCouncilModels,
       chairman_model: conversationChairmanModel,
+      primary_artifacts: conversationPrimaryArtifacts,
     };
   }, [
     conversationId,
     conversationTitle,
     conversationFramework,
+    conversationSessionType,
     conversationCouncilModels,
-    conversationChairmanModel
+    conversationChairmanModel,
+    conversationPrimaryArtifacts,
   ]);
 
   // ... (Keep handleSendMessage logic exactly as is, it's complex) ...

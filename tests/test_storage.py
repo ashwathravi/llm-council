@@ -42,6 +42,8 @@ async def test_create_and_get_conversation_file():
     assert created["id"] == conv_id
     assert created["user_id"] == user_id
     assert created["origin"] == "local" # or whatever default
+    assert created["session_type"] == "general"
+    assert created["primary_artifacts"] == []
     
     # Verify file exists
     assert os.path.exists(os.path.join(TEST_DATA_DIR, f"{conv_id}.json"))
@@ -50,6 +52,7 @@ async def test_create_and_get_conversation_file():
     fetched = await storage.get_conversation(conv_id, user_id)
     assert fetched is not None
     assert fetched["id"] == conv_id
+    assert fetched["session_type"] == "general"
 
 @pytest.mark.asyncio
 async def test_add_message_file():

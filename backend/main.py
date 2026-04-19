@@ -26,6 +26,16 @@ from .council import (
     build_model_weight_profile, apply_round_to_model_profiles, serialize_model_weight_profile
 )
 from . import export
+from .session_context import (
+    ALLOWED_ARTIFACT_KINDS,
+    ALLOWED_ARTIFACT_SOURCES,
+    ALLOWED_ARTIFACT_STATUSES,
+    ALLOWED_SESSION_TYPES,
+    DEFAULT_SESSION_TYPE,
+    build_primary_artifact_from_document,
+    build_session_context_block,
+    merge_context_blocks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +89,10 @@ app.add_middleware(
 class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
     framework: str = "standard"
+    session_type: str = DEFAULT_SESSION_TYPE
     council_models: List[str] = Field(default=[], max_length=10)
     chairman_model: Optional[str] = Field(None, max_length=100)
+    primary_artifacts: List["PrimaryArtifactMetadata"] = Field(default_factory=list, max_length=10)
 
     @field_validator("framework")
     @classmethod
@@ -88,6 +100,13 @@ class CreateConversationRequest(BaseModel):
         allowed = {"standard", "six_hats", "debate", "ensemble", "heterogeneous"}
         if v not in allowed:
             raise ValueError(f"Framework must be one of: {', '.join(allowed)}")
+        return v
+
+    @field_validator("session_type")
+    @classmethod
+    def validate_session_type(cls, v: str) -> str:
+        if v not in ALLOWED_SESSION_TYPES:
+            raise ValueError(f"Session type must be one of: {', '.join(sorted(ALLOWED_SESSION_TYPES))}")
         return v
 
     @field_validator("council_models")
@@ -127,6 +146,44 @@ class ConversationMetadata(BaseModel):
     created_at: str
     title: str
     framework: str = "standard"
+    session_type: str = DEFAULT_SESSION_TYPE
+    primary_artifact_count: int = 0
+
+
+class PrimaryArtifactMetadata(BaseModel):
+    id: Optional[str] = Field(None, max_length=200)
+    kind: str = Field(default="note", max_length=40)
+    label: str = Field(..., max_length=160)
+    source: str = Field(default="manual", max_length=40)
+    status: str = Field(default="ready", max_length=40)
+    document_id: Optional[str] = Field(None, max_length=100)
+    filename: Optional[str] = Field(None, max_length=255)
+    mime_type: Optional[str] = Field(None, max_length=120)
+    size_bytes: Optional[int] = Field(None, ge=0)
+    summary: Optional[str] = Field(None, max_length=500)
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, v: str) -> str:
+        if v not in ALLOWED_ARTIFACT_KINDS:
+            raise ValueError(f"Artifact kind must be one of: {', '.join(sorted(ALLOWED_ARTIFACT_KINDS))}")
+        return v
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, v: str) -> str:
+        if v not in ALLOWED_ARTIFACT_SOURCES:
+            raise ValueError(f"Artifact source must be one of: {', '.join(sorted(ALLOWED_ARTIFACT_SOURCES))}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        if v not in ALLOWED_ARTIFACT_STATUSES:
+            raise ValueError(f"Artifact status must be one of: {', '.join(sorted(ALLOWED_ARTIFACT_STATUSES))}")
+        return v
 
 
 class Conversation(BaseModel):
@@ -135,8 +192,10 @@ class Conversation(BaseModel):
     created_at: str
     title: str
     framework: str = "standard"
+    session_type: str = DEFAULT_SESSION_TYPE
     council_models: Optional[List[str]] = None
     chairman_model: Optional[str] = None
+    primary_artifacts: List[PrimaryArtifactMetadata] = Field(default_factory=list)
     messages: List[Dict[str, Any]]
 
 
@@ -166,6 +225,20 @@ class DocumentUploadError(BaseModel):
 class DocumentUploadResponse(BaseModel):
     documents: List[DocumentMetadata]
     errors: List[DocumentUploadError] = []
+
+
+CreateConversationRequest.model_rebuild()
+
+
+def _build_effective_context(
+    conversation: Dict[str, Any],
+    retrieval_context: Optional[str],
+) -> str:
+    session_context = build_session_context_block(
+        conversation.get("session_type"),
+        conversation.get("primary_artifacts"),
+    )
+    return merge_context_blocks(session_context, retrieval_context)
 
 
 @app.get("/api/health")
@@ -293,7 +366,12 @@ async def create_conversation(
         user_id, 
         request.framework,
         request.council_models,
-        request.chairman_model
+        request.chairman_model,
+        session_type=request.session_type,
+        primary_artifacts=[
+            artifact.model_dump(exclude_none=True)
+            for artifact in request.primary_artifacts
+        ],
     )
     return conversation
 
@@ -411,6 +489,9 @@ async def upload_documents(
                 status="failed",
                 error_message=str(e)
             )
+        artifact_record = build_primary_artifact_from_document(doc)
+        if artifact_record:
+            await storage.upsert_primary_artifact(conversation_id, user_id, artifact_record)
         uploaded_documents.append(doc)
 
     return {"documents": uploaded_documents, "errors": errors}
@@ -428,6 +509,7 @@ async def delete_document(
 
     try:
         await storage.delete_document(conversation_id, document_id, user_id)
+        await storage.remove_primary_artifact_for_document(conversation_id, user_id, document_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return {"status": "success"}
@@ -481,16 +563,20 @@ async def send_message(
         user_id,
         request.content
     )
+    effective_context = _build_effective_context(conversation, retrieval_context)
 
     stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
         history,
         framework=framework,
         council_models=council_models,
         chairman_model=chairman_model,
-        retrieval_context=retrieval_context,
+        retrieval_context=effective_context,
         retrieval_citations=citations,
         conversation_messages=conversation.get("messages")
     )
+    metadata["session_type"] = conversation.get("session_type", DEFAULT_SESSION_TYPE)
+    metadata["primary_artifacts"] = conversation.get("primary_artifacts", [])
+    metadata["primary_artifact_count"] = len(conversation.get("primary_artifacts") or [])
 
     # Add assistant message with all stages
     await storage.add_assistant_message(
@@ -727,6 +813,7 @@ async def retry_failed_stage1_models(
     history: List[Dict[str, str]] = []
     retry_query = ""
     retrieval_context = ""
+    effective_context = ""
     citations: List[Dict[str, Any]] = []
     if retry_models or request.refresh_synthesis:
         previous_user_index = _find_previous_user_message_index(messages, message_index)
@@ -743,6 +830,7 @@ async def retry_failed_stage1_models(
             user_id,
             retry_query
         )
+        effective_context = _build_effective_context(conversation, retrieval_context)
 
     retry_stage1_results: List[Dict[str, Any]] = []
     retry_stage1_errors: List[Dict[str, str]] = []
@@ -750,7 +838,7 @@ async def retry_failed_stage1_models(
         async for result in stage1_collect_responses(
             history,
             retry_models,
-            retrieval_context=retrieval_context
+            retrieval_context=effective_context
         ):
             if result.get("error"):
                 retry_stage1_errors.append({
@@ -801,6 +889,9 @@ async def retry_failed_stage1_models(
     metadata["responded_council_models"] = responded_models
     metadata["stage1_retry_history"] = retry_history
     metadata["retrieval"] = {"citations": citations}
+    metadata["session_type"] = conversation.get("session_type", DEFAULT_SESSION_TYPE)
+    metadata["primary_artifacts"] = conversation.get("primary_artifacts", [])
+    metadata["primary_artifact_count"] = len(conversation.get("primary_artifacts") or [])
 
     if conversation.get("framework") == "six_hats":
         metadata["retry_note"] = "Retry runs use direct model calls and do not re-assign Six Hats roles."
@@ -827,7 +918,7 @@ async def retry_failed_stage1_models(
                     stage1_results=merged_stage1,
                     effective_models=effective_models,
                     chairman_model=active_chairman_model,
-                    retrieval_context=retrieval_context,
+                    retrieval_context=effective_context,
                     conversation_messages=messages[:message_index]
                 )
                 target_message["stage2"] = refreshed_data["stage2"]
@@ -915,6 +1006,7 @@ async def send_message_stream(
                 storage.add_user_message(conversation_id, user_id, request.content),
                 retrieval.build_retrieval_context(conversation_id, user_id, request.content)
             )
+            effective_context = _build_effective_context(conversation, retrieval_context)
 
             logger.info(
                 f"[stream] conversation={conversation_id} framework={framework} "
@@ -932,12 +1024,12 @@ async def send_message_stream(
                 stage1_results, stage1_errors = await stage1_collect_responses_six_hats(
                     history,
                     effective_council_models,
-                    retrieval_context=retrieval_context
+                    retrieval_context=effective_context
                 )
                 for error in stage1_errors:
                     yield f"data: {json.dumps({'type': 'stage1_error', 'data': error})}\n\n"
             else:
-                async for result in stage1_collect_responses(history, effective_council_models, retrieval_context=retrieval_context):
+                async for result in stage1_collect_responses(history, effective_council_models, retrieval_context=effective_context):
                     if result.get("error"):
                         stage1_errors.append(result)
                         yield f"data: {json.dumps({'type': 'stage1_error', 'data': result})}\n\n"
@@ -989,7 +1081,7 @@ async def send_message_stream(
                      request.content,
                      stage1_results,
                      effective_council_models,
-                     retrieval_context=retrieval_context
+                     retrieval_context=effective_context
                  )
                  yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'mode': 'debate', **config_meta, **retrieval_meta}})}\n\n"
 
@@ -999,7 +1091,7 @@ async def send_message_stream(
                      stage1_results,
                      effective_council_models,
                      chairman_model,
-                     retrieval_context=retrieval_context,
+                     retrieval_context=effective_context,
                      framework=framework,
                      model_profiles=model_profiles
                  )
@@ -1039,7 +1131,7 @@ async def send_message_stream(
                 stage2_results,
                 chairman_model=chairman_model,
                 mode=framework,
-                retrieval_context=retrieval_context,
+                retrieval_context=effective_context,
                 aggregate_rankings=aggregate_rankings
             ):
                 full_stage3_response += token
@@ -1073,6 +1165,9 @@ async def send_message_stream(
                 "label_to_model": label_to_model,
                 "aggregate_rankings": aggregate_rankings,
                 "stage1_errors": stage1_errors,
+                "session_type": conversation.get("session_type", DEFAULT_SESSION_TYPE),
+                "primary_artifacts": conversation.get("primary_artifacts", []),
+                "primary_artifact_count": len(conversation.get("primary_artifacts") or []),
                 "timing": {
                     "stage1_seconds": stage1_duration,
                     "stage2_seconds": stage2_duration,

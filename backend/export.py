@@ -6,6 +6,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_JUSTIFY
 from reportlab.lib import colors
+from .session_context import get_session_type_label, normalize_primary_artifacts
 
 def export_to_markdown(conversation: dict) -> str:
     """
@@ -16,7 +17,17 @@ def export_to_markdown(conversation: dict) -> str:
     lines = []
     lines.append(f"# {conversation.get('title') or 'Conversation'}\n\n")
     lines.append(f"**Date:** {conversation.get('created_at') or ''}\n")
-    lines.append(f"**Framework:** {conversation.get('framework') or 'Standard'}\n\n")
+    lines.append(f"**Framework:** {conversation.get('framework') or 'Standard'}\n")
+    lines.append(f"**Session Type:** {get_session_type_label(conversation.get('session_type'))}\n")
+
+    primary_artifacts = normalize_primary_artifacts(conversation.get("primary_artifacts"))
+    if primary_artifacts:
+        lines.append("**Primary Artifacts:**\n")
+        for artifact in primary_artifacts:
+            lines.append(f"- {artifact.get('label')} ({artifact.get('kind')})\n")
+        lines.append("\n")
+    else:
+        lines.append("**Primary Artifacts:** None\n\n")
 
     for msg in (conversation.get('messages') or []):
         if not isinstance(msg, dict):
@@ -90,6 +101,17 @@ def export_to_pdf(conversation: dict) -> bytes:
     # Metadata
     story.append(Paragraph(f"<b>Date:</b> {safe_text(conversation.get('created_at') or '')}", styles["Normal"]))
     story.append(Paragraph(f"<b>Framework:</b> {safe_text(conversation.get('framework') or 'Standard')}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Session Type:</b> {safe_text(get_session_type_label(conversation.get('session_type')))}", styles["Normal"]))
+
+    primary_artifacts = normalize_primary_artifacts(conversation.get("primary_artifacts"))
+    if primary_artifacts:
+        artifact_text = ", ".join(
+            f"{artifact.get('label', 'Artifact')} ({artifact.get('kind', 'artifact')})"
+            for artifact in primary_artifacts
+        )
+        story.append(Paragraph(f"<b>Primary Artifacts:</b> {safe_text(artifact_text)}", styles["Normal"]))
+    else:
+        story.append(Paragraph("<b>Primary Artifacts:</b> None", styles["Normal"]))
     story.append(Spacer(1, 24))
 
     for msg in (conversation.get('messages') or []):

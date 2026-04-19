@@ -8,8 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { Paperclip, Send, X, FileText, Loader2 } from "lucide-react";
+import { getPrimaryArtifactCount, getSessionTypeLabel, SESSION_TYPE_PLACEHOLDERS } from '@/lib/sessionMetadata';
 
-const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
+const ChatInput = memo(({ conversationId, sessionType = 'general', primaryArtifacts = [], isLoading, onSendMessage }) => {
   const [input, setInput] = useState('');
   const [documents, setDocuments] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -18,6 +19,9 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
 
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const primaryArtifactCount = getPrimaryArtifactCount(primaryArtifacts);
+  const sessionTypeLabel = getSessionTypeLabel(sessionType);
+  const inputPlaceholder = SESSION_TYPE_PLACEHOLDERS[sessionType] || SESSION_TYPE_PLACEHOLDERS.general;
 
   // Auto-resize textarea
   useEffect(() => {
@@ -86,7 +90,7 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
     if (!files.length || !conversationId) return;
 
     if (documents.length + files.length > 5) {
-      setUploadError('Max 5 PDFs per conversation.');
+      setUploadError('Max 5 PDFs per session.');
       return;
     }
 
@@ -129,6 +133,9 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
   return (
     <div className="border-t bg-background p-4">
       <form onSubmit={handleSubmit} className="mx-auto max-w-3xl flex flex-col gap-3">
+        <div className="text-xs text-muted-foreground text-center">
+          {sessionTypeLabel} workspace • {primaryArtifactCount} tracked artifacts
+        </div>
         {/* Upload Error */}
         {uploadError && (
           <div className="text-xs text-destructive bg-destructive/10 p-2 rounded">{uploadError}</div>
@@ -192,15 +199,15 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
                   aria-disabled={!conversationId || uploading}
                 >
                   <Paperclip className="h-4 w-4" />
-                  <span className="sr-only">Attach PDF</span>
+                  <span className="sr-only">Attach PDF artifact</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
                 {!conversationId
-                  ? "Start a conversation to attach files"
+                  ? "Start a session to attach files"
                   : uploading
                     ? "Uploading..."
-                    : "Attach PDF (Max 5)"}
+                    : "Attach PDF artifact (Max 5)"}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -221,7 +228,7 @@ const ChatInput = memo(({ conversationId, isLoading, onSendMessage }) => {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Message the Council..."
+            placeholder={inputPlaceholder}
             aria-label="Message input"
             spellCheck={false}
             className="min-h-[44px] w-full resize-none border-0 bg-transparent py-3 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
