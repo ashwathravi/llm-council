@@ -22,7 +22,7 @@ from .council import (
     run_full_council, generate_conversation_title,
     stage1_collect_responses, stage1_collect_responses_six_hats,
     stage2_collect_rankings, stage2_collect_critiques,
-    stage3_synthesize_final, calculate_aggregate_rankings, resolve_active_models,
+    stage3_synthesize_final, calculate_aggregate_rankings, calculate_aggregate_rubrics, resolve_active_models,
     build_model_weight_profile, apply_round_to_model_profiles, serialize_model_weight_profile
 )
 from . import export
@@ -1049,6 +1049,7 @@ async def _rerun_stage2_and_stage3(
 ) -> Dict[str, Any]:
     stage2_results: List[Dict[str, Any]] = []
     aggregate_rankings: List[Dict[str, Any]] = []
+    aggregate_rubrics: List[Dict[str, Any]] = []
     model_profiles = (
         build_model_weight_profile(conversation_messages, effective_models)
         if framework == "heterogeneous" else {}
@@ -1070,10 +1071,16 @@ async def _rerun_stage2_and_stage3(
             effective_models,
             chairman_model,
             retrieval_context=retrieval_context,
+            session_type=session_type,
             framework=framework,
             model_profiles=model_profiles
         )
         aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+        aggregate_rubrics = calculate_aggregate_rubrics(
+            stage2_results,
+            label_to_model,
+            session_type=session_type,
+        )
 
     updated_model_profiles = (
         apply_round_to_model_profiles(
@@ -1094,7 +1101,8 @@ async def _rerun_stage2_and_stage3(
         session_type=session_type,
         specialist_template_id=specialist_template_id,
         retrieval_context=retrieval_context,
-        aggregate_rankings=aggregate_rankings
+        aggregate_rankings=aggregate_rankings,
+        aggregate_rubrics=aggregate_rubrics,
     ):
         full_stage3_response += token
 
@@ -1111,6 +1119,7 @@ async def _rerun_stage2_and_stage3(
         "stage3": stage3_result,
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
+        "aggregate_rubrics": aggregate_rubrics,
         "model_weight_profile": serialize_model_weight_profile(updated_model_profiles, effective_models)
         if framework == "heterogeneous" else [],
         "ballot_weighting": {
@@ -1340,6 +1349,7 @@ async def retry_failed_stage1_models(
                 target_message["stage3"] = refreshed_data["stage3"]
                 metadata["label_to_model"] = refreshed_data["label_to_model"]
                 metadata["aggregate_rankings"] = refreshed_data["aggregate_rankings"]
+                metadata["aggregate_rubrics"] = refreshed_data["aggregate_rubrics"]
                 if refreshed_data.get("model_weight_profile"):
                     metadata["model_weight_profile"] = refreshed_data["model_weight_profile"]
                 if refreshed_data.get("ballot_weighting"):
@@ -1472,6 +1482,7 @@ async def send_message_stream(
             stage2_start = time.monotonic()
             stage2_results = []
             aggregate_rankings = []
+            aggregate_rubrics = []
             label_to_model = {}
             updated_model_profiles = model_profiles
             retrieval_meta = {"retrieval": {"citations": citations}}
@@ -1504,10 +1515,16 @@ async def send_message_stream(
                      effective_council_models,
                      chairman_model,
                      retrieval_context=effective_context,
+                     session_type=conversation.get("session_type"),
                      framework=framework,
                      model_profiles=model_profiles
                  )
                  aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+                 aggregate_rubrics = calculate_aggregate_rubrics(
+                     stage2_results,
+                     label_to_model,
+                     session_type=conversation.get("session_type"),
+                 )
                  if framework == "heterogeneous":
                      updated_model_profiles = apply_round_to_model_profiles(
                          model_profiles,
@@ -1525,7 +1542,7 @@ async def send_message_stream(
                              "history_source": "prior_conversation_rankings",
                          },
                      }
-                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, **hetero_meta, **config_meta, **retrieval_meta}})}\n\n"
+                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, 'aggregate_rubrics': aggregate_rubrics, **hetero_meta, **config_meta, **retrieval_meta}})}\n\n"
 
             stage2_duration = round(time.monotonic() - stage2_start, 3)
             logger.info(
@@ -1546,7 +1563,8 @@ async def send_message_stream(
                 session_type=conversation.get("session_type"),
                 specialist_template_id=conversation.get("specialist_template_id"),
                 retrieval_context=effective_context,
-                aggregate_rankings=aggregate_rankings
+                aggregate_rankings=aggregate_rankings,
+                aggregate_rubrics=aggregate_rubrics,
             ):
                 full_stage3_response += token
                 yield f"data: {json.dumps({'type': 'stage3_token', 'data': token})}\n\n"
@@ -1579,6 +1597,7 @@ async def send_message_stream(
                 "chairman_model": chairman_model or config.CHAIRMAN_MODEL,
                 "label_to_model": label_to_model,
                 "aggregate_rankings": aggregate_rankings,
+                "aggregate_rubrics": aggregate_rubrics,
                 "stage1_errors": stage1_errors,
                 "session_type": conversation.get("session_type", DEFAULT_SESSION_TYPE),
                 "specialist_template_id": conversation.get("specialist_template_id"),

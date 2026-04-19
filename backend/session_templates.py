@@ -143,6 +143,45 @@ DEFAULT_DELIVERABLES: Dict[str, Dict[str, str]] = {
 }
 
 
+DEFAULT_RUBRICS: Dict[str, Dict[str, object]] = {
+    "visual_review": {
+        "label": "Visual review rubric",
+        "score_range": "1-5",
+        "effort_note": "For Effort, 5 means the fix is relatively low effort and 1 means high effort.",
+        "confidence_note": "For Confidence, 5 means strong confidence in the response quality.",
+        "criteria": [
+            {"key": "hierarchy", "label": "Hierarchy"},
+            {"key": "clarity", "label": "Clarity"},
+            {"key": "accessibility", "label": "Accessibility"},
+            {"key": "consistency", "label": "Consistency"},
+            {"key": "effort", "label": "Effort"},
+            {"key": "confidence", "label": "Confidence"},
+        ],
+    },
+    "code_review": {
+        "label": "Code review rubric",
+        "score_range": "1-5",
+        "effort_note": "For Effort, 5 means the fix is relatively low effort and 1 means high effort.",
+        "confidence_note": "For Confidence, 5 means strong confidence in the response quality.",
+        "criteria": [
+            {"key": "correctness", "label": "Correctness"},
+            {"key": "maintainability", "label": "Maintainability"},
+            {"key": "security", "label": "Security"},
+            {"key": "performance", "label": "Performance"},
+            {"key": "testability", "label": "Testability"},
+            {"key": "effort", "label": "Effort"},
+            {"key": "confidence", "label": "Confidence"},
+        ],
+    },
+}
+
+
+def _normalize_session_key(session_type: Optional[str]) -> str:
+    if not isinstance(session_type, str):
+        return ""
+    return session_type.strip().lower().replace("-", "_").replace(" ", "_")
+
+
 def get_deliverable_spec(session_type: Optional[str], template_id: Optional[str] = None) -> Dict[str, str]:
     template = get_session_template(template_id, session_type=session_type)
     if template and template.get("deliverable_format") and template.get("deliverable_instruction"):
@@ -154,3 +193,25 @@ def get_deliverable_spec(session_type: Optional[str], template_id: Optional[str]
         "label": "Final synthesis",
         "instruction": "Use a concise, practical structure with headings and action-oriented conclusions.",
     })
+
+
+def get_rubric_spec(session_type: Optional[str]) -> Optional[Dict[str, object]]:
+    spec = DEFAULT_RUBRICS.get(_normalize_session_key(session_type))
+    if spec is None:
+        return None
+
+    criteria = spec.get("criteria") or []
+    return {
+        "label": str(spec.get("label") or "Rubric"),
+        "score_range": str(spec.get("score_range") or "1-5"),
+        "effort_note": str(spec.get("effort_note") or ""),
+        "confidence_note": str(spec.get("confidence_note") or ""),
+        "criteria": [
+            {
+                "key": str(item.get("key") or ""),
+                "label": str(item.get("label") or ""),
+            }
+            for item in criteria
+            if isinstance(item, dict) and item.get("key") and item.get("label")
+        ],
+    }

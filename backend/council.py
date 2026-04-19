@@ -14,12 +14,14 @@ from .config import (
     FAST_LOCAL_TITLE,
     TITLE_MODEL,
 )
-from .session_templates import get_deliverable_spec
+from .session_templates import get_deliverable_spec, get_rubric_spec
 
 # Pre-compiled regex patterns for parsing model rankings
 NUMBERED_RESPONSE_RE = re.compile(r'\d+\.\s*Response [A-Z]', re.IGNORECASE)
 RESPONSE_LABEL_RE = re.compile(r'Response\s+([A-Z])', re.IGNORECASE)
 CONFIDENCE_RE = re.compile(r'^\s*CONFIDENCE\s*:\s*(\d{1,3})\s*$', re.IGNORECASE | re.MULTILINE)
+RUBRIC_RESPONSE_RE = re.compile(r'^\s*(Response [A-Z])\s*:?\s*$', re.IGNORECASE)
+RUBRIC_SCORE_RE = re.compile(r'^\s*-\s*([A-Za-z][A-Za-z ]*[A-Za-z])\s*:\s*(\d{1,2})\s*$')
 
 DEFAULT_CONFIDENCE_SCORE = 50
 DEFAULT_MODEL_PERFORMANCE = 0.5
@@ -217,6 +219,180 @@ def serialize_model_weight_profile(
     ]
 
 
+def _normalize_rubric_score(value: Any) -> Optional[int]:
+    if not isinstance(value, (int, float)):
+        return None
+    return max(1, min(5, int(value)))
+
+
+def _build_rubric_prompt_block(
+    rubric_spec: Optional[Dict[str, Any]],
+    response_labels: List[str],
+) -> str:
+    if not rubric_spec:
+        return ""
+
+    criteria = rubric_spec.get("criteria") or []
+    if not isinstance(criteria, list) or not criteria:
+        return ""
+
+    criteria_lines = "\n".join(
+        f"- {criterion['label']}: [score]"
+        for criterion in criteria
+        if isinstance(criterion, dict) and criterion.get("label")
+    )
+    first_response = response_labels[0] if response_labels else "Response A"
+    second_response = response_labels[1] if len(response_labels) > 1 else "Response B"
+
+    return f"""2. Score every response using the {rubric_spec['label']} before the final ranking.
+- Use integer scores from {rubric_spec['score_range']} where 5 is strongest.
+- {rubric_spec['effort_note']}
+- {rubric_spec['confidence_note']}
+- Include a section titled "RUBRIC SCORES:" using EXACTLY this structure:
+
+RUBRIC SCORES:
+{first_response}
+{criteria_lines}
+{second_response}
+{criteria_lines}
+...
+"""
+
+
+def parse_rubric_scores_from_text(
+    ranking_text: str,
+    response_labels: List[str],
+    rubric_spec: Optional[Dict[str, Any]],
+) -> Dict[str, Dict[str, int]]:
+    if not ranking_text or not rubric_spec:
+        return {}
+
+    criteria = rubric_spec.get("criteria") or []
+    if not isinstance(criteria, list) or not criteria:
+        return {}
+
+    label_lookup = {
+        label.lower(): label
+        for label in response_labels
+        if isinstance(label, str) and label
+    }
+    criterion_lookup = {
+        str(criterion["label"]).strip().lower(): str(criterion["key"]).strip()
+        for criterion in criteria
+        if isinstance(criterion, dict) and criterion.get("label") and criterion.get("key")
+    }
+
+    marker = "RUBRIC SCORES:"
+    upper_text = ranking_text.upper()
+    marker_idx = upper_text.find(marker)
+    if marker_idx == -1:
+        return {}
+
+    final_ranking_idx = upper_text.find("FINAL RANKING:", marker_idx)
+    if final_ranking_idx == -1:
+        rubric_text = ranking_text[marker_idx + len(marker):]
+    else:
+        rubric_text = ranking_text[marker_idx + len(marker):final_ranking_idx]
+
+    scores_by_response: Dict[str, Dict[str, int]] = {}
+    current_label: Optional[str] = None
+    for raw_line in rubric_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        response_match = RUBRIC_RESPONSE_RE.match(line)
+        if response_match:
+            matched_label = response_match.group(1).strip().lower()
+            current_label = label_lookup.get(matched_label)
+            if current_label:
+                scores_by_response.setdefault(current_label, {})
+            continue
+
+        score_match = RUBRIC_SCORE_RE.match(line)
+        if not current_label or not score_match:
+            continue
+
+        criterion_key = criterion_lookup.get(score_match.group(1).strip().lower())
+        if not criterion_key:
+            continue
+
+        normalized_score = _normalize_rubric_score(int(score_match.group(2)))
+        if normalized_score is None:
+            continue
+        scores_by_response[current_label][criterion_key] = normalized_score
+
+    return {
+        label: scores
+        for label, scores in scores_by_response.items()
+        if scores
+    }
+
+
+def _select_rubric_extremes(
+    criteria: List[Dict[str, Any]],
+    *,
+    reverse: bool,
+) -> List[Dict[str, Any]]:
+    populated = [item for item in criteria if isinstance(item.get("average_score"), (int, float))]
+    populated.sort(
+        key=lambda item: (
+            float(item["average_score"]),
+            str(item.get("label") or ""),
+        ),
+        reverse=reverse,
+    )
+    return populated[:2]
+
+
+def _build_rubric_summary_block(aggregate_rubrics: Optional[List[Dict[str, Any]]]) -> str:
+    if not aggregate_rubrics:
+        return ""
+
+    lines = []
+    for entry in aggregate_rubrics:
+        if not isinstance(entry, dict):
+            continue
+        criteria = entry.get("criteria")
+        if not isinstance(criteria, list) or not criteria:
+            continue
+
+        strongest = ", ".join(
+            f"{item['label']} {item['average_score']}"
+            for item in _select_rubric_extremes(criteria, reverse=True)
+        )
+        weakest = ", ".join(
+            f"{item['label']} {item['average_score']}"
+            for item in _select_rubric_extremes(criteria, reverse=False)
+        )
+        spread_items = sorted(
+            [
+                item for item in criteria
+                if isinstance(item.get("spread"), (int, float)) and float(item["spread"]) > 0
+            ],
+            key=lambda item: float(item["spread"]),
+            reverse=True,
+        )[:2]
+        disagreement = ", ".join(
+            f"{item['label']} spread {item['spread']}"
+            for item in spread_items
+        ) or "low rubric disagreement"
+
+        lines.append(
+            f"- {entry.get('model', 'unknown')}: overall rubric {entry.get('overall_score', 'n/a')}/5; "
+            f"strongest {strongest or 'n/a'}; weakest {weakest or 'n/a'}; disagreement {disagreement}"
+        )
+
+    if not lines:
+        return ""
+
+    return (
+        "RUBRIC SUMMARY:\n"
+        + "\n".join(lines)
+        + "\nUse rubric strengths, weak areas, and disagreement hotspots when they materially change the conclusion.\n"
+    )
+
+
 def _fallback_title_from_query(user_query: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in user_query).strip()
     words = [w for w in cleaned.split() if w]
@@ -269,6 +445,7 @@ async def stage2_collect_rankings(
     council_models: List[str] = None,
     chairman_model: str = None,
     retrieval_context: Optional[str] = None,
+    session_type: Optional[str] = None,
     framework: str = "standard",
     model_profiles: Optional[Dict[str, Dict[str, Any]]] = None
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
@@ -293,6 +470,8 @@ async def stage2_collect_rankings(
         f"Response {label}": result['model']
         for label, result in zip(labels, stage1_results)
     }
+    response_labels = list(label_to_model.keys())
+    rubric_spec = get_rubric_spec(session_type)
 
     # Build the ranking prompt
     responses_text = "\n\n".join([
@@ -304,8 +483,11 @@ async def stage2_collect_rankings(
     if retrieval_context:
         retrieval_block = f"\n\nRelevant document excerpts:\n{retrieval_context}\n"
 
+    rubric_instructions = _build_rubric_prompt_block(rubric_spec, response_labels)
+    ranking_step = "3" if rubric_instructions else "2"
+
     if framework == "heterogeneous":
-        ranking_instructions = """2. Then, at the very end of your response, provide a final ranking and a confidence score.
+        ranking_instructions = f"""{ranking_step}. Then, at the very end of your response, provide a final ranking and a confidence score.
 
 IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
 - Start with the line "FINAL RANKING:" (all caps, with colon)
@@ -323,7 +505,7 @@ FINAL RANKING:
 3. Response B
 CONFIDENCE: 78"""
     else:
-        ranking_instructions = """2. Then, at the very end of your response, provide a final ranking.
+        ranking_instructions = f"""{ranking_step}. Then, at the very end of your response, provide a final ranking.
 
 IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
 - Start with the line "FINAL RANKING:" (all caps, with colon)
@@ -354,6 +536,7 @@ Here are the responses from different models (anonymized):
 
 Your task:
 1. First, evaluate each response individually. For each response, explain what it does well and what it does poorly.
+{rubric_instructions}
 {ranking_instructions}
 
 Now provide your evaluation and ranking:"""
@@ -374,6 +557,12 @@ Now provide your evaluation and ranking:"""
                 "ranking": full_text,
                 "parsed_ranking": parsed
             }
+            if rubric_spec:
+                stage2_entry["rubric_scores"] = parse_rubric_scores_from_text(
+                    full_text,
+                    response_labels,
+                    rubric_spec,
+                )
             if framework == "heterogeneous":
                 confidence_score = _normalize_confidence_score(parse_confidence_from_text(full_text))
                 historical_weight = 1.0
@@ -487,6 +676,93 @@ def calculate_aggregate_rankings(
     # Sort by average rank (lower is better)
     aggregate.sort(key=lambda x: x['average_rank'])
 
+    return aggregate
+
+
+def calculate_aggregate_rubrics(
+    stage2_results: List[Dict[str, Any]],
+    label_to_model: Dict[str, str],
+    session_type: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    rubric_spec = get_rubric_spec(session_type)
+    if not rubric_spec:
+        return []
+
+    criteria = rubric_spec.get("criteria") or []
+    if not isinstance(criteria, list) or not criteria:
+        return []
+
+    score_buckets: Dict[str, Dict[str, List[int]]] = defaultdict(lambda: defaultdict(list))
+    evaluation_counts: Dict[str, int] = defaultdict(int)
+
+    for entry in stage2_results:
+        rubric_scores = entry.get("rubric_scores")
+        if not isinstance(rubric_scores, dict):
+            continue
+
+        for response_label, response_scores in rubric_scores.items():
+            model_name = label_to_model.get(response_label)
+            if not model_name or not isinstance(response_scores, dict):
+                continue
+
+            has_score = False
+            for criterion in criteria:
+                if not isinstance(criterion, dict):
+                    continue
+                key = criterion.get("key")
+                if not isinstance(key, str) or not key:
+                    continue
+                normalized_score = _normalize_rubric_score(response_scores.get(key))
+                if normalized_score is None:
+                    continue
+                score_buckets[model_name][key].append(normalized_score)
+                has_score = True
+            if has_score:
+                evaluation_counts[model_name] += 1
+
+    aggregate = []
+    for response_label, model_name in label_to_model.items():
+        model_scores = score_buckets.get(model_name)
+        if not model_scores:
+            continue
+
+        criterion_rows = []
+        overall_values: List[int] = []
+        for criterion in criteria:
+            if not isinstance(criterion, dict):
+                continue
+            key = criterion.get("key")
+            label = criterion.get("label")
+            if not isinstance(key, str) or not isinstance(label, str):
+                continue
+
+            values = model_scores.get(key, [])
+            if not values:
+                continue
+
+            average_score = round(sum(values) / len(values), 2)
+            overall_values.extend(values)
+            criterion_rows.append({
+                "key": key,
+                "label": label,
+                "average_score": average_score,
+                "spread": round(max(values) - min(values), 2),
+                "evaluation_count": len(values),
+            })
+
+        if not criterion_rows:
+            continue
+
+        criterion_rows.sort(key=lambda item: item["label"])
+        aggregate.append({
+            "response_label": response_label,
+            "model": model_name,
+            "overall_score": round(sum(overall_values) / len(overall_values), 2),
+            "evaluation_count": evaluation_counts.get(model_name, 0),
+            "criteria": criterion_rows,
+        })
+
+    aggregate.sort(key=lambda item: item["overall_score"], reverse=True)
     return aggregate
 
 
@@ -611,6 +887,7 @@ async def run_full_council(
             active_council_models,
             active_chairman_model,
             retrieval_context=retrieval_context,
+            session_type=session_type,
             framework=framework,
             model_profiles=model_profiles
         )
@@ -621,6 +898,11 @@ async def run_full_council(
         aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
     elif framework == "heterogeneous" and stage2_results:
         aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+    aggregate_rubrics = calculate_aggregate_rubrics(
+        stage2_results,
+        label_to_model,
+        session_type=session_type,
+    )
 
     updated_model_profiles = (
         apply_round_to_model_profiles(
@@ -642,7 +924,8 @@ async def run_full_council(
         session_type=session_type,
         specialist_template_id=specialist_template_id,
         retrieval_context=retrieval_context,
-        aggregate_rankings=aggregate_rankings
+        aggregate_rankings=aggregate_rankings,
+        aggregate_rubrics=aggregate_rubrics,
     ):
         stage3_text += chunk
 
@@ -660,6 +943,7 @@ async def run_full_council(
         "chairman_model": active_chairman_model,
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
+        "aggregate_rubrics": aggregate_rubrics,
         "stage1_errors": stage1_errors,
         "retrieval": {"citations": retrieval_citations or []},
     }
@@ -797,7 +1081,8 @@ async def stage3_synthesize_final(
     session_type: Optional[str] = None,
     specialist_template_id: Optional[str] = None,
     retrieval_context: Optional[str] = None,
-    aggregate_rankings: Optional[List[Dict[str, Any]]] = None
+    aggregate_rankings: Optional[List[Dict[str, Any]]] = None,
+    aggregate_rubrics: Optional[List[Dict[str, Any]]] = None,
 ):
     """
     Stage 3: Chairman synthesizes final response (streaming).
@@ -864,6 +1149,7 @@ async def stage3_synthesize_final(
                     f"- {model_name}: average rank {average_rank} across {rankings_count} ballots"
                 )
         weighted_consensus_block = "WEIGHTED CONSENSUS SUMMARY:\n" + "\n".join(summary_lines) + "\n"
+    rubric_summary_block = _build_rubric_summary_block(aggregate_rubrics)
 
     deliverable_spec = get_deliverable_spec(session_type, specialist_template_id)
     deliverable_block = (
@@ -885,6 +1171,7 @@ STAGE 1 - Individual Responses:
 {stage2_text}
 
 {weighted_consensus_block}
+{rubric_summary_block}
 {deliverable_block}
 
 Your task: {instruction}

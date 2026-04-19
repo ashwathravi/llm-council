@@ -96,6 +96,37 @@ async def test_stage3_synthesis_uses_session_default_deliverable_format():
     assert "Implementation Plan" in prompt
 
 
+@pytest.mark.asyncio
+async def test_stage3_synthesis_includes_rubric_summary():
+    async def mock_stream(*args, **kwargs):
+        yield "Final"
+
+    with patch("backend.council.query_model_stream", side_effect=mock_stream) as mock_stream_fn:
+        async for _token in council.stage3_synthesize_final(
+            "Review this patch",
+            [{"model": "gpt-4", "response": "Resp"}],
+            [{"model": "claude-3", "ranking": "Feedback"}],
+            "chairman-model",
+            session_type="code_review",
+            aggregate_rubrics=[
+                {
+                    "model": "gpt-4",
+                    "overall_score": 4.2,
+                    "criteria": [
+                        {"key": "correctness", "label": "Correctness", "average_score": 4.8, "spread": 1.0},
+                        {"key": "performance", "label": "Performance", "average_score": 3.1, "spread": 2.0},
+                    ],
+                }
+            ],
+        ):
+            pass
+
+    prompt = mock_stream_fn.call_args.args[1][0]["content"]
+    assert "RUBRIC SUMMARY" in prompt
+    assert "overall rubric 4.2/5" in prompt
+    assert "Performance spread 2.0" in prompt
+
+
 def test_parse_confidence_from_text():
     assert council.parse_confidence_from_text("FINAL RANKING:\n1. Response A\nCONFIDENCE: 82") == 82
     assert council.parse_confidence_from_text("confidence: 150") == 100
@@ -128,6 +159,88 @@ def test_calculate_aggregate_rankings_uses_ballot_weights():
     assert aggregate[0]["weighted"] is True
     assert aggregate[1]["model"] == "model-b"
     assert aggregate[1]["average_rank"] == 1.75
+
+
+def test_calculate_aggregate_rubrics_summarizes_scores():
+    stage2_results = [
+        {
+            "model": "judge-a",
+            "rubric_scores": {
+                "Response A": {"correctness": 5, "maintainability": 4, "security": 4},
+                "Response B": {"correctness": 3, "maintainability": 2, "security": 3},
+            },
+        },
+        {
+            "model": "judge-b",
+            "rubric_scores": {
+                "Response A": {"correctness": 4, "maintainability": 3, "security": 5},
+                "Response B": {"correctness": 2, "maintainability": 2, "security": 2},
+            },
+        },
+    ]
+    label_to_model = {"Response A": "model-a", "Response B": "model-b"}
+
+    aggregate = council.calculate_aggregate_rubrics(
+        stage2_results,
+        label_to_model,
+        session_type="code_review",
+    )
+
+    assert aggregate[0]["model"] == "model-a"
+    assert aggregate[0]["overall_score"] == 4.17
+    assert aggregate[0]["evaluation_count"] == 2
+    correctness = next(item for item in aggregate[0]["criteria"] if item["key"] == "correctness")
+    assert correctness["average_score"] == 4.5
+    assert correctness["spread"] == 1
+
+
+@pytest.mark.asyncio
+async def test_stage2_collect_rankings_adds_rubric_scores_for_code_review():
+    mocked_responses = {
+        "reviewer-a": {
+            "content": """Good depth on architecture.
+
+RUBRIC SCORES:
+Response A
+- Correctness: 5
+- Maintainability: 4
+- Security: 3
+- Performance: 4
+- Testability: 5
+- Effort: 4
+- Confidence: 4
+Response B
+- Correctness: 3
+- Maintainability: 2
+- Security: 4
+- Performance: 3
+- Testability: 2
+- Effort: 2
+- Confidence: 3
+
+FINAL RANKING:
+1. Response A
+2. Response B"""
+        }
+    }
+
+    with patch("backend.council.query_models_parallel", new_callable=AsyncMock) as mock_parallel:
+        mock_parallel.return_value = mocked_responses
+
+        stage2_results, label_to_model = await council.stage2_collect_rankings(
+            "Which review is stronger?",
+            [
+                {"model": "model-a", "response": "Answer A"},
+                {"model": "model-b", "response": "Answer B"},
+            ],
+            council_models=["reviewer-a"],
+            session_type="code_review",
+        )
+
+    assert label_to_model == {"Response A": "model-a", "Response B": "model-b"}
+    assert stage2_results[0]["rubric_scores"]["Response A"]["correctness"] == 5
+    assert stage2_results[0]["rubric_scores"]["Response A"]["testability"] == 5
+    assert stage2_results[0]["rubric_scores"]["Response B"]["maintainability"] == 2
 
 
 def test_build_model_weight_profile_tracks_prior_rounds():

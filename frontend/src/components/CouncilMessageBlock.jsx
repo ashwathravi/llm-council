@@ -18,10 +18,30 @@ const MarkdownContent = memo(({ content }) => (
 
 MarkdownContent.displayName = 'MarkdownContent';
 
+const formatScore = (value) => (
+  typeof value === 'number'
+    ? value.toFixed(1).replace(/\.0$/, '')
+    : 'n/a'
+);
+
+const rubricToneClass = (score) => {
+  if (typeof score !== 'number') return 'border-border bg-muted/50 text-muted-foreground';
+  if (score >= 4) return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+  if (score >= 3) return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300';
+  return 'border-destructive/30 bg-destructive/10 text-destructive';
+};
+
+const EMPTY_LIST = [];
+
 // ⚡ Bolt: Extract and memoize Rankings tab content to prevent re-renders when Stage 3 is streaming
-const RankingsTabContent = memo(({ aggregateRankings, framework, modelWeightProfile }) => {
+const RankingsTabContent = memo(({ aggregateRankings, aggregateRubrics, framework, modelWeightProfile }) => {
   const profileByModel = new Map(
     (Array.isArray(modelWeightProfile) ? modelWeightProfile : [])
+      .filter((entry) => entry && typeof entry.model === 'string')
+      .map((entry) => [entry.model, entry])
+  );
+  const rubricByModel = new Map(
+    (Array.isArray(aggregateRubrics) ? aggregateRubrics : [])
       .filter((entry) => entry && typeof entry.model === 'string')
       .map((entry) => [entry.model, entry])
   );
@@ -38,31 +58,65 @@ const RankingsTabContent = memo(({ aggregateRankings, framework, modelWeightProf
         {aggregateRankings.length > 0 ? (
           aggregateRankings.map((rank, idx) => {
             const profile = profileByModel.get(rank.model);
+            const rubric = rubricByModel.get(rank.model);
+            const topSpread = Array.isArray(rubric?.criteria)
+              ? [...rubric.criteria]
+                .filter((item) => typeof item?.spread === 'number' && item.spread > 0)
+                .sort((left, right) => right.spread - left.spread)[0]
+              : null;
+
             return (
-              <div key={idx} className="flex items-center justify-between p-3 border rounded-lg bg-card/50">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted font-bold">
-                    {idx + 1}
-                  </div>
-                  <div>
-                    <div className="font-medium">{rank.model}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {rank.rankings_count} evaluations
-                      {rank.total_weight ? ` • total weight ${rank.total_weight}` : ''}
+              <div key={idx} className="rounded-lg border bg-card/50 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted font-bold">
+                      {idx + 1}
                     </div>
-                    {framework === 'heterogeneous' && profile && (
+                    <div>
+                      <div className="font-medium">{rank.model}</div>
                       <div className="text-xs text-muted-foreground">
-                        Next weight {profile.dynamic_weight} • performance {profile.average_performance}
+                        {rank.rankings_count} evaluations
+                        {rank.total_weight ? ` • total weight ${rank.total_weight}` : ''}
                       </div>
-                    )}
+                      {framework === 'heterogeneous' && profile && (
+                        <div className="text-xs text-muted-foreground">
+                          Next weight {profile.dynamic_weight} • performance {profile.average_performance}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-mono font-bold text-lg">{rank.average_rank}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {framework === 'heterogeneous' ? 'Weighted Avg Rank' : 'Avg Rank'}
+                    </div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="font-mono font-bold text-lg">{rank.average_rank}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {framework === 'heterogeneous' ? 'Weighted Avg Rank' : 'Avg Rank'}
+
+                {rubric && Array.isArray(rubric.criteria) && rubric.criteria.length > 0 && (
+                  <div className="mt-4 space-y-3 border-t border-border/60 pt-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                      <Badge variant="outline">Rubric {formatScore(rubric.overall_score)}/5</Badge>
+                      <span>{rubric.evaluation_count} scorecards</span>
+                      {topSpread && (
+                        <span>Highest disagreement: {topSpread.label} spread {formatScore(topSpread.spread)}</span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {rubric.criteria.map((criterion) => (
+                        <div
+                          key={`${rank.model}-${criterion.key}`}
+                          className={cn(
+                            'rounded-full border px-2.5 py-1 text-xs font-medium',
+                            rubricToneClass(criterion.average_score)
+                          )}
+                        >
+                          {criterion.label} {formatScore(criterion.average_score)}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             );
           })
@@ -88,7 +142,7 @@ const Stage1TabContent = memo(({ res }) => (
 
 Stage1TabContent.displayName = 'Stage1TabContent';
 
-const DiffTabContent = memo(({ diffData }) => {
+const DiffTabContent = memo(({ diffData, rubricHotspots }) => {
   const { consensusSentences, overlaps, uniqueTerms } = diffData;
 
   return (
@@ -131,6 +185,32 @@ const DiffTabContent = memo(({ diffData }) => {
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Not enough model responses to compare.</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="font-semibold">Rubric Hotspots</h3>
+        {rubricHotspots.length > 0 ? (
+          <div className="space-y-2">
+            {rubricHotspots.map((item, idx) => (
+              <div key={idx} className="rounded-lg border bg-card/40 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">{item.model}</div>
+                    <div className="text-xs text-muted-foreground">{item.label}</div>
+                  </div>
+                  <div className="text-right text-xs text-muted-foreground">
+                    <div>Avg {formatScore(item.averageScore)}/5</div>
+                    <div>Spread {formatScore(item.spread)}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Rubric scoring did not surface meaningful disagreement hotspots.
+          </p>
         )}
       </div>
 
@@ -198,6 +278,23 @@ const extractRetryModelName = (modelLabel) => {
   }
   return cleaned;
 };
+
+const buildRubricHotspots = (aggregateRubrics) => (
+  (Array.isArray(aggregateRubrics) ? aggregateRubrics : [])
+    .flatMap((entry) => (
+      Array.isArray(entry?.criteria)
+        ? entry.criteria.map((criterion) => ({
+          model: entry.model,
+          label: criterion.label,
+          averageScore: criterion.average_score,
+          spread: criterion.spread,
+        }))
+        : []
+    ))
+    .filter((item) => typeof item.spread === 'number' && item.spread > 0)
+    .sort((left, right) => right.spread - left.spread || left.averageScore - right.averageScore)
+    .slice(0, 5)
+);
 
 const buildComparisonDiff = (stage1Results) => {
   if (!Array.isArray(stage1Results) || stage1Results.length < 2) {
@@ -291,6 +388,9 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
   const hasComparisonDiff = hasStage1 && stage1.length > 1;
 
   const aggregateRankings = metadata?.aggregate_rankings || [];
+  const aggregateRubrics = Array.isArray(metadata?.aggregate_rubrics)
+    ? metadata.aggregate_rubrics
+    : EMPTY_LIST;
   const modelWeightProfile = Array.isArray(metadata?.model_weight_profile)
     ? metadata.model_weight_profile
     : [];
@@ -349,6 +449,7 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
   const failedModelIds = failedModelEntries.map((entry) => entry.modelId);
 
   const diffData = useMemo(() => buildComparisonDiff(stage1), [stage1]);
+  const rubricHotspots = useMemo(() => buildRubricHotspots(aggregateRubrics), [aggregateRubrics]);
 
   const hasModelMetadata =
     Array.isArray(metadata?.requested_council_models) ||
@@ -507,13 +608,14 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
           <TabsContent value="rankings" className="m-0 focus-visible:ring-0">
             <RankingsTabContent
               aggregateRankings={aggregateRankings}
+              aggregateRubrics={aggregateRubrics}
               framework={metadata?.framework}
               modelWeightProfile={modelWeightProfile}
             />
           </TabsContent>
 
           <TabsContent value="diff" className="m-0 focus-visible:ring-0">
-            <DiffTabContent diffData={diffData} />
+            <DiffTabContent diffData={diffData} rubricHotspots={rubricHotspots} />
           </TabsContent>
 
           {hasStage1 && stage1.map((res, idx) => (
