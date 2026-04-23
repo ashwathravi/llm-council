@@ -7,6 +7,34 @@ from typing import Any, Dict, List, Optional
 
 from .session_context import normalize_session_type
 
+HANDOFF_SECTION_SPECS = [
+    {
+        "key": "selected_direction",
+        "label": "Selected Direction",
+        "aliases": ("selected direction", "recommended direction", "recommendation"),
+    },
+    {
+        "key": "rationale",
+        "label": "Rationale",
+        "aliases": ("rationale", "why this direction", "decision rationale"),
+    },
+    {
+        "key": "component_map",
+        "label": "Component Map",
+        "aliases": ("component map", "component mapping", "implementation map", "screens and components"),
+    },
+    {
+        "key": "handoff_notes",
+        "label": "Handoff Notes",
+        "aliases": ("handoff notes", "handoff", "implementation notes"),
+    },
+    {
+        "key": "open_questions",
+        "label": "Open Questions",
+        "aliases": ("open questions", "questions", "risks and open questions"),
+    },
+]
+
 
 def _direction_suffix(index: int) -> str:
     if 0 <= index < 26:
@@ -39,6 +67,59 @@ def _clean_summary_line(value: Any) -> str:
         if cleaned:
             return cleaned[:180]
     return text[:180]
+
+
+def _normalize_heading(value: str) -> str:
+    normalized = value.strip().lower()
+    normalized = re.sub(r"[*_`:#]+", "", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
+
+
+def _split_markdown_sections(text: str) -> Dict[str, str]:
+    sections: Dict[str, List[str]] = {}
+    current_heading = ""
+
+    for line in text.splitlines():
+        heading_match = re.match(r"^\s{0,3}#{1,6}\s+(.+?)\s*$", line)
+        bold_heading_match = re.match(r"^\s{0,3}\*\*(.+?)\*\*:?\s*$", line)
+        plain_heading_match = re.match(
+            r"^\s{0,3}(Selected Direction|Recommended Direction|Recommendation|Rationale|Why This Direction|Decision Rationale|Component Map|Component Mapping|Implementation Map|Screens and Components|Handoff Notes|Handoff|Implementation Notes|Open Questions|Questions|Risks and Open Questions):?\s*$",
+            line,
+            flags=re.IGNORECASE,
+        )
+        match = heading_match or bold_heading_match or plain_heading_match
+        if match:
+            current_heading = _normalize_heading(match.group(1))
+            sections.setdefault(current_heading, [])
+            continue
+
+        if current_heading:
+            sections[current_heading].append(line)
+
+    return {
+        heading: "\n".join(lines).strip()
+        for heading, lines in sections.items()
+        if "\n".join(lines).strip()
+    }
+
+
+def _extract_list_items(content: str) -> List[str]:
+    items: List[str] = []
+    for line in content.splitlines():
+        match = re.match(r"^\s*(?:[-*]|\d+[.)])\s+(.+?)\s*$", line)
+        if match:
+            items.append(match.group(1).strip())
+    return items
+
+
+def _section_content_by_alias(markdown_sections: Dict[str, str], aliases: tuple[str, ...]) -> str:
+    for alias in aliases:
+        normalized_alias = _normalize_heading(alias)
+        for heading, content in markdown_sections.items():
+            if heading == normalized_alias or normalized_alias in heading:
+                return content
+    return ""
 
 
 def build_candidate_directions(stage1_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -160,6 +241,63 @@ def _judge_result_entries(
     return judge_results
 
 
+def _selected_direction_details(
+    directions: List[Dict[str, Any]],
+    selected_direction_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    for direction in directions:
+        if direction.get("id") == selected_direction_id:
+            return {
+                "id": direction.get("id"),
+                "label": direction.get("label"),
+                "source_model": direction.get("source_model"),
+                "summary": direction.get("summary"),
+            }
+    return None
+
+
+def _build_handoff_metadata(
+    *,
+    stage3_result: Optional[Dict[str, Any]],
+    directions: List[Dict[str, Any]],
+    selected_direction_id: Optional[str],
+) -> Dict[str, Any]:
+    response = ""
+    if isinstance(stage3_result, dict) and isinstance(stage3_result.get("response"), str):
+        response = stage3_result["response"].strip()
+
+    selected_direction = _selected_direction_details(directions, selected_direction_id)
+    status = "ready" if response else "pending"
+    markdown_sections = _split_markdown_sections(response) if response else {}
+    section_records: List[Dict[str, Any]] = []
+
+    for spec in HANDOFF_SECTION_SPECS:
+        content = _section_content_by_alias(markdown_sections, spec["aliases"])
+        if not content and spec["key"] == "selected_direction" and selected_direction:
+            content = selected_direction.get("summary") or selected_direction.get("label") or ""
+        record = {
+            "key": spec["key"],
+            "label": spec["label"],
+            "content": content,
+            "items": _extract_list_items(content),
+        }
+        section_records.append(record)
+
+    handoff = {
+        "status": status,
+        "selected_direction_id": selected_direction_id,
+        "selected_direction_ref": selected_direction,
+        "sections": section_records,
+    }
+    for record in section_records:
+        handoff[record["key"]] = {
+            "label": record["label"],
+            "content": record["content"],
+            "items": record["items"],
+        }
+    return handoff
+
+
 def build_design_studio_metadata(
     *,
     session_type: Optional[str],
@@ -182,10 +320,10 @@ def build_design_studio_metadata(
         if ranked_directions
         else (directions[0]["id"] if directions else None)
     )
-    handoff_ready = bool(
-        isinstance(stage3_result, dict)
-        and isinstance(stage3_result.get("response"), str)
-        and stage3_result.get("response", "").strip()
+    handoff = _build_handoff_metadata(
+        stage3_result=stage3_result,
+        directions=directions,
+        selected_direction_id=selected_direction_id,
     )
 
     return {
@@ -198,9 +336,5 @@ def build_design_studio_metadata(
             "judge_results": judge_results,
         },
         "selected_direction_id": selected_direction_id,
-        "handoff": {
-            "status": "ready" if handoff_ready else "pending",
-            "selected_direction_id": selected_direction_id,
-            "sections": [],
-        },
+        "handoff": handoff,
     }

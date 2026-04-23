@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
+DESIGN_STUDIO_DELIVERABLE_INSTRUCTION = (
+    "Use sections titled Candidate Directions, Comparison, Recommended Direction, "
+    "Selected Direction, Rationale, Component Map, Handoff Notes, and Open Questions. "
+    "Keep section headings exact so the app can render a structured design handoff."
+)
+
 SESSION_TEMPLATES: Dict[str, Dict[str, object]] = {
     "design_web_app_studio": {
         "id": "design_web_app_studio",
@@ -15,7 +21,7 @@ SESSION_TEMPLATES: Dict[str, Dict[str, object]] = {
         "evaluation_criteria": ["Task clarity", "Hierarchy", "Information architecture", "Platform fit", "Accessibility", "Implementation realism"],
         "synthesis_instruction": "Generate distinct web directions, compare them directly, then recommend one direction with concrete implementation notes.",
         "deliverable_format": "Design Studio handoff",
-        "deliverable_instruction": "Use sections titled Candidate Directions, Comparison, Recommended Direction, and Handoff Notes.",
+        "deliverable_instruction": DESIGN_STUDIO_DELIVERABLE_INSTRUCTION,
     },
     "design_ios_app_studio": {
         "id": "design_ios_app_studio",
@@ -27,7 +33,7 @@ SESSION_TEMPLATES: Dict[str, Dict[str, object]] = {
         "evaluation_criteria": ["Task clarity", "Navigation", "Platform fit", "Touch ergonomics", "Accessibility", "Implementation realism"],
         "synthesis_instruction": "Generate distinct iOS directions, call out native platform tradeoffs, and recommend one direction with implementation-minded notes.",
         "deliverable_format": "Design Studio handoff",
-        "deliverable_instruction": "Use sections titled Candidate Directions, Comparison, Recommended Direction, and Handoff Notes.",
+        "deliverable_instruction": DESIGN_STUDIO_DELIVERABLE_INSTRUCTION,
     },
     "design_cross_platform_studio": {
         "id": "design_cross_platform_studio",
@@ -39,7 +45,7 @@ SESSION_TEMPLATES: Dict[str, Dict[str, object]] = {
         "evaluation_criteria": ["Task clarity", "Hierarchy", "Platform fit", "Cross-platform consistency", "Accessibility", "Implementation realism"],
         "synthesis_instruction": "Compare directions across platforms, keep real structural differences visible, and end with one recommended direction plus platform-specific handoff notes.",
         "deliverable_format": "Design Studio handoff",
-        "deliverable_instruction": "Use sections titled Candidate Directions, Comparison, Recommended Direction, and Handoff Notes.",
+        "deliverable_instruction": DESIGN_STUDIO_DELIVERABLE_INSTRUCTION,
     },
     "visual_ux_review": {
         "id": "visual_ux_review",
@@ -162,7 +168,7 @@ def list_session_templates(session_type: Optional[str] = None) -> List[Dict[str,
 DEFAULT_DELIVERABLES: Dict[str, Dict[str, str]] = {
     "design_studio": {
         "label": "Design Studio handoff",
-        "instruction": "Use sections titled Candidate Directions, Comparison, Recommended Direction, and Handoff Notes.",
+        "instruction": DESIGN_STUDIO_DELIVERABLE_INSTRUCTION,
     },
     "visual_review": {
         "label": "Design critique output",

@@ -117,7 +117,12 @@ async def test_stage3_synthesis_design_studio_uses_design_handoff_format():
     assert "Design Studio handoff" in prompt
     assert "Candidate Directions" in prompt
     assert "Recommended Direction" in prompt
+    assert "Selected Direction" in prompt
+    assert "Rationale" in prompt
+    assert "Component Map" in prompt
     assert "Handoff Notes" in prompt
+    assert "Open Questions" in prompt
+    assert "Keep section headings exact" in prompt
 
 
 @pytest.mark.asyncio

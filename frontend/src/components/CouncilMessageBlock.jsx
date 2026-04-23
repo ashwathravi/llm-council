@@ -329,6 +329,136 @@ const DiffTabContent = memo(({ diffData, rubricHotspots }) => {
 
 DiffTabContent.displayName = 'DiffTabContent';
 
+const DESIGN_HANDOFF_KEYS = ['rationale', 'component_map', 'handoff_notes', 'open_questions'];
+
+const getHandoffSection = (handoff, key) => {
+  const directSection = handoff?.[key];
+  if (directSection && typeof directSection === 'object') {
+    return {
+      label: directSection.label || key,
+      content: typeof directSection.content === 'string' ? directSection.content : '',
+      items: Array.isArray(directSection.items) ? directSection.items : EMPTY_LIST,
+    };
+  }
+
+  const section = Array.isArray(handoff?.sections)
+    ? handoff.sections.find((item) => item?.key === key)
+    : null;
+  if (!section) return null;
+
+  return {
+    label: section.label || key,
+    content: typeof section.content === 'string' ? section.content : '',
+    items: Array.isArray(section.items) ? section.items : EMPTY_LIST,
+  };
+};
+
+const hasHandoffSectionContent = (section) => (
+  Boolean(section && (section.content.trim() || section.items.length > 0))
+);
+
+const HandoffSectionContent = ({ section }) => {
+  if (!section) return null;
+  if (section.items.length > 0) {
+    return (
+      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-foreground/85">
+        {section.items.map((item, index) => (
+          <li key={`${section.label}-${index}`}>{item}</li>
+        ))}
+      </ul>
+    );
+  }
+
+  if (section.content.trim()) {
+    return (
+      <div className="mt-2 text-sm">
+        <MarkdownContent content={section.content} />
+      </div>
+    );
+  }
+
+  return (
+    <p className="mt-2 text-sm text-muted-foreground">No detail captured.</p>
+  );
+};
+
+const DesignStudioHandoffPanel = memo(({ handoff }) => {
+  if (!handoff || handoff.status !== 'ready') return null;
+
+  const selectedRef = handoff.selected_direction_ref && typeof handoff.selected_direction_ref === 'object'
+    ? handoff.selected_direction_ref
+    : null;
+  const selectedSection = getHandoffSection(handoff, 'selected_direction');
+  const sections = DESIGN_HANDOFF_KEYS
+    .map((key) => getHandoffSection(handoff, key))
+    .filter(hasHandoffSectionContent);
+  const hasContent = Boolean(selectedRef) || hasHandoffSectionContent(selectedSection) || sections.length > 0;
+
+  if (!hasContent) return null;
+
+  return (
+    <div className="mb-5 overflow-hidden rounded-xl border border-sky-500/20 bg-gradient-to-br from-sky-500/10 via-card to-emerald-500/10">
+      <div className="border-b border-sky-500/10 px-4 py-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />
+              Structured design handoff
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Normalized from the final synthesis for implementation handoff.
+            </p>
+          </div>
+          {handoff.selected_direction_id && (
+            <Badge variant="outline" className="bg-background/70 text-xs">
+              {handoff.selected_direction_id}
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-4 p-4">
+        {selectedRef && (
+          <div className="rounded-lg border bg-background/60 p-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="font-medium">{selectedRef.label || 'Selected direction'}</div>
+              {selectedRef.source_model && (
+                <Badge variant="secondary" className="text-[10px]">
+                  {selectedRef.source_model}
+                </Badge>
+              )}
+            </div>
+            {selectedRef.summary && (
+              <p className="mt-2 text-sm text-muted-foreground">{selectedRef.summary}</p>
+            )}
+          </div>
+        )}
+
+        {hasHandoffSectionContent(selectedSection) && (
+          <div className="rounded-lg border bg-background/60 p-3">
+            <h3 className="text-sm font-semibold">{selectedSection.label}</h3>
+            <HandoffSectionContent section={selectedSection} />
+          </div>
+        )}
+
+        {sections.length > 0 && (
+          <div className="grid gap-3 md:grid-cols-2">
+            {sections.map((section) => (
+              <div key={section.label} className="rounded-lg border bg-background/60 p-3">
+                <h3 className="text-sm font-semibold">{section.label}</h3>
+                <HandoffSectionContent section={section} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+HandoffSectionContent.displayName = 'HandoffSectionContent';
+DesignStudioHandoffPanel.displayName = 'DesignStudioHandoffPanel';
+
 const formatModelList = (models) => {
   if (!Array.isArray(models) || models.length === 0) {
     return 'None';
@@ -501,6 +631,12 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
     : EMPTY_LIST;
   const hasVisualReviewTab = metadata?.session_type === 'visual_review' && visualArtifacts.length > 0;
   const hasExecutionTab = Boolean(executionReport);
+  const designStudioHandoff = (
+    metadata?.session_type === 'design_studio' &&
+    metadata?.design_studio?.handoff?.status === 'ready'
+  )
+    ? metadata.design_studio.handoff
+    : null;
 
   const requestedCouncilModels = Array.isArray(metadata?.requested_council_models)
     ? metadata.requested_council_models
@@ -724,6 +860,7 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
                       </Button>
                     </div>
                   )}
+                  <DesignStudioHandoffPanel handoff={designStudioHandoff} />
                   <MarkdownContent content={stage3.response} />
                   {loading?.stage3 && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1" />}
                 </>
