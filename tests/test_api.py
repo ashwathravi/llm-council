@@ -408,6 +408,211 @@ async def test_send_message_design_studio_includes_session_context(async_client)
 
 
 @pytest.mark.asyncio
+async def test_send_message_design_studio_allows_text_only_models_without_images(async_client):
+    conversation = {
+        "id": "conv-design-text",
+        "framework": "standard",
+        "session_type": "design_studio",
+        "specialist_template_id": "design_web_app_studio",
+        "session_config": {
+            "design_target": "web_app",
+            "studio_goal": "generate",
+            "approved_direction_id": None,
+        },
+        "council_models": ["acme/text-only-model", "openai/gpt-5.2"],
+        "chairman_model": "chair-model",
+        "primary_artifacts": [],
+        "messages": [],
+    }
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.add_user_message", new_callable=AsyncMock), \
+             patch("backend.storage.update_conversation_title", new_callable=AsyncMock), \
+             patch("backend.storage.add_assistant_message", new_callable=AsyncMock), \
+             patch("backend.retrieval.build_retrieval_context", new_callable=AsyncMock) as mock_retrieval, \
+             patch("backend.main.generate_conversation_title", new_callable=AsyncMock) as mock_generate_title, \
+             patch("backend.main.run_full_council", new_callable=AsyncMock) as mock_run_council:
+            mock_get_conversation.return_value = conversation
+            mock_generate_title.return_value = "Design Studio"
+            mock_retrieval.return_value = ("", [])
+            mock_run_council.return_value = (
+                [{"model": "acme/text-only-model", "response": "Direction A."}],
+                [],
+                {"model": "chair-model", "response": "Recommend Direction A."},
+                {},
+            )
+
+            response = await async_client.post(
+                "/api/conversations/conv-design-text/message",
+                json={"content": "Generate web app directions"}
+            )
+
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["metadata"]["effective_council_models"] == [
+                "acme/text-only-model",
+                "openai/gpt-5.2",
+            ]
+            assert payload["metadata"]["excluded_non_vision_models"] == []
+            assert payload["metadata"]["model_selection"]["vision_required"] is False
+            assert payload["metadata"]["model_selection"]["degraded"] is False
+
+            run_args = mock_run_council.await_args
+            assert run_args.kwargs["council_models"] == ["acme/text-only-model", "openai/gpt-5.2"]
+            assert run_args.args[0][-1]["content"] == "Generate web app directions"
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_send_message_design_studio_with_images_prefers_vision_models(async_client):
+    conversation = {
+        "id": "conv-design-image",
+        "framework": "standard",
+        "session_type": "design_studio",
+        "specialist_template_id": "design_web_app_studio",
+        "session_config": {
+            "design_target": "web_app",
+            "studio_goal": "generate",
+            "approved_direction_id": None,
+        },
+        "council_models": ["acme/text-only-model", "openai/gpt-5.2"],
+        "chairman_model": "chair-model",
+        "primary_artifacts": [
+            {
+                "id": "img-1",
+                "kind": "image",
+                "label": "reference.png",
+                "source": "upload",
+                "status": "ready",
+                "filename": "reference.png",
+                "mime_type": "image/png",
+                "size_bytes": 128,
+                "storage_path": "conv-design-image/img-1.png",
+                "preview_url": "/artifact-files/conv-design-image/img-1.png",
+            }
+        ],
+        "messages": [],
+    }
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.add_user_message", new_callable=AsyncMock), \
+             patch("backend.storage.update_conversation_title", new_callable=AsyncMock), \
+             patch("backend.storage.add_assistant_message", new_callable=AsyncMock), \
+             patch("backend.retrieval.build_retrieval_context", new_callable=AsyncMock) as mock_retrieval, \
+             patch("backend.main.generate_conversation_title", new_callable=AsyncMock) as mock_generate_title, \
+             patch("backend.main.run_full_council", new_callable=AsyncMock) as mock_run_council, \
+             patch("backend.image_artifacts.load_image_as_data_url", return_value="data:image/png;base64,abc"):
+            mock_get_conversation.return_value = conversation
+            mock_generate_title.return_value = "Design Studio"
+            mock_retrieval.return_value = ("", [])
+            mock_run_council.return_value = (
+                [{"model": "openai/gpt-5.2", "response": "Use this visual direction."}],
+                [],
+                {"model": "chair-model", "response": "Recommend the visual direction."},
+                {},
+            )
+
+            response = await async_client.post(
+                "/api/conversations/conv-design-image/message",
+                json={"content": "Generate directions from this reference"}
+            )
+
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["metadata"]["effective_council_models"] == ["openai/gpt-5.2"]
+            assert payload["metadata"]["excluded_non_vision_models"] == ["acme/text-only-model"]
+            assert payload["metadata"]["model_selection"]["vision_required"] is True
+            assert payload["metadata"]["model_selection"]["excluded_models"] == [
+                {"model": "acme/text-only-model", "reason": "missing_vision_capability"}
+            ]
+
+            history = mock_run_council.await_args.args[0]
+            assert isinstance(history[-1]["content"], list)
+            assert history[-1]["content"][0]["type"] == "text"
+            assert history[-1]["content"][1]["type"] == "image_url"
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_send_message_design_studio_with_images_degrades_when_no_vision_models(async_client):
+    conversation = {
+        "id": "conv-design-degraded",
+        "framework": "standard",
+        "session_type": "design_studio",
+        "specialist_template_id": "design_web_app_studio",
+        "session_config": {
+            "design_target": "web_app",
+            "studio_goal": "generate",
+            "approved_direction_id": None,
+        },
+        "council_models": ["acme/text-only-model"],
+        "chairman_model": "chair-model",
+        "primary_artifacts": [
+            {
+                "id": "img-1",
+                "kind": "image",
+                "label": "reference.png",
+                "source": "upload",
+                "status": "ready",
+                "filename": "reference.png",
+                "mime_type": "image/png",
+                "size_bytes": 128,
+                "storage_path": "conv-design-degraded/img-1.png",
+                "preview_url": "/artifact-files/conv-design-degraded/img-1.png",
+            }
+        ],
+        "messages": [],
+    }
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.add_user_message", new_callable=AsyncMock), \
+             patch("backend.storage.update_conversation_title", new_callable=AsyncMock), \
+             patch("backend.storage.add_assistant_message", new_callable=AsyncMock), \
+             patch("backend.retrieval.build_retrieval_context", new_callable=AsyncMock) as mock_retrieval, \
+             patch("backend.main.generate_conversation_title", new_callable=AsyncMock) as mock_generate_title, \
+             patch("backend.main.run_full_council", new_callable=AsyncMock) as mock_run_council, \
+             patch("backend.image_artifacts.load_image_as_data_url") as mock_load_image:
+            mock_get_conversation.return_value = conversation
+            mock_generate_title.return_value = "Design Studio"
+            mock_retrieval.return_value = ("", [])
+            mock_run_council.return_value = (
+                [{"model": "acme/text-only-model", "response": "Use a calmer layout."}],
+                [],
+                {"model": "chair-model", "response": "Recommend a text-grounded direction."},
+                {},
+            )
+
+            response = await async_client.post(
+                "/api/conversations/conv-design-degraded/message",
+                json={"content": "Generate directions from this reference"}
+            )
+
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["metadata"]["effective_council_models"] == ["acme/text-only-model"]
+            assert payload["metadata"]["excluded_non_vision_models"] == []
+            assert payload["metadata"]["model_selection"]["vision_required"] is True
+            assert payload["metadata"]["model_selection"]["degraded"] is True
+            assert payload["metadata"]["model_selection"]["warnings"] == [
+                "Image artifacts are attached, but no vision-capable council models were selected. Design Studio will run without image payloads."
+            ]
+
+            history = mock_run_council.await_args.args[0]
+            assert history[-1]["content"] == "Generate directions from this reference"
+            mock_load_image.assert_not_called()
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
 async def test_send_message_code_review_returns_execution_metadata(async_client):
     conversation = {
         "id": "conv-exec",

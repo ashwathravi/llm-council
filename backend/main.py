@@ -352,8 +352,13 @@ def _get_file_backed_artifact_paths(primary_artifacts: Optional[List[Dict[str, A
     return paths
 
 
-def _build_user_message_content(conversation: Dict[str, Any], user_text: str) -> Any:
-    if normalize_session_type(conversation.get("session_type")) != "visual_review":
+def _build_user_message_content(
+    conversation: Dict[str, Any],
+    user_text: str,
+    *,
+    include_image_artifacts: bool = False,
+) -> Any:
+    if not include_image_artifacts:
         return user_text
 
     message_parts: List[Dict[str, Any]] = [{"type": "text", "text": user_text}]
@@ -381,6 +386,8 @@ def _build_user_message_content(conversation: Dict[str, Any], user_text: str) ->
 def _build_conversation_history(
     conversation: Dict[str, Any],
     current_user_text: str,
+    *,
+    include_image_artifacts: bool = False,
 ) -> List[Dict[str, Any]]:
     history: List[Dict[str, Any]] = []
     for msg in conversation.get("messages", []):
@@ -393,29 +400,83 @@ def _build_conversation_history(
 
     history.append({
         "role": "user",
-        "content": _build_user_message_content(conversation, current_user_text),
+        "content": _build_user_message_content(
+            conversation,
+            current_user_text,
+            include_image_artifacts=include_image_artifacts,
+        ),
     })
     return history
 
 
-def _resolve_stage1_models_for_conversation(conversation: Dict[str, Any]) -> tuple[List[str], List[str], List[str]]:
+def _resolve_stage1_models_for_conversation(
+    conversation: Dict[str, Any],
+) -> tuple[List[str], List[str], List[str], Dict[str, Any]]:
     requested_council_models = list(conversation.get("council_models") or [])
     effective_council_models = resolve_active_models(conversation.get("council_models"))
     excluded_non_vision_models: List[str] = []
+    session_type = normalize_session_type(conversation.get("session_type"))
+    ready_image_artifacts = _get_ready_image_artifacts(conversation.get("primary_artifacts"))
+    has_image_artifacts = len(ready_image_artifacts) > 0
+    vision_capable_models = [
+        model_id
+        for model_id in effective_council_models
+        if openrouter.supports_vision_model(model_id)
+    ]
+    requires_vision_models = (
+        session_type == "visual_review"
+        or (session_type == "design_studio" and has_image_artifacts)
+    )
+    model_selection_metadata: Dict[str, Any] = {
+        "session_type": session_type,
+        "vision_artifacts_present": has_image_artifacts,
+        "vision_required": requires_vision_models,
+        "vision_capable_models": vision_capable_models,
+        "degraded": False,
+        "warnings": [],
+        "excluded_models": [],
+    }
 
-    if normalize_session_type(conversation.get("session_type")) == "visual_review":
+    if requires_vision_models:
         excluded_non_vision_models = [
             model_id
             for model_id in effective_council_models
             if not openrouter.supports_vision_model(model_id)
         ]
-        effective_council_models = [
-            model_id
-            for model_id in effective_council_models
-            if openrouter.supports_vision_model(model_id)
-        ]
+        if vision_capable_models:
+            effective_council_models = vision_capable_models
+            model_selection_metadata["excluded_models"] = [
+                {
+                    "model": model_id,
+                    "reason": "missing_vision_capability",
+                }
+                for model_id in excluded_non_vision_models
+            ]
+        elif session_type == "visual_review":
+            effective_council_models = []
+        elif session_type == "design_studio":
+            excluded_non_vision_models = []
+            model_selection_metadata["degraded"] = True
+            model_selection_metadata["warnings"] = [
+                "Image artifacts are attached, but no vision-capable council models were selected. Design Studio will run without image payloads.",
+            ]
 
-    return requested_council_models, effective_council_models, excluded_non_vision_models
+    return requested_council_models, effective_council_models, excluded_non_vision_models, model_selection_metadata
+
+
+def _should_include_image_artifacts(
+    conversation: Dict[str, Any],
+    effective_models: List[str],
+    model_selection_metadata: Dict[str, Any],
+) -> bool:
+    session_type = normalize_session_type(conversation.get("session_type"))
+    if session_type not in {"visual_review", "design_studio"}:
+        return False
+    if not model_selection_metadata.get("vision_artifacts_present"):
+        return False
+    if model_selection_metadata.get("degraded"):
+        return False
+    return any(openrouter.supports_vision_model(model_id) for model_id in effective_models)
 
 
 def _visual_review_requires_vision_models(conversation: Dict[str, Any], effective_models: List[str]) -> None:
@@ -963,7 +1024,7 @@ async def send_message(
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    requested_council_models, effective_council_models, excluded_non_vision_models = (
+    requested_council_models, effective_council_models, excluded_non_vision_models, model_selection_metadata = (
         _resolve_stage1_models_for_conversation(conversation)
     )
     _visual_review_requires_vision_models(conversation, effective_council_models)
@@ -983,7 +1044,15 @@ async def send_message(
     framework = conversation.get("framework", "standard")
     chairman_model = conversation.get("chairman_model")
 
-    history = _build_conversation_history(conversation, request.content)
+    history = _build_conversation_history(
+        conversation,
+        request.content,
+        include_image_artifacts=_should_include_image_artifacts(
+            conversation,
+            effective_council_models,
+            model_selection_metadata,
+        ),
+    )
 
     retrieval_context, citations = await retrieval.build_retrieval_context(
         conversation_id,
@@ -1012,6 +1081,7 @@ async def send_message(
     metadata["requested_council_models"] = requested_council_models
     metadata["effective_council_models"] = effective_council_models
     metadata["excluded_non_vision_models"] = excluded_non_vision_models
+    metadata["model_selection"] = model_selection_metadata
     metadata["session_type"] = conversation.get("session_type", DEFAULT_SESSION_TYPE)
     metadata["specialist_template_id"] = conversation.get("specialist_template_id")
     metadata["execution_mode"] = normalize_execution_mode(
@@ -1289,7 +1359,7 @@ async def retry_failed_stage1_models(
         request_seen.add(normalized_name)
         deduped_requested_models.append(normalized_name)
 
-    _, configured_effective_models, excluded_non_vision_models = _resolve_stage1_models_for_conversation(conversation)
+    _, configured_effective_models, excluded_non_vision_models, model_selection_metadata = _resolve_stage1_models_for_conversation(conversation)
     _visual_review_requires_vision_models(conversation, configured_effective_models)
 
     effective_models = metadata.get("effective_council_models")
@@ -1410,6 +1480,7 @@ async def retry_failed_stage1_models(
     metadata["primary_artifacts"] = conversation.get("primary_artifacts", [])
     metadata["primary_artifact_count"] = len(conversation.get("primary_artifacts") or [])
     metadata["excluded_non_vision_models"] = excluded_non_vision_models
+    metadata["model_selection"] = model_selection_metadata
 
     if conversation.get("framework") == "six_hats":
         metadata["retry_note"] = "Retry runs use direct model calls and do not re-assign Six Hats roles."
@@ -1496,7 +1567,7 @@ async def send_message_stream(
     is_first_message = len(conversation["messages"]) == 0
     framework = conversation.get("framework", "standard")
     chairman_model = conversation.get("chairman_model")
-    requested_council_models, effective_council_models, excluded_non_vision_models = (
+    requested_council_models, effective_council_models, excluded_non_vision_models, model_selection_metadata = (
         _resolve_stage1_models_for_conversation(conversation)
     )
     _visual_review_requires_vision_models(conversation, effective_council_models)
@@ -1513,7 +1584,15 @@ async def send_message_stream(
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
-            history = _build_conversation_history(conversation, request.content)
+            history = _build_conversation_history(
+                conversation,
+                request.content,
+                include_image_artifacts=_should_include_image_artifacts(
+                    conversation,
+                    effective_council_models,
+                    model_selection_metadata,
+                ),
+            )
 
             # ⚡ Bolt: Run storage (I/O) and retrieval (CPU/Network) in parallel
             # We use gather to ensure both complete before proceeding, propagating exceptions.
@@ -1563,6 +1642,7 @@ async def send_message_stream(
                 "requested_council_models": requested_council_models,
                 "effective_council_models": effective_council_models,
                 "excluded_non_vision_models": excluded_non_vision_models,
+                "model_selection": model_selection_metadata,
                 "responded_council_models": responded_council_models,
                 "stage1_errors": stage1_errors,
                 "stage1_duration_seconds": stage1_duration,
@@ -1590,6 +1670,7 @@ async def send_message_stream(
                 "requested_council_models": requested_council_models,
                 "effective_council_models": effective_council_models,
                 "excluded_non_vision_models": excluded_non_vision_models,
+                "model_selection": model_selection_metadata,
                 "responded_council_models": responded_council_models,
                 "stage1_errors": stage1_errors,
             }
@@ -1710,6 +1791,7 @@ async def send_message_stream(
                 "requested_council_models": requested_council_models,
                 "effective_council_models": effective_council_models,
                 "excluded_non_vision_models": excluded_non_vision_models,
+                "model_selection": model_selection_metadata,
                 "responded_council_models": responded_council_models,
                 "council_models": [r['model'] for r in stage1_results],
                 "chairman_model": chairman_model or config.CHAIRMAN_MODEL,

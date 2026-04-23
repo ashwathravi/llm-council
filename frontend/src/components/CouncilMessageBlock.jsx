@@ -514,6 +514,12 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
       ? stage1.map((result) => result.model)
       : [];
   const stage1Errors = metadata?.stage1_errors;
+  const modelSelection = metadata?.model_selection && typeof metadata.model_selection === 'object'
+    ? metadata.model_selection
+    : null;
+  const modelSelectionWarnings = Array.isArray(modelSelection?.warnings)
+    ? modelSelection.warnings.filter((warning) => typeof warning === 'string' && warning.trim())
+    : EMPTY_LIST;
 
   const combinedErrors = useMemo(() => {
     const merged = [];
@@ -690,6 +696,19 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
                       <div>
                         <span className="font-semibold text-foreground/80">Responded:</span> {formatModelList(respondedCouncilModels)}
                       </div>
+                    </div>
+                  )}
+                  {modelSelectionWarnings.length > 0 && (
+                    <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
+                      <div className="mb-1 flex items-center gap-2 font-semibold">
+                        <AlertTriangle className="h-4 w-4" />
+                        Model selection warning
+                      </div>
+                      <ul className="list-disc space-y-1 pl-5">
+                        {modelSelectionWarnings.map((warning, idx) => (
+                          <li key={idx}>{warning}</li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                   {canRefreshSynthesis && (
