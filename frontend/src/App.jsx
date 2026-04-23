@@ -330,6 +330,10 @@ function App() {
               const lastIndex = messages.length - 1;
               const lastMsg = { ...messages[lastIndex] };
               lastMsg.stage3 = event.data;
+              lastMsg.metadata = {
+                ...(lastMsg.metadata || {}),
+                ...(event.metadata || {}),
+              };
               lastMsg.loading = { ...lastMsg.loading, stage3: false };
               messages[lastIndex] = lastMsg;
               return { ...prev, messages };

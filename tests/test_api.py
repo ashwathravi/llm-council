@@ -1,5 +1,6 @@
 
 import pytest
+import json
 from unittest.mock import patch, MagicMock, AsyncMock
 from backend.main import app
 from backend import auth
@@ -613,6 +614,113 @@ async def test_send_message_design_studio_with_images_degrades_when_no_vision_mo
 
 
 @pytest.mark.asyncio
+async def test_send_message_stream_design_studio_emits_structured_stage_metadata(async_client):
+    conversation = {
+        "id": "conv-design-stream",
+        "framework": "standard",
+        "session_type": "design_studio",
+        "specialist_template_id": "design_web_app_studio",
+        "session_config": {
+            "design_target": "web_app",
+            "studio_goal": "compare",
+            "approved_direction_id": None,
+        },
+        "council_models": ["model-a", "model-b"],
+        "chairman_model": "chair-model",
+        "primary_artifacts": [],
+        "messages": [],
+    }
+    stage2_results = [
+        {
+            "model": "judge",
+            "ranking": "FINAL RANKING:\n1. Response B\n2. Response A",
+            "parsed_ranking": ["Response B", "Response A"],
+            "confidence": 91,
+            "rubric_scores": {
+                "Response A": {"hierarchy": 3},
+                "Response B": {"hierarchy": 5},
+            },
+        }
+    ]
+    aggregate_rankings = [
+        {"model": "model-b", "average_rank": 1.0, "rankings_count": 1},
+        {"model": "model-a", "average_rank": 2.0, "rankings_count": 1},
+    ]
+    aggregate_rubrics = [
+        {
+            "model": "model-b",
+            "overall_score": 4.8,
+            "criteria": [{"key": "hierarchy", "label": "Hierarchy", "average_score": 5.0}],
+        }
+    ]
+
+    async def mock_stage1_stream(*args, **kwargs):
+        yield {"model": "model-a", "response": "Direction A\nDense operations layout."}
+        yield {"model": "model-b", "response": "Direction B\nCalmer editorial layout."}
+
+    async def mock_stage3_stream(*args, **kwargs):
+        yield "Ship Direction B."
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.add_user_message", new_callable=AsyncMock), \
+             patch("backend.storage.update_conversation_title", new_callable=AsyncMock), \
+             patch("backend.storage.add_assistant_message", new_callable=AsyncMock) as mock_add_assistant_message, \
+             patch("backend.retrieval.build_retrieval_context", new_callable=AsyncMock) as mock_retrieval, \
+             patch("backend.main.generate_conversation_title", new_callable=AsyncMock) as mock_generate_title, \
+             patch("backend.main.stage1_collect_responses", side_effect=mock_stage1_stream), \
+             patch("backend.main.stage2_collect_rankings", new_callable=AsyncMock) as mock_stage2, \
+             patch("backend.main.calculate_aggregate_rankings", return_value=aggregate_rankings), \
+             patch("backend.main.calculate_aggregate_rubrics", return_value=aggregate_rubrics), \
+             patch("backend.main.stage3_synthesize_final", side_effect=mock_stage3_stream):
+            mock_get_conversation.return_value = conversation
+            mock_retrieval.return_value = ("", [])
+            mock_generate_title.return_value = "Design Studio"
+            mock_stage2.return_value = (
+                stage2_results,
+                {"Response A": "model-a", "Response B": "model-b"},
+            )
+
+            async with async_client.stream(
+                "POST",
+                "/api/conversations/conv-design-stream/message/stream",
+                json={"content": "Compare two web app directions"},
+            ) as response:
+                assert response.status_code == 200
+                events = []
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        events.append(json.loads(line[6:]))
+
+            stage1_complete = next(event for event in events if event["type"] == "stage1_complete")
+            stage2_complete = next(event for event in events if event["type"] == "stage2_complete")
+            stage3_complete = next(event for event in events if event["type"] == "stage3_complete")
+
+            stage1_design = stage1_complete["metadata"]["design_studio"]
+            assert [item["id"] for item in stage1_design["candidate_directions"]] == [
+                "direction-a",
+                "direction-b",
+            ]
+            assert stage1_design["comparison"]["status"] == "pending"
+
+            stage2_design = stage2_complete["metadata"]["design_studio"]
+            assert stage2_design["comparison"]["status"] == "complete"
+            assert stage2_design["comparison"]["ranked_directions"][0]["direction_id"] == "direction-b"
+            assert stage2_design["selected_direction_id"] == "direction-b"
+
+            stage3_design = stage3_complete["metadata"]["design_studio"]
+            assert stage3_design["handoff"]["status"] == "ready"
+            assert stage3_design["handoff"]["selected_direction_id"] == "direction-b"
+
+            saved_metadata = mock_add_assistant_message.await_args.args[5]
+            assert saved_metadata["design_studio"]["selected_direction_id"] == "direction-b"
+            assert saved_metadata["design_studio"]["handoff"]["status"] == "ready"
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
 async def test_send_message_code_review_returns_execution_metadata(async_client):
     conversation = {
         "id": "conv-exec",
@@ -721,6 +829,63 @@ async def test_retry_failed_stage1_models_success(async_client):
             assert update_call[2] == 1
             assert isinstance(update_call[3], dict)
             assert len(update_call[3]["stage1"]) == 2
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_stage1_design_studio_refreshes_direction_metadata(async_client):
+    conversation = {
+        "id": "conv-design-retry",
+        "framework": "standard",
+        "session_type": "design_studio",
+        "council_models": ["model-good", "model-bad"],
+        "messages": [
+            {"role": "user", "content": "Generate two product directions"},
+            {
+                "role": "assistant",
+                "stage1": [{"model": "model-good", "response": "Direction A"}],
+                "stage2": [],
+                "stage3": {"model": "chair", "response": "Use Direction A for now."},
+                "metadata": {
+                    "effective_council_models": ["model-good", "model-bad"],
+                    "stage1_errors": [{"model": "model-bad", "error": "timeout"}],
+                    "responded_council_models": ["model-good"],
+                },
+            },
+        ],
+    }
+
+    async def mock_stage1_stream(*args, **kwargs):
+        yield {"model": "model-bad", "response": "Direction B"}
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.update_message", new_callable=AsyncMock) as mock_update_message, \
+             patch("backend.retrieval.build_retrieval_context", new_callable=AsyncMock) as mock_retrieval, \
+             patch("backend.main.stage1_collect_responses", side_effect=mock_stage1_stream):
+            mock_get_conversation.return_value = conversation
+            mock_retrieval.return_value = ("", [])
+
+            response = await async_client.post(
+                "/api/conversations/conv-design-retry/messages/1/retry-stage1",
+                json={}
+            )
+
+            assert response.status_code == 200
+            metadata = response.json()["metadata"]
+            assert [
+                item["source_model"]
+                for item in metadata["design_studio"]["candidate_directions"]
+            ] == ["model-good", "model-bad"]
+            assert metadata["design_studio"]["candidate_directions"][1]["id"] == "direction-b"
+
+            updated_message = mock_update_message.await_args.args[3]
+            assert [
+                item["source_model"]
+                for item in updated_message["metadata"]["design_studio"]["candidate_directions"]
+            ] == ["model-good", "model-bad"]
     finally:
         app.dependency_overrides = {}
 

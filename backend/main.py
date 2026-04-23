@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from . import storage, auth, openrouter, security, documents, retrieval, config, image_artifacts, code_artifacts
 from .code_execution import build_execution_context_block, run_code_execution_loop
 from .database import init_db
+from .design_studio import build_design_studio_metadata
 from .council import (
     run_full_council, generate_conversation_title,
     stage1_collect_responses, stage1_collect_responses_six_hats,
@@ -1098,6 +1099,16 @@ async def send_message(
     )
     metadata["primary_artifacts"] = conversation.get("primary_artifacts", [])
     metadata["primary_artifact_count"] = len(conversation.get("primary_artifacts") or [])
+    design_studio_metadata = build_design_studio_metadata(
+        session_type=conversation.get("session_type"),
+        stage1_results=stage1_results,
+        stage2_results=stage2_results,
+        stage3_result=stage3_result,
+        aggregate_rankings=metadata.get("aggregate_rankings"),
+        aggregate_rubrics=metadata.get("aggregate_rubrics"),
+    )
+    if design_studio_metadata:
+        metadata["design_studio"] = design_studio_metadata
 
     # Add assistant message with all stages
     await storage.add_assistant_message(
@@ -1481,6 +1492,16 @@ async def retry_failed_stage1_models(
     metadata["primary_artifact_count"] = len(conversation.get("primary_artifacts") or [])
     metadata["excluded_non_vision_models"] = excluded_non_vision_models
     metadata["model_selection"] = model_selection_metadata
+    design_studio_metadata = build_design_studio_metadata(
+        session_type=conversation.get("session_type"),
+        stage1_results=merged_stage1,
+        stage2_results=target_message.get("stage2") if isinstance(target_message.get("stage2"), list) else [],
+        stage3_result=target_message.get("stage3") if isinstance(target_message.get("stage3"), dict) else None,
+        aggregate_rankings=metadata.get("aggregate_rankings"),
+        aggregate_rubrics=metadata.get("aggregate_rubrics"),
+    )
+    if design_studio_metadata:
+        metadata["design_studio"] = design_studio_metadata
 
     if conversation.get("framework") == "six_hats":
         metadata["retry_note"] = "Retry runs use direct model calls and do not re-assign Six Hats roles."
@@ -1525,6 +1546,16 @@ async def retry_failed_stage1_models(
                     metadata["model_weight_profile"] = refreshed_data["model_weight_profile"]
                 if refreshed_data.get("ballot_weighting"):
                     metadata["ballot_weighting"] = refreshed_data["ballot_weighting"]
+                refreshed_design_studio_metadata = build_design_studio_metadata(
+                    session_type=conversation.get("session_type"),
+                    stage1_results=merged_stage1,
+                    stage2_results=refreshed_data["stage2"],
+                    stage3_result=refreshed_data["stage3"],
+                    aggregate_rankings=refreshed_data["aggregate_rankings"],
+                    aggregate_rubrics=refreshed_data["aggregate_rubrics"],
+                )
+                if refreshed_design_studio_metadata:
+                    metadata["design_studio"] = refreshed_design_studio_metadata
                 metadata["synthesis_refreshed_at_ms"] = int(time.time() * 1000)
                 metadata["synthesis_refresh_duration_seconds"] = round(time.monotonic() - refresh_started_at, 3)
                 metadata.pop("synthesis_refresh_error", None)
@@ -1638,6 +1669,10 @@ async def send_message_stream(
 
             stage1_duration = round(time.monotonic() - stage1_start, 3)
             responded_council_models = [result["model"] for result in stage1_results]
+            design_studio_metadata = build_design_studio_metadata(
+                session_type=conversation.get("session_type"),
+                stage1_results=stage1_results,
+            )
             stage1_meta = {
                 "requested_council_models": requested_council_models,
                 "effective_council_models": effective_council_models,
@@ -1647,6 +1682,8 @@ async def send_message_stream(
                 "stage1_errors": stage1_errors,
                 "stage1_duration_seconds": stage1_duration,
             }
+            if design_studio_metadata:
+                stage1_meta["design_studio"] = design_studio_metadata
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results, 'metadata': stage1_meta})}\n\n"
             logger.info(
                 f"[stream] conversation={conversation_id} stage1_complete duration={stage1_duration}s "
@@ -1675,10 +1712,19 @@ async def send_message_stream(
                 "stage1_errors": stage1_errors,
             }
             hetero_meta = {}
+            design_stage_meta = design_studio_metadata
 
             if framework == "ensemble":
                 label_to_model = {f"Response {chr(65+i)}": r['model'] for i, r in enumerate(stage1_results)}
-                yield f"data: {json.dumps({'type': 'stage2_skipped', 'metadata': {'label_to_model': label_to_model, **config_meta, **retrieval_meta}})}\n\n"
+                design_stage_meta = build_design_studio_metadata(
+                    session_type=conversation.get("session_type"),
+                    stage1_results=stage1_results,
+                    stage2_results=stage2_results,
+                    aggregate_rankings=aggregate_rankings,
+                    aggregate_rubrics=aggregate_rubrics,
+                )
+                design_meta_payload = {"design_studio": design_stage_meta} if design_stage_meta else {}
+                yield f"data: {json.dumps({'type': 'stage2_skipped', 'metadata': {'label_to_model': label_to_model, **design_meta_payload, **config_meta, **retrieval_meta}})}\n\n"
             
             elif framework == "debate":
                  stage2_results, label_to_model = await stage2_collect_critiques(
@@ -1687,7 +1733,15 @@ async def send_message_stream(
                      effective_council_models,
                      retrieval_context=effective_context
                  )
-                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'mode': 'debate', **config_meta, **retrieval_meta}})}\n\n"
+                 design_stage_meta = build_design_studio_metadata(
+                     session_type=conversation.get("session_type"),
+                     stage1_results=stage1_results,
+                     stage2_results=stage2_results,
+                     aggregate_rankings=aggregate_rankings,
+                     aggregate_rubrics=aggregate_rubrics,
+                 )
+                 design_meta_payload = {"design_studio": design_stage_meta} if design_stage_meta else {}
+                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'mode': 'debate', **design_meta_payload, **config_meta, **retrieval_meta}})}\n\n"
 
             else: # standard, six_hats, and heterogeneous all use ranking for Stage 2
                  stage2_results, label_to_model = await stage2_collect_rankings(
@@ -1723,7 +1777,15 @@ async def send_message_stream(
                              "history_source": "prior_conversation_rankings",
                          },
                      }
-                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, 'aggregate_rubrics': aggregate_rubrics, **hetero_meta, **config_meta, **retrieval_meta}})}\n\n"
+                 design_stage_meta = build_design_studio_metadata(
+                     session_type=conversation.get("session_type"),
+                     stage1_results=stage1_results,
+                     stage2_results=stage2_results,
+                     aggregate_rankings=aggregate_rankings,
+                     aggregate_rubrics=aggregate_rubrics,
+                 )
+                 design_meta_payload = {"design_studio": design_stage_meta} if design_stage_meta else {}
+                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, 'aggregate_rubrics': aggregate_rubrics, **design_meta_payload, **hetero_meta, **config_meta, **retrieval_meta}})}\n\n"
 
             stage2_duration = round(time.monotonic() - stage2_start, 3)
             logger.info(
@@ -1775,7 +1837,16 @@ async def send_message_stream(
                 "model": chairman_model or config.CHAIRMAN_MODEL,
                 "response": full_stage3_response
             }
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+            design_stage_meta = build_design_studio_metadata(
+                session_type=conversation.get("session_type"),
+                stage1_results=stage1_results,
+                stage2_results=stage2_results,
+                stage3_result=stage3_result,
+                aggregate_rankings=aggregate_rankings,
+                aggregate_rubrics=aggregate_rubrics,
+            )
+            stage3_metadata = {"design_studio": design_stage_meta} if design_stage_meta else {}
+            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result, 'metadata': stage3_metadata})}\n\n"
             stage3_duration = round(time.monotonic() - stage3_start, 3)
             logger.info(f"[stream] conversation={conversation_id} stage3_complete duration={stage3_duration}s")
 
@@ -1825,6 +1896,8 @@ async def send_message_stream(
                 },
                 **retrieval_meta
             }
+            if design_stage_meta:
+                metadata["design_studio"] = design_stage_meta
             if framework == "heterogeneous":
                 metadata["model_weight_profile"] = serialize_model_weight_profile(
                     updated_model_profiles,
