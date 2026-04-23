@@ -5,6 +5,42 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 SESSION_TEMPLATES: Dict[str, Dict[str, object]] = {
+    "design_web_app_studio": {
+        "id": "design_web_app_studio",
+        "session_type": "design_studio",
+        "label": "Web App Design Studio",
+        "description": "Explores web product directions with strong IA, hierarchy, and implementation realism.",
+        "default_framework": "standard",
+        "council_lenses": ["Product designer", "UX strategist", "Frontend engineer", "Accessibility reviewer", "Product manager"],
+        "evaluation_criteria": ["Task clarity", "Hierarchy", "Information architecture", "Platform fit", "Accessibility", "Implementation realism"],
+        "synthesis_instruction": "Generate distinct web directions, compare them directly, then recommend one direction with concrete implementation notes.",
+        "deliverable_format": "Design Studio handoff",
+        "deliverable_instruction": "Use sections titled Candidate Directions, Comparison, Recommended Direction, and Handoff Notes.",
+    },
+    "design_ios_app_studio": {
+        "id": "design_ios_app_studio",
+        "session_type": "design_studio",
+        "label": "iOS Design Studio",
+        "description": "Explores native-feeling iOS directions with strong platform fit and touch ergonomics.",
+        "default_framework": "standard",
+        "council_lenses": ["iOS designer", "Interaction designer", "SwiftUI engineer", "Accessibility reviewer", "Product manager"],
+        "evaluation_criteria": ["Task clarity", "Navigation", "Platform fit", "Touch ergonomics", "Accessibility", "Implementation realism"],
+        "synthesis_instruction": "Generate distinct iOS directions, call out native platform tradeoffs, and recommend one direction with implementation-minded notes.",
+        "deliverable_format": "Design Studio handoff",
+        "deliverable_instruction": "Use sections titled Candidate Directions, Comparison, Recommended Direction, and Handoff Notes.",
+    },
+    "design_cross_platform_studio": {
+        "id": "design_cross_platform_studio",
+        "session_type": "design_studio",
+        "label": "Cross-Platform Design Studio",
+        "description": "Compares web and iOS directions while keeping shared product intent and platform-specific constraints explicit.",
+        "default_framework": "heterogeneous",
+        "council_lenses": ["Product designer", "iOS designer", "Frontend engineer", "Accessibility reviewer", "Product manager"],
+        "evaluation_criteria": ["Task clarity", "Hierarchy", "Platform fit", "Cross-platform consistency", "Accessibility", "Implementation realism"],
+        "synthesis_instruction": "Compare directions across platforms, keep real structural differences visible, and end with one recommended direction plus platform-specific handoff notes.",
+        "deliverable_format": "Design Studio handoff",
+        "deliverable_instruction": "Use sections titled Candidate Directions, Comparison, Recommended Direction, and Handoff Notes.",
+    },
     "visual_ux_review": {
         "id": "visual_ux_review",
         "session_type": "visual_review",
@@ -124,6 +160,10 @@ def list_session_templates(session_type: Optional[str] = None) -> List[Dict[str,
 
 
 DEFAULT_DELIVERABLES: Dict[str, Dict[str, str]] = {
+    "design_studio": {
+        "label": "Design Studio handoff",
+        "instruction": "Use sections titled Candidate Directions, Comparison, Recommended Direction, and Handoff Notes.",
+    },
     "visual_review": {
         "label": "Design critique output",
         "instruction": "Use sections titled Summary, What's Working, Issues by Priority, and Recommended Fixes.",
@@ -144,6 +184,21 @@ DEFAULT_DELIVERABLES: Dict[str, Dict[str, str]] = {
 
 
 DEFAULT_RUBRICS: Dict[str, Dict[str, object]] = {
+    "design_studio": {
+        "label": "Design studio rubric",
+        "score_range": "1-5",
+        "effort_note": "For Effort, 5 means the fix or direction is relatively low effort and 1 means high effort.",
+        "confidence_note": "For Confidence, 5 means strong confidence in the response quality.",
+        "criteria": [
+            {"key": "task_clarity", "label": "Task Clarity"},
+            {"key": "hierarchy", "label": "Hierarchy"},
+            {"key": "platform_fit", "label": "Platform Fit"},
+            {"key": "accessibility", "label": "Accessibility"},
+            {"key": "implementation_realism", "label": "Implementation Realism"},
+            {"key": "effort", "label": "Effort"},
+            {"key": "confidence", "label": "Confidence"},
+        ],
+    },
     "visual_review": {
         "label": "Visual review rubric",
         "score_range": "1-5",

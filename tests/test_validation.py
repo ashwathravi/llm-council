@@ -11,7 +11,7 @@ def test_valid_frameworks():
 
 def test_valid_session_types():
     """Test that all allowed session types are accepted."""
-    for session_type in ["general", "visual_review", "code_review", "build_spec", "research_docs"]:
+    for session_type in ["general", "visual_review", "design_studio", "code_review", "build_spec", "research_docs"]:
         req = CreateConversationRequest(session_type=session_type)
         assert req.session_type == session_type
 
@@ -73,9 +73,43 @@ def test_default_values():
     assert req.framework == "standard"
     assert req.session_type == "general"
     assert req.execution_mode == "disabled"
+    assert req.session_config == {}
     assert req.council_models == []
     assert req.chairman_model is None
     assert req.primary_artifacts == []
+
+def test_design_studio_session_config_defaults():
+    """Test that design studio sessions get normalized default config."""
+    req = CreateConversationRequest(session_type="design_studio")
+    assert req.session_config == {
+        "design_target": "web_app",
+        "studio_goal": "generate",
+        "approved_direction_id": None,
+    }
+
+def test_design_studio_session_config_is_normalized():
+    """Test that design studio config is normalized and trimmed."""
+    req = CreateConversationRequest(
+        session_type="design_studio",
+        session_config={
+            "design_target": "both",
+            "studio_goal": "handoff",
+            "approved_direction_id": "  direction-2  ",
+        },
+    )
+    assert req.session_config == {
+        "design_target": "both",
+        "studio_goal": "handoff",
+        "approved_direction_id": "direction-2",
+    }
+
+def test_non_design_sessions_clear_session_config():
+    """Test that non-design sessions do not retain design studio config."""
+    req = CreateConversationRequest(
+        session_type="general",
+        session_config={"design_target": "ios_app", "studio_goal": "review"},
+    )
+    assert req.session_config == {}
 
 def test_message_content_length_limit():
     """Test that message content exceeding 50KB raises a ValidationError."""

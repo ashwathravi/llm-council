@@ -10,6 +10,11 @@ export const SESSION_TYPE_OPTIONS = [
     description: 'Sessions centered on screenshots, mockups, and design critique.',
   },
   {
+    id: 'design_studio',
+    name: 'Design Studio',
+    description: 'Sessions for product design exploration, comparison, and handoff.',
+  },
+  {
     id: 'code_review',
     name: 'Code Review',
     description: 'Sessions focused on repos, diffs, implementation quality, and risks.',
@@ -33,6 +38,7 @@ export const SESSION_TYPE_LABELS = Object.fromEntries(
 export const SESSION_TYPE_PLACEHOLDERS = {
   general: 'Message the Council...',
   visual_review: 'Ask for a visual or UX critique...',
+  design_studio: 'Ask for concepts, compare directions, or refine a chosen design...',
   code_review: 'Paste a diff, repo slice, or ask for a code review...',
   build_spec: 'Ask the Council to plan, scope, or implement against a spec...',
   research_docs: 'Ask a question grounded in your attached source material...',

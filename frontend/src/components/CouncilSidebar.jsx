@@ -9,6 +9,7 @@ import { Trash2, Plus, History, Settings, PanelLeftClose, PanelLeftOpen, Users }
 import CouncilConfigDialog from './CouncilConfigDialog';
 import { cn } from "@/lib/utils";
 import { getExecutionModeLabel, getPrimaryArtifactCount, getSessionTypeLabel } from '@/lib/sessionMetadata';
+import { getDesignTargetLabel, getStudioGoalLabel, normalizeSessionConfig } from '@/lib/designStudioConfig';
 import { getSpecialistTemplate, getSpecialistTemplateLabel } from '@/lib/specialistTemplates';
 
 const FRAMEWORK_LABELS = {
@@ -49,6 +50,10 @@ const readSavedPresets = () => {
           sessionType: typeof preset.sessionType === 'string' ? preset.sessionType : 'general',
           specialistTemplateId: typeof preset.specialistTemplateId === 'string' ? preset.specialistTemplateId : '',
           executionMode: typeof preset.executionMode === 'string' ? preset.executionMode : 'disabled',
+          sessionConfig: normalizeSessionConfig(
+            typeof preset.sessionType === 'string' ? preset.sessionType : 'general',
+            preset.sessionConfig
+          ),
           framework: typeof preset.framework === 'string' ? preset.framework : 'standard',
           chairmanModel: typeof preset.chairmanModel === 'string' ? preset.chairmanModel : '',
           councilModels: Array.isArray(preset.councilModels) ? preset.councilModels : [],
@@ -87,12 +92,15 @@ const normalizeModelList = (models) => {
 const sameConfig = (left, right) => {
   const leftModels = normalizeModelList(left.councilModels);
   const rightModels = normalizeModelList(right.councilModels);
+  const leftSessionConfig = normalizeSessionConfig(left.sessionType || 'general', left.sessionConfig);
+  const rightSessionConfig = normalizeSessionConfig(right.sessionType || 'general', right.sessionConfig);
 
   if ((left.sessionType || 'general') !== (right.sessionType || 'general')) return false;
   if ((left.specialistTemplateId || '') !== (right.specialistTemplateId || '')) return false;
   if ((left.executionMode || 'disabled') !== (right.executionMode || 'disabled')) return false;
   if (left.framework !== right.framework) return false;
   if ((left.chairmanModel || '') !== (right.chairmanModel || '')) return false;
+  if (JSON.stringify(leftSessionConfig) !== JSON.stringify(rightSessionConfig)) return false;
   if (leftModels.length !== rightModels.length) return false;
 
   return leftModels.every((modelId, index) => modelId === rightModels[index]);
@@ -127,6 +135,7 @@ const CouncilSidebar = memo(({
   const [selectedSessionType, setSelectedSessionType] = useState('general');
   const [selectedSpecialistTemplateId, setSelectedSpecialistTemplateId] = useState('');
   const [executionMode, setExecutionMode] = useState('disabled');
+  const [sessionConfig, setSessionConfig] = useState({});
   const [selectedFramework, setSelectedFramework] = useState('standard');
   const [models, setModels] = useState([]);
   const [chairmanModel, setChairmanModel] = useState('');
@@ -229,9 +238,14 @@ const CouncilSidebar = memo(({
     const councilTypeName = FRAMEWORK_LABELS[selectedFramework] || selectedFramework;
     const memberCount = councilModels.length;
     const chairmanName = models.find((model) => model.id === chairmanModel)?.name || chairmanModel;
+    const normalizedSessionConfig = normalizeSessionConfig(selectedSessionType, sessionConfig);
 
     if (specialistTemplateName) {
       return `${specialistTemplateName} - ${memberCount} members`;
+    }
+
+    if (selectedSessionType === 'design_studio') {
+      return `${sessionTypeName} - ${getDesignTargetLabel(normalizedSessionConfig.design_target)} - ${memberCount} members`;
     }
 
     if (chairmanModel) {
@@ -246,6 +260,7 @@ const CouncilSidebar = memo(({
       sessionType: selectedSessionType,
       specialistTemplateId: selectedSpecialistTemplateId,
       executionMode,
+      sessionConfig: normalizeSessionConfig(selectedSessionType, sessionConfig),
       framework: selectedFramework,
       councilModels,
       chairmanModel,
@@ -270,6 +285,7 @@ const CouncilSidebar = memo(({
       sessionType: selectedSessionType,
       specialistTemplateId: selectedSpecialistTemplateId,
       executionMode,
+      sessionConfig: normalizeSessionConfig(selectedSessionType, sessionConfig),
       framework: selectedFramework,
       chairmanModel,
       councilModels,
@@ -363,6 +379,7 @@ const CouncilSidebar = memo(({
 
   const handleSessionTypeChange = (nextSessionType) => {
     setSelectedSessionType(nextSessionType);
+    setSessionConfig((currentSessionConfig) => normalizeSessionConfig(nextSessionType, currentSessionConfig));
     const currentTemplate = getSpecialistTemplate(selectedSpecialistTemplateId);
     if (currentTemplate && currentTemplate.sessionType !== nextSessionType) {
       setSelectedSpecialistTemplateId('');
@@ -408,6 +425,7 @@ const CouncilSidebar = memo(({
         sessionType: selectedSessionType,
         specialistTemplateId: selectedSpecialistTemplateId || null,
         executionMode: selectedSessionType === 'code_review' ? executionMode : 'disabled',
+        sessionConfig: normalizeSessionConfig(selectedSessionType, sessionConfig),
         framework: selectedFramework,
         councilModels,
         chairmanModel: chairmanModel || null,
@@ -448,6 +466,10 @@ const CouncilSidebar = memo(({
   const activeConversationSessionType = activeConversationMetadata?.session_type || 'general';
   const activeConversationTemplateLabel = getSpecialistTemplateLabel(activeConversationMetadata?.specialist_template_id);
   const activeConversationExecutionMode = activeConversationMetadata?.execution_mode || 'disabled';
+  const activeConversationSessionConfig = normalizeSessionConfig(
+    activeConversationSessionType,
+    activeConversationMetadata?.session_config
+  );
   const activeFrameworkLabel = activeConversationFramework
     ? (FRAMEWORK_LABELS[activeConversationFramework] || activeConversationFramework)
     : 'No active conversation';
@@ -457,6 +479,12 @@ const CouncilSidebar = memo(({
   const activePrimaryArtifactCount = getPrimaryArtifactCount(activeConversationMetadata?.primary_artifacts);
   const activeConversationChairman = activeConversationMetadata?.chairman_model || '';
   const activeChairmanName = activeConversationChairman ? getModelName(activeConversationChairman) : 'Auto';
+  const activeDesignTargetLabel = activeConversationSessionType === 'design_studio'
+    ? getDesignTargetLabel(activeConversationSessionConfig.design_target)
+    : null;
+  const activeStudioGoalLabel = activeConversationSessionType === 'design_studio'
+    ? getStudioGoalLabel(activeConversationSessionConfig.studio_goal)
+    : null;
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -547,6 +575,11 @@ const CouncilSidebar = memo(({
                         {activeConversationSessionType === 'code_review' && activeConversationExecutionMode !== 'disabled' && (
                           <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
                             {getExecutionModeLabel(activeConversationExecutionMode)}
+                          </span>
+                        )}
+                        {activeConversationSessionType === 'design_studio' && (
+                          <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
+                            {activeDesignTargetLabel} • {activeStudioGoalLabel}
                           </span>
                         )}
                         <span className="w-full truncate font-normal text-muted-foreground text-[10px]">
@@ -656,6 +689,7 @@ const CouncilSidebar = memo(({
           sessionType: activeConversationMetadata?.session_type || 'general',
           specialistTemplateId: activeConversationMetadata?.specialist_template_id || '',
           executionMode: activeConversationExecutionMode,
+          sessionConfig: activeConversationSessionConfig,
           framework: activeConversationMetadata?.framework,
           councilModels: Array.isArray(activeConversationMetadata?.council_models) ? activeConversationMetadata.council_models : [],
           chairmanModel: activeConversationMetadata?.chairman_model || '',
@@ -670,6 +704,8 @@ const CouncilSidebar = memo(({
         setSpecialistTemplateId={setSelectedSpecialistTemplateId}
         executionMode={executionMode}
         setExecutionMode={setExecutionMode}
+        sessionConfig={sessionConfig}
+        setSessionConfig={setSessionConfig}
         selectedFramework={selectedFramework}
         setSelectedFramework={setSelectedFramework}
         councilModels={councilModels}

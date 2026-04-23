@@ -15,6 +15,7 @@ from .session_context import (
     DEFAULT_SESSION_TYPE,
     normalize_execution_mode,
     normalize_primary_artifacts,
+    normalize_session_config,
     normalize_session_type,
     normalize_primary_artifact,
     remove_primary_artifact_for_document_record,
@@ -35,18 +36,21 @@ async def db_create_conversation(
     session_type: str = DEFAULT_SESSION_TYPE,
     specialist_template_id: Optional[str] = None,
     execution_mode: str = DEFAULT_EXECUTION_MODE,
+    session_config: Optional[Dict[str, Any]] = None,
     primary_artifacts: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     async with AsyncSessionLocal() as session:
+        normalized_session_type = normalize_session_type(session_type)
         new_conv = ConversationModel(
             id=conversation_id,
             user_id=user_id,
             framework=framework,
             council_models=council_models,
             chairman_model=chairman_model,
-            session_type=normalize_session_type(session_type),
-            specialist_template_id=normalize_session_template_id(specialist_template_id, normalize_session_type(session_type)),
-            execution_mode=normalize_execution_mode(execution_mode, session_type=session_type),
+            session_type=normalized_session_type,
+            specialist_template_id=normalize_session_template_id(specialist_template_id, normalized_session_type),
+            execution_mode=normalize_execution_mode(execution_mode, session_type=normalized_session_type),
+            session_config=normalize_session_config(session_config, session_type=normalized_session_type),
             primary_artifacts=normalize_primary_artifacts(primary_artifacts),
             origin=APP_ORIGIN,
             messages=[]
@@ -77,6 +81,7 @@ async def db_list_conversations(user_id: str) -> List[Dict[str, Any]]:
                 ConversationModel.session_type,
                 ConversationModel.specialist_template_id,
                 ConversationModel.execution_mode,
+                ConversationModel.session_config,
                 ConversationModel.primary_artifacts,
             )
             .where(ConversationModel.user_id == user_id)
@@ -92,6 +97,7 @@ async def db_list_conversations(user_id: str) -> List[Dict[str, Any]]:
                 "session_type": normalize_session_type(c.session_type),
                 "specialist_template_id": normalize_session_template_id(c.specialist_template_id, normalize_session_type(c.session_type)),
                 "execution_mode": normalize_execution_mode(c.execution_mode, session_type=normalize_session_type(c.session_type)),
+                "session_config": normalize_session_config(c.session_config, session_type=normalize_session_type(c.session_type)),
                 "primary_artifact_count": len(normalize_primary_artifacts(c.primary_artifacts)),
             }
             for c in conversations
@@ -175,6 +181,7 @@ async def db_update_conversation_context(
     session_type: Any = _UNSET,
     specialist_template_id: Any = _UNSET,
     execution_mode: Any = _UNSET,
+    session_config: Any = _UNSET,
     primary_artifacts: Any = _UNSET,
 ) -> Dict[str, Any]:
     async with AsyncSessionLocal() as session:
@@ -202,6 +209,19 @@ async def db_update_conversation_context(
                 conv.execution_mode,
                 session_type=normalize_session_type(conv.session_type),
             )
+
+        if session_config is not _UNSET:
+            conv.session_config = normalize_session_config(
+                session_config,
+                session_type=normalize_session_type(conv.session_type),
+            )
+            flag_modified(conv, "session_config")
+        elif session_type is not _UNSET:
+            conv.session_config = normalize_session_config(
+                conv.session_config,
+                session_type=normalize_session_type(conv.session_type),
+            )
+            flag_modified(conv, "session_config")
 
         if primary_artifacts is not _UNSET:
             conv.primary_artifacts = normalize_primary_artifacts(primary_artifacts)
@@ -387,6 +407,7 @@ def _model_to_dict(model: ConversationModel) -> Dict[str, Any]:
         "session_type": normalize_session_type(model.session_type),
         "specialist_template_id": normalize_session_template_id(model.specialist_template_id, normalize_session_type(model.session_type)),
         "execution_mode": normalize_execution_mode(model.execution_mode, session_type=normalize_session_type(model.session_type)),
+        "session_config": normalize_session_config(model.session_config, session_type=normalize_session_type(model.session_type)),
         "primary_artifacts": normalize_primary_artifacts(model.primary_artifacts),
     }
 
@@ -437,6 +458,10 @@ def _hydrate_conversation_dict(conversation: Dict[str, Any]) -> Dict[str, Any]:
         hydrated.get("execution_mode"),
         session_type=hydrated["session_type"],
     )
+    hydrated["session_config"] = normalize_session_config(
+        hydrated.get("session_config"),
+        session_type=hydrated["session_type"],
+    )
     hydrated["primary_artifacts"] = normalize_primary_artifacts(hydrated.get("primary_artifacts"))
     hydrated.setdefault("title", "New Conversation")
     hydrated.setdefault("framework", "standard")
@@ -460,6 +485,7 @@ def file_create_conversation(
     session_type: str = DEFAULT_SESSION_TYPE,
     specialist_template_id: Optional[str] = None,
     execution_mode: str = DEFAULT_EXECUTION_MODE,
+    session_config: Optional[Dict[str, Any]] = None,
     primary_artifacts: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     ensure_data_dir()
@@ -476,6 +502,7 @@ def file_create_conversation(
         "session_type": session_type,
         "specialist_template_id": specialist_template_id,
         "execution_mode": execution_mode,
+        "session_config": session_config or {},
         "primary_artifacts": primary_artifacts or [],
     })
     with open(get_conversation_path(conversation_id), 'w') as f:
@@ -542,6 +569,7 @@ def file_list_conversations(user_id: str) -> List[Dict[str, Any]]:
                         "session_type": hydrated["session_type"],
                         "specialist_template_id": hydrated["specialist_template_id"],
                         "execution_mode": hydrated["execution_mode"],
+                        "session_config": hydrated["session_config"],
                         "primary_artifact_count": len(hydrated["primary_artifacts"]),
                     })
         except Exception: continue
@@ -556,6 +584,7 @@ def file_update_conversation_context(
     session_type: Any = _UNSET,
     specialist_template_id: Any = _UNSET,
     execution_mode: Any = _UNSET,
+    session_config: Any = _UNSET,
     primary_artifacts: Any = _UNSET,
 ) -> Dict[str, Any]:
     conv = file_get_conversation(conversation_id, user_id)
@@ -579,6 +608,17 @@ def file_update_conversation_context(
     elif session_type is not _UNSET:
         conv["execution_mode"] = normalize_execution_mode(
             conv.get("execution_mode"),
+            session_type=conv["session_type"],
+        )
+
+    if session_config is not _UNSET:
+        conv["session_config"] = normalize_session_config(
+            session_config,
+            session_type=conv["session_type"],
+        )
+    elif session_type is not _UNSET:
+        conv["session_config"] = normalize_session_config(
+            conv.get("session_config"),
             session_type=conv["session_type"],
         )
 
@@ -732,6 +772,7 @@ async def create_conversation(
     session_type: str = DEFAULT_SESSION_TYPE,
     specialist_template_id: Optional[str] = None,
     execution_mode: str = DEFAULT_EXECUTION_MODE,
+    session_config: Optional[Dict[str, Any]] = None,
     primary_artifacts: Optional[List[Dict[str, Any]]] = None,
 ):
     if os.getenv("DATABASE_URL"):
@@ -744,6 +785,7 @@ async def create_conversation(
             session_type=session_type,
             specialist_template_id=specialist_template_id,
             execution_mode=execution_mode,
+            session_config=session_config,
             primary_artifacts=primary_artifacts,
         )
     else:
@@ -756,6 +798,7 @@ async def create_conversation(
             session_type=session_type,
             specialist_template_id=specialist_template_id,
             execution_mode=execution_mode,
+            session_config=session_config,
             primary_artifacts=primary_artifacts,
         )
 
@@ -821,6 +864,7 @@ async def update_conversation_context(
     session_type: Any = _UNSET,
     specialist_template_id: Any = _UNSET,
     execution_mode: Any = _UNSET,
+    session_config: Any = _UNSET,
     primary_artifacts: Any = _UNSET,
 ):
     if os.getenv("DATABASE_URL"):
@@ -830,6 +874,7 @@ async def update_conversation_context(
             session_type=session_type,
             specialist_template_id=specialist_template_id,
             execution_mode=execution_mode,
+            session_config=session_config,
             primary_artifacts=primary_artifacts,
         )
     else:
@@ -839,6 +884,7 @@ async def update_conversation_context(
             session_type=session_type,
             specialist_template_id=specialist_template_id,
             execution_mode=execution_mode,
+            session_config=session_config,
             primary_artifacts=primary_artifacts,
         )
 

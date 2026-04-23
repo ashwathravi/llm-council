@@ -162,6 +162,7 @@ export const api = {
     sessionType = 'general',
     specialistTemplateId = null,
     executionMode = 'disabled',
+    sessionConfig = {},
     primaryArtifacts = [],
   } = {}) {
     const response = await fetch(`${API_BASE}/api/conversations`, {
@@ -175,6 +176,7 @@ export const api = {
         session_type: sessionType,
         specialist_template_id: specialistTemplateId,
         execution_mode: executionMode,
+        session_config: sessionConfig,
         council_models: councilModels,
         chairman_model: chairmanModel,
         primary_artifacts: primaryArtifacts,

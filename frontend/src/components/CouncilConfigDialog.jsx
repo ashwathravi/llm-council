@@ -10,6 +10,13 @@ import { ArrowDown, ArrowUp, Check, Crown, Pencil, Pin, PinOff, Save, Settings2,
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { EXECUTION_MODE_OPTIONS, getExecutionModeLabel, getSessionTypeLabel, SESSION_TYPE_OPTIONS } from '@/lib/sessionMetadata';
+import {
+  DESIGN_TARGET_OPTIONS,
+  STUDIO_GOAL_OPTIONS,
+  getDesignTargetLabel,
+  getStudioGoalLabel,
+  normalizeSessionConfig,
+} from '@/lib/designStudioConfig';
 import { getSpecialistTemplate, getSpecialistTemplateLabel, getTemplatesForSessionType } from '@/lib/specialistTemplates';
 
 const COUNCIL_TYPES = [
@@ -70,6 +77,8 @@ const CouncilConfigDialog = ({
   setSpecialistTemplateId,
   executionMode,
   setExecutionMode,
+  sessionConfig,
+  setSessionConfig,
   selectedFramework,
   setSelectedFramework,
   councilModels,
@@ -94,11 +103,16 @@ const CouncilConfigDialog = ({
   const [searchQuery, setSearchQuery] = useState('');
   const isVisualReview = selectedSessionType === 'visual_review';
   const isCodeReview = selectedSessionType === 'code_review';
+  const isDesignStudio = selectedSessionType === 'design_studio';
   const availableSpecialistTemplates = useMemo(
     () => getTemplatesForSessionType(selectedSessionType),
     [selectedSessionType]
   );
   const selectedSpecialistTemplate = getSpecialistTemplate(specialistTemplateId);
+  const normalizedSessionConfig = useMemo(
+    () => normalizeSessionConfig(selectedSessionType, sessionConfig),
+    [selectedSessionType, sessionConfig]
+  );
 
   const visionCapableModelIds = useMemo(
     () => new Set(models.filter((model) => model.supports_vision).map((model) => model.id)),
@@ -142,8 +156,41 @@ const CouncilConfigDialog = ({
     return modelIds.filter((modelId) => visionCapableModelIds.has(modelId));
   };
 
+  const buildTemplateSessionConfig = (template, currentConfig = sessionConfig) => {
+    const nextSessionType = template?.sessionType || selectedSessionType;
+    const baseConfig = normalizeSessionConfig(nextSessionType, currentConfig);
+
+    if (nextSessionType !== 'design_studio') {
+      return baseConfig;
+    }
+
+    if (template?.id === 'design_web_app_studio') {
+      return { ...baseConfig, design_target: 'web_app' };
+    }
+    if (template?.id === 'design_ios_app_studio') {
+      return { ...baseConfig, design_target: 'ios_app' };
+    }
+    if (template?.id === 'design_cross_platform_studio') {
+      return { ...baseConfig, design_target: 'both' };
+    }
+
+    return baseConfig;
+  };
+
+  const updateSessionConfig = (updates) => {
+    setSessionConfig((currentConfig) => normalizeSessionConfig(
+      selectedSessionType,
+      {
+        ...normalizeSessionConfig(selectedSessionType, currentConfig),
+        ...updates,
+      }
+    ));
+    setActivePresetId(null);
+  };
+
   const applySessionType = (nextSessionType) => {
     setSelectedSessionType(nextSessionType);
+    setSessionConfig(normalizeSessionConfig(nextSessionType, sessionConfig));
     setCouncilModels(filterCouncilModelsForSession(councilModels, nextSessionType));
     if (getSpecialistTemplate(specialistTemplateId)?.sessionType !== nextSessionType) {
       setSpecialistTemplateId('');
@@ -163,7 +210,10 @@ const CouncilConfigDialog = ({
 
     if (template.sessionType !== selectedSessionType) {
       setSelectedSessionType(template.sessionType);
+      setSessionConfig(buildTemplateSessionConfig(template));
       setCouncilModels(filterCouncilModelsForSession(councilModels, template.sessionType));
+    } else if (template.sessionType === 'design_studio') {
+      setSessionConfig(buildTemplateSessionConfig(template));
     }
     if (template.sessionType !== 'code_review') {
       setExecutionMode('disabled');
@@ -198,6 +248,7 @@ const CouncilConfigDialog = ({
     setSelectedSessionType(nextSessionType);
     setSpecialistTemplateId(nextSpecialistTemplateId);
     setExecutionMode(nextExecutionMode);
+    setSessionConfig(normalizeSessionConfig(nextSessionType, preset.sessionConfig));
     setSelectedFramework(nextFramework);
     setCouncilModels(validCouncilModels);
     setChairmanModel(requestedChairman && availableModelIds.has(requestedChairman) ? requestedChairman : '');
@@ -318,6 +369,7 @@ const CouncilConfigDialog = ({
     const sessionType = readOnlyConfig?.sessionType || 'general';
     const readOnlyTemplateLabel = getSpecialistTemplateLabel(readOnlyConfig?.specialistTemplateId || '');
     const readOnlyExecutionMode = readOnlyConfig?.executionMode || 'disabled';
+    const readOnlySessionConfig = normalizeSessionConfig(sessionType, readOnlyConfig?.sessionConfig);
     const framework = readOnlyConfig?.framework || 'standard';
     const selectedModels = Array.isArray(readOnlyConfig?.councilModels) ? readOnlyConfig.councilModels : [];
     const readOnlyChairman = readOnlyConfig?.chairmanModel || '';
@@ -351,6 +403,12 @@ const CouncilConfigDialog = ({
             <div className="flex flex-wrap gap-2">
               <Badge variant="secondary">{selectedModels.length} Selected Models</Badge>
               {readOnlyTemplateLabel && <Badge variant="secondary">{readOnlyTemplateLabel}</Badge>}
+              {sessionType === 'design_studio' && (
+                <>
+                  <Badge variant="secondary">{getDesignTargetLabel(readOnlySessionConfig.design_target)}</Badge>
+                  <Badge variant="secondary">{getStudioGoalLabel(readOnlySessionConfig.studio_goal)}</Badge>
+                </>
+              )}
               {sessionType === 'code_review' && readOnlyExecutionMode !== 'disabled' && (
                 <Badge variant="secondary">{getExecutionModeLabel(readOnlyExecutionMode)}</Badge>
               )}
@@ -358,6 +416,38 @@ const CouncilConfigDialog = ({
               <Badge variant="outline">{primaryArtifacts.length} Primary Artifacts</Badge>
             </div>
           </div>
+
+          {sessionType === 'design_studio' && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-muted-foreground">Design Studio Focus</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Card className="border-primary/30 bg-accent/10">
+                  <CardContent className="p-4">
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">Target</div>
+                    <div className="font-semibold text-primary mt-1">
+                      {getDesignTargetLabel(readOnlySessionConfig.design_target)}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-primary/30 bg-accent/10">
+                  <CardContent className="p-4">
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">Goal</div>
+                    <div className="font-semibold text-primary mt-1">
+                      {getStudioGoalLabel(readOnlySessionConfig.studio_goal)}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+              <Card className="border-dashed">
+                <CardContent className="p-4">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Approved Direction</div>
+                  <div className="text-sm mt-1">
+                    {readOnlySessionConfig.approved_direction_id || 'No direction approved yet.'}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           <div className="space-y-3 rounded-md border bg-card p-4">
             <h3 className="text-sm font-semibold text-muted-foreground">Selected Models</h3>
@@ -450,6 +540,76 @@ const CouncilConfigDialog = ({
               ))}
             </div>
           </div>
+
+          {isDesignStudio && (
+            <div className="space-y-4 rounded-md border bg-card p-4">
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground">Design Studio Target</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {DESIGN_TARGET_OPTIONS.map((option) => (
+                    <Card
+                      key={option.id}
+                      role="button"
+                      aria-pressed={normalizedSessionConfig.design_target === option.id}
+                      tabIndex={0}
+                      className={cn(
+                        'cursor-pointer hover:bg-accent/50 transition-colors relative focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none',
+                        normalizedSessionConfig.design_target === option.id ? 'border-primary bg-accent/20' : ''
+                      )}
+                      onClick={() => updateSessionConfig({ design_target: option.id })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          updateSessionConfig({ design_target: option.id });
+                        }
+                      }}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <div className="font-semibold text-primary">{option.name}</div>
+                          {normalizedSessionConfig.design_target === option.id && <Check className="h-4 w-4 text-primary" />}
+                        </div>
+                        <p className="text-sm text-foreground/90">{option.description}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground">Studio Goal</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {STUDIO_GOAL_OPTIONS.map((option) => (
+                    <Card
+                      key={option.id}
+                      role="button"
+                      aria-pressed={normalizedSessionConfig.studio_goal === option.id}
+                      tabIndex={0}
+                      className={cn(
+                        'cursor-pointer hover:bg-accent/50 transition-colors relative focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none',
+                        normalizedSessionConfig.studio_goal === option.id ? 'border-primary bg-accent/20' : ''
+                      )}
+                      onClick={() => updateSessionConfig({ studio_goal: option.id })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          updateSessionConfig({ studio_goal: option.id });
+                        }
+                      }}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <div className="font-semibold text-primary">{option.name}</div>
+                          {normalizedSessionConfig.studio_goal === option.id && <Check className="h-4 w-4 text-primary" />}
+                        </div>
+                        <p className="text-sm text-foreground/90">{option.description}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-3">
             <h3 className="text-sm font-semibold text-muted-foreground">Council Types</h3>
@@ -641,6 +801,10 @@ const CouncilConfigDialog = ({
                     )}
                     onClick={() => applySavedPreset(preset)}
                   >
+                    {(() => {
+                      const presetSessionType = preset.sessionType || 'general';
+                      const presetSessionConfig = normalizeSessionConfig(presetSessionType, preset.sessionConfig);
+                      return (
                     <CardContent className="p-4">
                       <div className="flex justify-between items-start mb-2">
                         <div className="min-w-0">
@@ -733,14 +897,19 @@ const CouncilConfigDialog = ({
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {getSessionTypeLabel(preset.sessionType || 'general')} • {getFrameworkLabel(preset.framework)}
-                        {preset.sessionType === 'code_review' && preset.executionMode && preset.executionMode !== 'disabled'
+                        {getSessionTypeLabel(presetSessionType)} • {getFrameworkLabel(preset.framework)}
+                        {presetSessionType === 'design_studio'
+                          ? ` • ${getDesignTargetLabel(presetSessionConfig.design_target)} • ${getStudioGoalLabel(presetSessionConfig.studio_goal)}`
+                          : ''}
+                        {presetSessionType === 'code_review' && preset.executionMode && preset.executionMode !== 'disabled'
                           ? ` • ${getExecutionModeLabel(preset.executionMode)}`
                           : ''}
                         {preset.specialistTemplateId ? ` • ${getSpecialistTemplateLabel(preset.specialistTemplateId)}` : ''}
                       </p>
                       <p className="text-xs text-muted-foreground">{preset.description}</p>
                     </CardContent>
+                      );
+                    })()}
                   </Card>
                 ))}
               </div>

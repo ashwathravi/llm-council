@@ -79,3 +79,57 @@ async def test_get_conversation_wrong_user():
     # User 2 tries to get User 1's conversation
     fetched = await storage.get_conversation(conv_id, user_2)
     assert fetched is None
+
+@pytest.mark.asyncio
+async def test_design_studio_session_config_persists_in_file_storage():
+    user_id = "user_design"
+    conv_id = "conv_design"
+
+    created = await storage.create_conversation(
+        conv_id,
+        user_id,
+        "standard",
+        ["openai/gpt-5.2"],
+        "openai/gpt-5.2",
+        session_type="design_studio",
+        specialist_template_id="design_cross_platform_studio",
+        session_config={
+            "design_target": "both",
+            "studio_goal": "handoff",
+            "approved_direction_id": "  direction-1  ",
+        },
+    )
+
+    assert created["session_type"] == "design_studio"
+    assert created["specialist_template_id"] == "design_cross_platform_studio"
+    assert created["session_config"] == {
+        "design_target": "both",
+        "studio_goal": "handoff",
+        "approved_direction_id": "direction-1",
+    }
+
+    fetched = await storage.get_conversation(conv_id, user_id)
+    assert fetched["session_config"] == created["session_config"]
+
+    updated = await storage.update_conversation_context(
+        conv_id,
+        user_id,
+        session_config={
+            "design_target": "ios_app",
+            "studio_goal": "review",
+            "approved_direction_id": "direction-2",
+        },
+    )
+    assert updated["session_config"] == {
+        "design_target": "ios_app",
+        "studio_goal": "review",
+        "approved_direction_id": "direction-2",
+    }
+
+    reset = await storage.update_conversation_context(
+        conv_id,
+        user_id,
+        session_type="general",
+    )
+    assert reset["session_type"] == "general"
+    assert reset["session_config"] == {}

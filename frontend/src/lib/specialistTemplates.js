@@ -1,5 +1,26 @@
 export const SPECIALIST_TEMPLATES = [
   {
+    id: 'design_web_app_studio',
+    sessionType: 'design_studio',
+    name: 'Web App Design Studio',
+    description: 'IA, hierarchy, and implementation-minded web directions.',
+    defaultFramework: 'standard',
+  },
+  {
+    id: 'design_ios_app_studio',
+    sessionType: 'design_studio',
+    name: 'iOS Design Studio',
+    description: 'Native-feeling iOS directions with strong platform fit.',
+    defaultFramework: 'standard',
+  },
+  {
+    id: 'design_cross_platform_studio',
+    sessionType: 'design_studio',
+    name: 'Cross-Platform Design Studio',
+    description: 'Compare web and iOS directions without flattening the differences.',
+    defaultFramework: 'heterogeneous',
+  },
+  {
     id: 'visual_ux_review',
     sessionType: 'visual_review',
     name: 'UX Review Council',

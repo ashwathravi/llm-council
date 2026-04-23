@@ -6,7 +6,13 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_JUSTIFY
 from reportlab.lib import colors
-from .session_context import get_session_type_label, normalize_primary_artifacts
+from .session_context import (
+    get_design_target_label,
+    get_session_type_label,
+    get_studio_goal_label,
+    normalize_primary_artifacts,
+    normalize_session_config,
+)
 
 def export_to_markdown(conversation: dict) -> str:
     """
@@ -19,6 +25,15 @@ def export_to_markdown(conversation: dict) -> str:
     lines.append(f"**Date:** {conversation.get('created_at') or ''}\n")
     lines.append(f"**Framework:** {conversation.get('framework') or 'Standard'}\n")
     lines.append(f"**Session Type:** {get_session_type_label(conversation.get('session_type'))}\n")
+    session_config = normalize_session_config(
+        conversation.get("session_config"),
+        session_type=conversation.get("session_type"),
+    )
+    if conversation.get("session_type") == "design_studio":
+        lines.append(f"**Design Target:** {get_design_target_label(session_config.get('design_target'))}\n")
+        lines.append(f"**Studio Goal:** {get_studio_goal_label(session_config.get('studio_goal'))}\n")
+        if session_config.get("approved_direction_id"):
+            lines.append(f"**Approved Direction:** {session_config.get('approved_direction_id')}\n")
 
     primary_artifacts = normalize_primary_artifacts(conversation.get("primary_artifacts"))
     if primary_artifacts:
@@ -102,6 +117,16 @@ def export_to_pdf(conversation: dict) -> bytes:
     story.append(Paragraph(f"<b>Date:</b> {safe_text(conversation.get('created_at') or '')}", styles["Normal"]))
     story.append(Paragraph(f"<b>Framework:</b> {safe_text(conversation.get('framework') or 'Standard')}", styles["Normal"]))
     story.append(Paragraph(f"<b>Session Type:</b> {safe_text(get_session_type_label(conversation.get('session_type')))}", styles["Normal"]))
+    session_config = normalize_session_config(
+        conversation.get("session_config"),
+        session_type=conversation.get("session_type"),
+    )
+    if conversation.get("session_type") == "design_studio":
+        story.append(Paragraph(f"<b>Design Target:</b> {safe_text(get_design_target_label(session_config.get('design_target')))}", styles["Normal"]))
+        story.append(Paragraph(f"<b>Studio Goal:</b> {safe_text(get_studio_goal_label(session_config.get('studio_goal')))}", styles["Normal"]))
+        approved_direction = session_config.get("approved_direction_id")
+        if approved_direction:
+            story.append(Paragraph(f"<b>Approved Direction:</b> {safe_text(approved_direction)}", styles["Normal"]))
 
     primary_artifacts = normalize_primary_artifacts(conversation.get("primary_artifacts"))
     if primary_artifacts:

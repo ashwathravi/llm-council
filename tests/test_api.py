@@ -265,6 +265,7 @@ async def test_create_conversation_persists_specialist_template(async_client):
                 "session_type": "code_review",
                 "specialist_template_id": "code_security_review",
                 "execution_mode": "safe_patch_checks",
+                "session_config": {},
                 "council_models": ["openai/gpt-5.2"],
                 "chairman_model": None,
                 "primary_artifacts": [],
@@ -289,6 +290,119 @@ async def test_create_conversation_persists_specialist_template(async_client):
             assert payload["execution_mode"] == "safe_patch_checks"
             assert mock_create_conversation.await_args.kwargs["specialist_template_id"] == "code_security_review"
             assert mock_create_conversation.await_args.kwargs["execution_mode"] == "safe_patch_checks"
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_create_conversation_persists_design_studio_session_config(async_client):
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.create_conversation", new_callable=AsyncMock) as mock_create_conversation:
+            mock_create_conversation.return_value = {
+                "id": "conv-design",
+                "created_at": "2026-04-22T00:00:00",
+                "title": "New Conversation",
+                "framework": "standard",
+                "session_type": "design_studio",
+                "specialist_template_id": "design_cross_platform_studio",
+                "execution_mode": "disabled",
+                "session_config": {
+                    "design_target": "both",
+                    "studio_goal": "handoff",
+                    "approved_direction_id": None,
+                },
+                "council_models": ["openai/gpt-5.2"],
+                "chairman_model": None,
+                "primary_artifacts": [],
+                "messages": [],
+            }
+
+            response = await async_client.post(
+                "/api/conversations",
+                json={
+                    "framework": "standard",
+                    "session_type": "design_studio",
+                    "specialist_template_id": "design_cross_platform_studio",
+                    "session_config": {
+                        "design_target": "both",
+                        "studio_goal": "handoff",
+                    },
+                    "council_models": ["openai/gpt-5.2"],
+                }
+            )
+
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["session_type"] == "design_studio"
+            assert payload["session_config"] == {
+                "design_target": "both",
+                "studio_goal": "handoff",
+                "approved_direction_id": None,
+            }
+            assert mock_create_conversation.await_args.kwargs["session_config"] == {
+                "design_target": "both",
+                "studio_goal": "handoff",
+                "approved_direction_id": None,
+            }
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_send_message_design_studio_includes_session_context(async_client):
+    conversation = {
+        "id": "conv-design-studio",
+        "framework": "standard",
+        "session_type": "design_studio",
+        "specialist_template_id": "design_cross_platform_studio",
+        "session_config": {
+            "design_target": "both",
+            "studio_goal": "compare",
+            "approved_direction_id": "direction-beta",
+        },
+        "council_models": ["openai/gpt-5.2"],
+        "chairman_model": "chair-model",
+        "primary_artifacts": [],
+        "messages": [],
+    }
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.add_user_message", new_callable=AsyncMock), \
+             patch("backend.storage.update_conversation_title", new_callable=AsyncMock), \
+             patch("backend.storage.add_assistant_message", new_callable=AsyncMock), \
+             patch("backend.retrieval.build_retrieval_context", new_callable=AsyncMock) as mock_retrieval, \
+             patch("backend.main.generate_conversation_title", new_callable=AsyncMock) as mock_generate_title, \
+             patch("backend.main.run_full_council", new_callable=AsyncMock) as mock_run_council:
+            mock_get_conversation.return_value = conversation
+            mock_generate_title.return_value = "Design Studio"
+            mock_retrieval.return_value = ("retrieval context", [])
+            mock_run_council.return_value = (
+                [{"model": "openai/gpt-5.2", "response": "Direction A is stronger."}],
+                [],
+                {"model": "chair-model", "response": "Recommend Direction A."},
+                {},
+            )
+
+            response = await async_client.post(
+                "/api/conversations/conv-design-studio/message",
+                json={"content": "Generate cross-platform options"}
+            )
+
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["metadata"]["session_config"] == conversation["session_config"]
+
+            effective_context = mock_run_council.await_args.kwargs["retrieval_context"]
+            assert "SPECIALIST TEMPLATE:" in effective_context
+            assert "Cross-Platform Design Studio" in effective_context
+            assert "DESIGN STUDIO CONFIG:" in effective_context
+            assert "Target: Web + iOS" in effective_context
+            assert "Goal: Compare" in effective_context
+            assert "Approved Direction: direction-beta" in effective_context
+            assert "retrieval context" in effective_context
     finally:
         app.dependency_overrides = {}
 

@@ -97,6 +97,30 @@ async def test_stage3_synthesis_uses_session_default_deliverable_format():
 
 
 @pytest.mark.asyncio
+async def test_stage3_synthesis_design_studio_uses_design_handoff_format():
+    async def mock_stream(*args, **kwargs):
+        yield "Final"
+
+    with patch("backend.council.query_model_stream", side_effect=mock_stream) as mock_stream_fn:
+        async for _token in council.stage3_synthesize_final(
+            "Design a new workflow",
+            [{"model": "gpt-4", "response": "Direction A"}],
+            [],
+            "chairman-model",
+            session_type="design_studio",
+            specialist_template_id="design_cross_platform_studio",
+        ):
+            pass
+
+    prompt = mock_stream_fn.call_args.args[1][0]["content"]
+    assert "FINAL DELIVERABLE FORMAT" in prompt
+    assert "Design Studio handoff" in prompt
+    assert "Candidate Directions" in prompt
+    assert "Recommended Direction" in prompt
+    assert "Handoff Notes" in prompt
+
+
+@pytest.mark.asyncio
 async def test_stage3_synthesis_includes_rubric_summary():
     async def mock_stream(*args, **kwargs):
         yield "Final"
@@ -305,6 +329,55 @@ FINAL RANKING:
     assert stage2_results[0]["rubric_scores"]["Response A"]["correctness"] == 5
     assert stage2_results[0]["rubric_scores"]["Response A"]["testability"] == 5
     assert stage2_results[0]["rubric_scores"]["Response B"]["maintainability"] == 2
+
+
+@pytest.mark.asyncio
+async def test_stage2_collect_rankings_adds_rubric_scores_for_design_studio():
+    mocked_responses = {
+        "reviewer-a": {
+            "content": """Strong ideas.
+
+RUBRIC SCORES:
+Response A
+- Task Clarity: 5
+- Hierarchy: 4
+- Platform Fit: 5
+- Accessibility: 3
+- Implementation Realism: 4
+- Effort: 4
+- Confidence: 5
+Response B
+- Task Clarity: 3
+- Hierarchy: 3
+- Platform Fit: 2
+- Accessibility: 4
+- Implementation Realism: 3
+- Effort: 2
+- Confidence: 3
+
+FINAL RANKING:
+1. Response A
+2. Response B"""
+        }
+    }
+
+    with patch("backend.council.query_models_parallel", new_callable=AsyncMock) as mock_parallel:
+        mock_parallel.return_value = mocked_responses
+
+        stage2_results, label_to_model = await council.stage2_collect_rankings(
+            "Which design direction is stronger?",
+            [
+                {"model": "model-a", "response": "Answer A"},
+                {"model": "model-b", "response": "Answer B"},
+            ],
+            council_models=["reviewer-a"],
+            session_type="design_studio",
+        )
+
+    assert label_to_model == {"Response A": "model-a", "Response B": "model-b"}
+    assert stage2_results[0]["rubric_scores"]["Response A"]["task_clarity"] == 5
+    assert stage2_results[0]["rubric_scores"]["Response A"]["platform_fit"] == 5
+    assert stage2_results[0]["rubric_scores"]["Response B"]["implementation_realism"] == 3
 
 
 def test_build_model_weight_profile_tracks_prior_rounds():

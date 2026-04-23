@@ -9,12 +9,19 @@ from .session_templates import get_session_template
 
 DEFAULT_SESSION_TYPE = "general"
 DEFAULT_EXECUTION_MODE = "disabled"
+DEFAULT_DESIGN_TARGET = "web_app"
+DEFAULT_STUDIO_GOAL = "generate"
 
 SESSION_TYPES: Dict[str, Dict[str, str]] = {
     "general": {
         "label": "General",
         "focus": "Flexible multi-model collaboration with optional supporting artifacts.",
         "guidance": "Respond normally unless the attached artifacts clearly change the task framing.",
+    },
+    "design_studio": {
+        "label": "Design Studio",
+        "focus": "Explore, compare, and refine product design directions for web and iOS experiences.",
+        "guidance": "Treat the session as design work, not critique-only review. Generate distinct directions, compare tradeoffs, keep platform fit explicit, and produce implementation-minded handoff notes.",
     },
     "visual_review": {
         "label": "Visual Review",
@@ -42,6 +49,20 @@ ALLOWED_SESSION_TYPES = set(SESSION_TYPES.keys())
 ALLOWED_ARTIFACT_KINDS = {"document", "image", "code", "spec", "note", "link"}
 ALLOWED_ARTIFACT_SOURCES = {"manual", "upload", "derived"}
 ALLOWED_ARTIFACT_STATUSES = {"draft", "processing", "ready", "failed"}
+DESIGN_TARGETS: Dict[str, str] = {
+    "web_app": "Web App",
+    "ios_app": "iOS App",
+    "both": "Web + iOS",
+}
+STUDIO_GOALS: Dict[str, str] = {
+    "review": "Review",
+    "generate": "Generate",
+    "iterate": "Iterate",
+    "compare": "Compare",
+    "handoff": "Handoff",
+}
+ALLOWED_DESIGN_TARGETS = set(DESIGN_TARGETS.keys())
+ALLOWED_STUDIO_GOALS = set(STUDIO_GOALS.keys())
 EXECUTION_MODES: Dict[str, Dict[str, str]] = {
     "disabled": {
         "label": "Disabled",
@@ -70,6 +91,56 @@ def normalize_session_type(value: Optional[str]) -> str:
 def get_session_type_label(session_type: Optional[str]) -> str:
     normalized = normalize_session_type(session_type)
     return SESSION_TYPES[normalized]["label"]
+
+
+def _normalize_string(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def normalize_design_target(value: Optional[str]) -> str:
+    if isinstance(value, str):
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized in ALLOWED_DESIGN_TARGETS:
+            return normalized
+    return DEFAULT_DESIGN_TARGET
+
+
+def get_design_target_label(value: Optional[str]) -> str:
+    return DESIGN_TARGETS[normalize_design_target(value)]
+
+
+def normalize_studio_goal(value: Optional[str]) -> str:
+    if isinstance(value, str):
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized in ALLOWED_STUDIO_GOALS:
+            return normalized
+    return DEFAULT_STUDIO_GOAL
+
+
+def get_studio_goal_label(value: Optional[str]) -> str:
+    return STUDIO_GOALS[normalize_studio_goal(value)]
+
+
+def normalize_session_config(
+    value: Any,
+    *,
+    session_type: Optional[str] = None,
+) -> Dict[str, Any]:
+    normalized_session_type = normalize_session_type(session_type)
+    if normalized_session_type != "design_studio":
+        return {}
+
+    raw = value if isinstance(value, dict) else {}
+    approved_direction_id = _normalize_string(raw.get("approved_direction_id"))
+
+    return {
+        "design_target": normalize_design_target(raw.get("design_target")),
+        "studio_goal": normalize_studio_goal(raw.get("studio_goal")),
+        "approved_direction_id": approved_direction_id,
+    }
 
 
 def normalize_execution_mode(
@@ -247,11 +318,13 @@ def build_session_context_block(
     session_type: Optional[str],
     specialist_template_id: Optional[str],
     primary_artifacts: Optional[Iterable[Dict[str, Any]]],
+    session_config: Optional[Dict[str, Any]] = None,
 ) -> str:
     normalized_type = normalize_session_type(session_type)
     session_meta = SESSION_TYPES[normalized_type]
     specialist_template = get_session_template(specialist_template_id, session_type=normalized_type)
     artifacts = normalize_primary_artifacts(list(primary_artifacts or []))
+    normalized_config = normalize_session_config(session_config, session_type=normalized_type)
 
     artifact_lines = []
     for artifact in artifacts:
@@ -278,11 +351,22 @@ def build_session_context_block(
             f"- Final Synthesis: {specialist_template.get('synthesis_instruction')}\n"
         )
 
+    session_config_block = ""
+    if normalized_type == "design_studio":
+        approved_direction = normalized_config.get("approved_direction_id") or "None selected yet"
+        session_config_block = (
+            "DESIGN STUDIO CONFIG:\n"
+            f"- Target: {get_design_target_label(normalized_config.get('design_target'))}\n"
+            f"- Goal: {get_studio_goal_label(normalized_config.get('studio_goal'))}\n"
+            f"- Approved Direction: {approved_direction}\n"
+        )
+
     return (
         "SESSION WORKSPACE:\n"
         f"- Type: {session_meta['label']}\n"
         f"- Focus: {session_meta['focus']}\n"
         f"{template_block}"
+        f"{session_config_block}"
         "PRIMARY ARTIFACTS:\n"
         f"{chr(10).join(artifact_lines)}\n"
         f"REVIEW GUIDANCE:\n- {session_meta['guidance']}\n"

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
 import { getPrimaryArtifactCount, getSessionTypeLabel } from '@/lib/sessionMetadata';
+import { getDesignTargetLabel, getStudioGoalLabel, normalizeSessionConfig } from '@/lib/designStudioConfig';
 import { getSpecialistTemplateLabel } from '@/lib/specialistTemplates';
 
 const FRAMEWORK_LABELS = {
@@ -28,6 +29,7 @@ const ChatHeader = memo(({
   conversationId,
   framework,
   sessionType,
+  sessionConfig,
   specialistTemplateId,
   primaryArtifacts,
   councilModels,
@@ -40,6 +42,7 @@ const ChatHeader = memo(({
   const primaryArtifactCount = getPrimaryArtifactCount(primaryArtifacts);
   const frameworkLabel = FRAMEWORK_LABELS[framework] || framework || 'Standard Council';
   const sessionTypeLabel = getSessionTypeLabel(sessionType);
+  const normalizedSessionConfig = normalizeSessionConfig(sessionType, sessionConfig);
   const specialistTemplateLabel = getSpecialistTemplateLabel(specialistTemplateId);
   const chairmanLabel = chairmanModel || 'Auto';
 
@@ -86,6 +89,12 @@ const ChatHeader = memo(({
         <h3 className="font-semibold text-lg leading-none tracking-tight">{title || 'New Conversation'}</h3>
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="secondary" className="text-xs">{sessionTypeLabel}</Badge>
+          {sessionType === 'design_studio' && (
+            <>
+              <Badge variant="secondary" className="text-xs">{getDesignTargetLabel(normalizedSessionConfig.design_target)}</Badge>
+              <Badge variant="secondary" className="text-xs">{getStudioGoalLabel(normalizedSessionConfig.studio_goal)}</Badge>
+            </>
+          )}
           {specialistTemplateLabel && <Badge variant="secondary" className="text-xs">{specialistTemplateLabel}</Badge>}
           <Badge variant="secondary" className="text-xs">{frameworkLabel}</Badge>
           <Badge variant="outline" className="text-xs">{selectedCount} models</Badge>

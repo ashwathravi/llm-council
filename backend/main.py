@@ -41,6 +41,7 @@ from .session_context import (
     merge_context_blocks,
     normalize_execution_mode,
     normalize_primary_artifacts,
+    normalize_session_config,
     normalize_session_type,
 )
 from .session_templates import get_template_label
@@ -105,6 +106,7 @@ class CreateConversationRequest(BaseModel):
     session_type: str = DEFAULT_SESSION_TYPE
     specialist_template_id: Optional[str] = Field(None, max_length=120)
     execution_mode: str = DEFAULT_EXECUTION_MODE
+    session_config: Dict[str, Any] = Field(default_factory=dict)
     council_models: List[str] = Field(default=[], max_length=10)
     chairman_model: Optional[str] = Field(None, max_length=100)
     primary_artifacts: List["PrimaryArtifactMetadata"] = Field(default_factory=list, max_length=10)
@@ -145,6 +147,7 @@ class CreateConversationRequest(BaseModel):
     def validate_execution_mode_scope(self) -> "CreateConversationRequest":
         if self.session_type != "code_review" and self.execution_mode != DEFAULT_EXECUTION_MODE:
             raise ValueError("Execution mode is only available for code review sessions.")
+        self.session_config = normalize_session_config(self.session_config, session_type=self.session_type)
         return self
 
 
@@ -177,6 +180,7 @@ class ConversationMetadata(BaseModel):
     session_type: str = DEFAULT_SESSION_TYPE
     specialist_template_id: Optional[str] = None
     execution_mode: str = DEFAULT_EXECUTION_MODE
+    session_config: Dict[str, Any] = Field(default_factory=dict)
     primary_artifact_count: int = 0
 
 
@@ -231,6 +235,7 @@ class Conversation(BaseModel):
     session_type: str = DEFAULT_SESSION_TYPE
     specialist_template_id: Optional[str] = None
     execution_mode: str = DEFAULT_EXECUTION_MODE
+    session_config: Dict[str, Any] = Field(default_factory=dict)
     council_models: Optional[List[str]] = None
     chairman_model: Optional[str] = None
     primary_artifacts: List[PrimaryArtifactMetadata] = Field(default_factory=list)
@@ -286,6 +291,7 @@ def _build_effective_context(
         conversation.get("session_type"),
         conversation.get("specialist_template_id"),
         conversation.get("primary_artifacts"),
+        conversation.get("session_config"),
     )
     return merge_context_blocks(session_context, retrieval_context)
 
@@ -597,6 +603,7 @@ async def create_conversation(
         session_type=request.session_type,
         specialist_template_id=request.specialist_template_id,
         execution_mode=request.execution_mode,
+        session_config=request.session_config,
         primary_artifacts=[
             artifact.model_dump(exclude_none=True)
             for artifact in request.primary_artifacts
@@ -1011,6 +1018,10 @@ async def send_message(
         conversation.get("execution_mode"),
         session_type=conversation.get("session_type"),
     )
+    metadata["session_config"] = normalize_session_config(
+        conversation.get("session_config"),
+        session_type=conversation.get("session_type"),
+    )
     metadata["specialist_template_label"] = get_template_label(
         conversation.get("specialist_template_id"),
         conversation.get("session_type"),
@@ -1388,6 +1399,10 @@ async def retry_failed_stage1_models(
         conversation.get("execution_mode"),
         session_type=conversation.get("session_type"),
     )
+    metadata["session_config"] = normalize_session_config(
+        conversation.get("session_config"),
+        session_type=conversation.get("session_type"),
+    )
     metadata["specialist_template_label"] = get_template_label(
         conversation.get("specialist_template_id"),
         conversation.get("session_type"),
@@ -1708,6 +1723,10 @@ async def send_message_stream(
                 "specialist_template_id": conversation.get("specialist_template_id"),
                 "execution_mode": normalize_execution_mode(
                     conversation.get("execution_mode"),
+                    session_type=conversation.get("session_type"),
+                ),
+                "session_config": normalize_session_config(
+                    conversation.get("session_config"),
                     session_type=conversation.get("session_type"),
                 ),
                 "specialist_template_label": get_template_label(
