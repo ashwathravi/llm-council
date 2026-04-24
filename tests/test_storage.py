@@ -94,7 +94,7 @@ async def test_design_studio_session_config_persists_in_file_storage():
         session_type="design_studio",
         specialist_template_id="design_cross_platform_studio",
         session_config={
-            "design_target": "both",
+            "design_target": "mixed",
             "studio_goal": "handoff",
             "approved_direction_id": "  direction-1  ",
         },
@@ -103,7 +103,7 @@ async def test_design_studio_session_config_persists_in_file_storage():
     assert created["session_type"] == "design_studio"
     assert created["specialist_template_id"] == "design_cross_platform_studio"
     assert created["session_config"] == {
-        "design_target": "both",
+        "design_target": "mixed",
         "studio_goal": "handoff",
         "approved_direction_id": "direction-1",
     }

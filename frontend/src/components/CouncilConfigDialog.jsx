@@ -171,7 +171,7 @@ const CouncilConfigDialog = ({
       return { ...baseConfig, design_target: 'ios_app' };
     }
     if (template?.id === 'design_cross_platform_studio') {
-      return { ...baseConfig, design_target: 'both' };
+      return { ...baseConfig, design_target: 'mixed' };
     }
 
     return baseConfig;
