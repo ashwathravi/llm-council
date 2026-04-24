@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, Trophy, Crown, BrainCircuit, CheckCircle2, FileImage, GitCompareArrows, PauseCircle, RefreshCw, RotateCcw, Wrench, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildDesignStudioWorkspaceView, formatDesignStudioScore } from "@/lib/designStudioWorkspace";
+import { buildDesignStudioHandoffView } from "@/lib/designStudioHandoff";
 import { buildVisualReviewSurface } from "@/lib/visualReviewSurface";
 import VisualReviewPanel from './VisualReviewPanel';
 
@@ -331,41 +332,6 @@ const DiffTabContent = memo(({ diffData, rubricHotspots }) => {
 
 DiffTabContent.displayName = 'DiffTabContent';
 
-const DESIGN_HANDOFF_KEYS = [
-  'rationale',
-  'component_map',
-  'handoff_notes',
-  'state_notes',
-  'platform_constraints',
-  'open_questions',
-];
-
-const getHandoffSection = (handoff, key) => {
-  const directSection = handoff?.[key];
-  if (directSection && typeof directSection === 'object') {
-    return {
-      label: directSection.label || key,
-      content: typeof directSection.content === 'string' ? directSection.content : '',
-      items: Array.isArray(directSection.items) ? directSection.items : EMPTY_LIST,
-    };
-  }
-
-  const section = Array.isArray(handoff?.sections)
-    ? handoff.sections.find((item) => item?.key === key)
-    : null;
-  if (!section) return null;
-
-  return {
-    label: section.label || key,
-    content: typeof section.content === 'string' ? section.content : '',
-    items: Array.isArray(section.items) ? section.items : EMPTY_LIST,
-  };
-};
-
-const hasHandoffSectionContent = (section) => (
-  Boolean(section && (section.content.trim() || section.items.length > 0))
-);
-
 const HandoffSectionContent = ({ section }) => {
   if (!section) return null;
   if (section.items.length > 0) {
@@ -394,19 +360,21 @@ const HandoffSectionContent = ({ section }) => {
 const DesignStudioHandoffPanel = memo(({ handoff }) => {
   if (!handoff || handoff.status !== 'ready') return null;
 
-  const selectedRef = handoff.selected_direction_ref && typeof handoff.selected_direction_ref === 'object'
-    ? handoff.selected_direction_ref
-    : null;
-  const selectedSection = getHandoffSection(handoff, 'selected_direction');
-  const sections = DESIGN_HANDOFF_KEYS
-    .map((key) => getHandoffSection(handoff, key))
-    .filter(hasHandoffSectionContent);
-  const hasContent = Boolean(selectedRef) || hasHandoffSectionContent(selectedSection) || sections.length > 0;
+  const {
+    selectedRef,
+    selectedSection,
+    sections,
+    hasContent,
+  } = buildDesignStudioHandoffView(handoff);
 
   if (!hasContent) return null;
 
   return (
-    <div className="mb-5 overflow-hidden rounded-xl border border-sky-500/20 bg-gradient-to-br from-sky-500/10 via-card to-emerald-500/10">
+    <div
+      className="mb-5 overflow-hidden rounded-xl border border-sky-500/20 bg-gradient-to-br from-sky-500/10 via-card to-emerald-500/10"
+      role="region"
+      aria-label="Structured design handoff"
+    >
       <div className="border-b border-sky-500/10 px-4 py-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
@@ -443,7 +411,7 @@ const DesignStudioHandoffPanel = memo(({ handoff }) => {
           </div>
         )}
 
-        {hasHandoffSectionContent(selectedSection) && (
+        {selectedSection && (selectedSection.content.trim() || selectedSection.items.length > 0) && (
           <div className="rounded-lg border bg-background/60 p-3">
             <h3 className="text-sm font-semibold">{selectedSection.label}</h3>
             <HandoffSectionContent section={selectedSection} />
@@ -503,7 +471,11 @@ const DesignStudioWorkspacePanel = memo(({
   };
 
   return (
-    <div className="mb-5 overflow-hidden rounded-xl border border-violet-500/20 bg-background">
+    <div
+      className="mb-5 overflow-hidden rounded-xl border border-violet-500/20 bg-background"
+      role="region"
+      aria-label="Design Studio workspace"
+    >
       <div className="border-b bg-muted/40 px-4 py-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
@@ -538,7 +510,10 @@ const DesignStudioWorkspacePanel = memo(({
 
       <div className="space-y-4 p-4">
         {workspace.hasPartialFailures && (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
+          <div
+            className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100"
+            role="alert"
+          >
             <div className="mb-2 flex items-center gap-2 font-semibold">
               <AlertTriangle className="h-4 w-4" />
               Partial run
@@ -554,7 +529,10 @@ const DesignStudioWorkspacePanel = memo(({
         )}
 
         {workspace.status === 'empty' ? (
-          <div className="rounded-lg border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">
+          <div
+            className="rounded-lg border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground"
+            aria-live="polite"
+          >
             No candidate directions have arrived yet.
           </div>
         ) : (
@@ -654,6 +632,11 @@ const DesignStudioWorkspacePanel = memo(({
                               size="sm"
                               onClick={() => handleApprove(card.id)}
                               disabled={isApproved || Boolean(approvingDirectionId)}
+                              aria-label={
+                                isApproved
+                                  ? `${card.label} approved for refinement`
+                                  : `Approve ${card.label} for refinement`
+                              }
                             >
                               <CheckCircle2 className={cn('mr-1 h-3.5 w-3.5', isApproving && 'animate-pulse')} />
                               {isApproved ? 'Approved for Refinement' : isApproving ? 'Approving...' : 'Approve Direction'}
