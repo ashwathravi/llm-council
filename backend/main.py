@@ -560,6 +560,49 @@ def _get_design_studio_candidate_ids(conversation: Dict[str, Any]) -> set[str]:
     return candidate_ids
 
 
+def _build_design_studio_observability_metadata(
+    *,
+    conversation: Dict[str, Any],
+    design_studio_metadata: Optional[Dict[str, Any]],
+    stage1_errors: Optional[List[Dict[str, Any]]] = None,
+    model_selection_metadata: Optional[Dict[str, Any]] = None,
+    requested_models: Optional[List[str]] = None,
+    effective_models: Optional[List[str]] = None,
+    responded_models: Optional[List[str]] = None,
+    timing: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    if normalize_session_type(conversation.get("session_type")) != "design_studio":
+        return {}
+
+    session_config = normalize_session_config(
+        conversation.get("session_config"),
+        session_type="design_studio",
+    )
+    design_studio = design_studio_metadata if isinstance(design_studio_metadata, dict) else {}
+    comparison = design_studio.get("comparison") if isinstance(design_studio.get("comparison"), dict) else {}
+    handoff = design_studio.get("handoff") if isinstance(design_studio.get("handoff"), dict) else {}
+    candidates = design_studio.get("candidate_directions")
+    ranked_directions = comparison.get("ranked_directions")
+
+    return {
+        "schema_version": 1,
+        "design_target": session_config.get("design_target"),
+        "studio_goal": session_config.get("studio_goal"),
+        "approved_direction_id": session_config.get("approved_direction_id"),
+        "candidate_count": len(candidates) if isinstance(candidates, list) else 0,
+        "comparison_status": comparison.get("status") or "pending",
+        "ranked_direction_count": len(ranked_directions) if isinstance(ranked_directions, list) else 0,
+        "selected_direction_id": design_studio.get("selected_direction_id"),
+        "handoff_status": handoff.get("status") or "pending",
+        "partial_failure_count": len(stage1_errors or []),
+        "degraded_model_selection": bool((model_selection_metadata or {}).get("degraded")),
+        "requested_model_count": len(requested_models or []),
+        "effective_model_count": len(effective_models or []),
+        "responded_model_count": len(responded_models or []),
+        "timing": timing or {},
+    }
+
+
 def _visual_review_requires_vision_models(conversation: Dict[str, Any], effective_models: List[str]) -> None:
     if normalize_session_type(conversation.get("session_type")) == "visual_review" and not effective_models:
         raise HTTPException(
@@ -1836,11 +1879,32 @@ async def send_message_stream(
             }
             if design_studio_metadata:
                 stage1_meta["design_studio"] = design_studio_metadata
+                stage1_meta["design_studio_observability"] = _build_design_studio_observability_metadata(
+                    conversation=conversation,
+                    design_studio_metadata=design_studio_metadata,
+                    stage1_errors=stage1_errors,
+                    model_selection_metadata=model_selection_metadata,
+                    requested_models=requested_council_models,
+                    effective_models=effective_council_models,
+                    responded_models=responded_council_models,
+                    timing={"stage1_seconds": stage1_duration},
+                )
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results, 'metadata': stage1_meta})}\n\n"
             logger.info(
                 f"[stream] conversation={conversation_id} stage1_complete duration={stage1_duration}s "
                 f"responded={responded_council_models} errors={len(stage1_errors)}"
             )
+            if design_studio_metadata:
+                logger.info(
+                    "[design-studio] conversation=%s stage=stage1 target=%s goal=%s candidates=%s partial_failures=%s degraded=%s duration=%ss",
+                    conversation_id,
+                    stage1_meta["design_studio_observability"]["design_target"],
+                    stage1_meta["design_studio_observability"]["studio_goal"],
+                    stage1_meta["design_studio_observability"]["candidate_count"],
+                    stage1_meta["design_studio_observability"]["partial_failure_count"],
+                    stage1_meta["design_studio_observability"]["degraded_model_selection"],
+                    stage1_duration,
+                )
 
             if not stage1_results:
                 yield f"data: {json.dumps({'type': 'error', 'error': 'All selected models failed to respond. Please check your OpenRouter permissions or model availability.'})}\n\n"
@@ -1953,6 +2017,28 @@ async def send_message_stream(
                 f"[stream] conversation={conversation_id} stage2_complete duration={stage2_duration}s "
                 f"framework={framework}"
             )
+            if design_stage_meta:
+                design_stage_observability = _build_design_studio_observability_metadata(
+                    conversation=conversation,
+                    design_studio_metadata=design_stage_meta,
+                    stage1_errors=stage1_errors,
+                    model_selection_metadata=model_selection_metadata,
+                    requested_models=requested_council_models,
+                    effective_models=effective_council_models,
+                    responded_models=responded_council_models,
+                    timing={
+                        "stage1_seconds": stage1_duration,
+                        "stage2_seconds": stage2_duration,
+                    },
+                )
+                logger.info(
+                    "[design-studio] conversation=%s stage=stage2 comparison=%s ranked=%s selected=%s duration=%ss",
+                    conversation_id,
+                    design_stage_observability["comparison_status"],
+                    design_stage_observability["ranked_direction_count"],
+                    design_stage_observability["selected_direction_id"],
+                    stage2_duration,
+                )
 
             execution_report = await _run_code_execution_for_conversation(
                 conversation,
@@ -2008,6 +2094,7 @@ async def send_message_stream(
                 aggregate_rankings=aggregate_rankings,
                 aggregate_rubrics=aggregate_rubrics,
             )
+            stage3_duration = round(time.monotonic() - stage3_start, 3)
             stage3_metadata = {"design_studio": design_stage_meta} if design_stage_meta else {}
             stage3_metadata["session_type"] = conversation.get("session_type", DEFAULT_SESSION_TYPE)
             stage3_metadata["session_config"] = normalize_session_config(
@@ -2022,9 +2109,31 @@ async def send_message_stream(
                 visual_findings,
             )
             stage3_metadata["visual_findings"] = visual_findings
+            if design_stage_meta:
+                stage3_metadata["design_studio_observability"] = _build_design_studio_observability_metadata(
+                    conversation=conversation,
+                    design_studio_metadata=design_stage_meta,
+                    stage1_errors=stage1_errors,
+                    model_selection_metadata=model_selection_metadata,
+                    requested_models=requested_council_models,
+                    effective_models=effective_council_models,
+                    responded_models=responded_council_models,
+                    timing={
+                        "stage1_seconds": stage1_duration,
+                        "stage2_seconds": stage2_duration,
+                        "stage3_seconds": stage3_duration,
+                    },
+                )
             yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result, 'metadata': stage3_metadata})}\n\n"
-            stage3_duration = round(time.monotonic() - stage3_start, 3)
             logger.info(f"[stream] conversation={conversation_id} stage3_complete duration={stage3_duration}s")
+            if design_stage_meta:
+                logger.info(
+                    "[design-studio] conversation=%s stage=stage3 handoff=%s selected=%s duration=%ss",
+                    conversation_id,
+                    stage3_metadata["design_studio_observability"]["handoff_status"],
+                    stage3_metadata["design_studio_observability"]["selected_direction_id"],
+                    stage3_duration,
+                )
 
             # Wait for title generation if it was started
             if title_task:
@@ -2075,6 +2184,16 @@ async def send_message_stream(
             }
             if design_stage_meta:
                 metadata["design_studio"] = design_stage_meta
+                metadata["design_studio_observability"] = _build_design_studio_observability_metadata(
+                    conversation=conversation,
+                    design_studio_metadata=design_stage_meta,
+                    stage1_errors=stage1_errors,
+                    model_selection_metadata=model_selection_metadata,
+                    requested_models=requested_council_models,
+                    effective_models=effective_council_models,
+                    responded_models=responded_council_models,
+                    timing=metadata["timing"],
+                )
             if framework == "heterogeneous":
                 metadata["model_weight_profile"] = serialize_model_weight_profile(
                     updated_model_profiles,

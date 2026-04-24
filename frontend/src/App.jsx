@@ -11,6 +11,22 @@ import { Moon, Sun, Menu, LogOut, ListTree } from "lucide-react";
 const Login = lazy(() => import('./components/Login'));
 import { useAuth } from './contexts/AuthContextDefinition';
 
+const logDesignStudioStreamMetadata = (stage, metadata) => {
+  const observability = metadata?.design_studio_observability;
+  if (!observability) return;
+
+  logger.info('[design-studio]', {
+    stage,
+    candidateCount: observability.candidate_count,
+    comparisonStatus: observability.comparison_status,
+    handoffStatus: observability.handoff_status,
+    partialFailureCount: observability.partial_failure_count,
+    degradedModelSelection: observability.degraded_model_selection,
+    selectedDirectionId: observability.selected_direction_id,
+    timing: observability.timing,
+  });
+};
+
 function App() {
   const { user, isLoading: authLoading, logout } = useAuth();
   const { toast } = useToast();
@@ -299,6 +315,7 @@ function App() {
             });
             break;
           case 'stage1_complete':
+            logDesignStudioStreamMetadata('stage1', event.metadata);
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
@@ -324,6 +341,7 @@ function App() {
             });
             break;
           case 'stage2_complete':
+            logDesignStudioStreamMetadata('stage2', event.metadata);
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
@@ -367,6 +385,7 @@ function App() {
             });
             break;
           case 'stage3_complete':
+            logDesignStudioStreamMetadata('stage3', event.metadata);
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
@@ -420,6 +439,7 @@ function App() {
             setIsLoading(false);
             break;
           case 'stage2_skipped':
+            logDesignStudioStreamMetadata('stage2_skipped', event.metadata);
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;

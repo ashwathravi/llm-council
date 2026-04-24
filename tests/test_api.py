@@ -923,12 +923,17 @@ Use existing workspace primitives.
             stage3_complete = next(event for event in events if event["type"] == "stage3_complete")
 
             stage1_design = stage1_complete["metadata"]["design_studio"]
+            stage1_observability = stage1_complete["metadata"]["design_studio_observability"]
             assert [item["id"] for item in stage1_design["candidate_directions"]] == [
                 "direction-a",
                 "direction-b",
             ]
             assert stage1_design["comparison"]["status"] == "pending"
             assert stage1_complete["metadata"]["session_config"] == conversation["session_config"]
+            assert stage1_observability["schema_version"] == 1
+            assert stage1_observability["candidate_count"] == 2
+            assert stage1_observability["comparison_status"] == "pending"
+            assert stage1_observability["timing"]["stage1_seconds"] >= 0
 
             stage2_design = stage2_complete["metadata"]["design_studio"]
             assert stage2_design["comparison"]["status"] == "complete"
@@ -938,8 +943,15 @@ Use existing workspace primitives.
             assert stage2_design["selected_direction_id"] == "direction-b"
 
             stage3_design = stage3_complete["metadata"]["design_studio"]
+            stage3_observability = stage3_complete["metadata"]["design_studio_observability"]
             assert stage3_design["handoff"]["status"] == "ready"
             assert stage3_design["handoff"]["selected_direction_id"] == "direction-b"
+            assert stage3_observability["comparison_status"] == "complete"
+            assert stage3_observability["handoff_status"] == "ready"
+            assert stage3_observability["selected_direction_id"] == "direction-b"
+            assert stage3_observability["partial_failure_count"] == 0
+            assert stage3_observability["degraded_model_selection"] is False
+            assert stage3_observability["timing"]["stage3_seconds"] >= 0
             assert [section["key"] for section in stage3_design["handoff"]["sections"]] == [
                 "selected_direction",
                 "rationale",
@@ -959,6 +971,8 @@ Use existing workspace primitives.
             saved_metadata = mock_add_assistant_message.await_args.args[5]
             assert saved_metadata["design_studio"]["selected_direction_id"] == "direction-b"
             assert saved_metadata["design_studio"]["handoff"]["status"] == "ready"
+            assert saved_metadata["design_studio_observability"]["candidate_count"] == 2
+            assert saved_metadata["design_studio_observability"]["timing"]["total_seconds"] >= 0
             assert saved_metadata["session_type"] == "design_studio"
             assert saved_metadata["session_config"] == conversation["session_config"]
     finally:
