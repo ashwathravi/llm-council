@@ -16,6 +16,7 @@ export default function ChatInterface({
   conversation,
   onSendMessage,
   onRetryFailedModels,
+  onApproveDesignDirection,
   onConversationRefresh,
   isLoading,
   isMobile = false,
@@ -286,6 +287,8 @@ export default function ChatInterface({
                       msg={msg}
                       messageIndex={index}
                       onRetryFailedModels={onRetryFailedModels}
+                      onApproveDesignDirection={onApproveDesignDirection}
+                      conversationSessionConfig={conversation.session_config}
                     />
                   </div>
                 );

@@ -152,6 +152,19 @@ class CreateConversationRequest(BaseModel):
         return self
 
 
+class ApproveDesignDirectionRequest(BaseModel):
+    """Request to approve a Design Studio direction for future refinement."""
+    direction_id: str = Field(..., min_length=1, max_length=120)
+
+    @field_validator("direction_id")
+    @classmethod
+    def validate_direction_id(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Direction ID is required")
+        return cleaned
+
+
 class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
     content: str = Field(..., max_length=50000)
@@ -526,6 +539,27 @@ def _build_visual_review_surface_metadata(
     }
 
 
+def _get_design_studio_candidate_ids(conversation: Dict[str, Any]) -> set[str]:
+    candidate_ids: set[str] = set()
+    for message in conversation.get("messages") or []:
+        if not isinstance(message, dict):
+            continue
+        metadata = message.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        design_studio = metadata.get("design_studio")
+        if not isinstance(design_studio, dict):
+            continue
+        candidates = design_studio.get("candidate_directions")
+        if not isinstance(candidates, list):
+            continue
+        for candidate in candidates:
+            candidate_id = candidate.get("id") if isinstance(candidate, dict) else None
+            if isinstance(candidate_id, str) and candidate_id.strip():
+                candidate_ids.add(candidate_id.strip())
+    return candidate_ids
+
+
 def _visual_review_requires_vision_models(conversation: Dict[str, Any], effective_models: List[str]) -> None:
     if normalize_session_type(conversation.get("session_type")) == "visual_review" and not effective_models:
         raise HTTPException(
@@ -730,6 +764,43 @@ async def get_conversation(
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
+
+
+@app.post("/api/conversations/{conversation_id}/design-studio/approved-direction", response_model=Conversation)
+async def approve_design_direction(
+    conversation_id: str,
+    request: ApproveDesignDirectionRequest,
+    user_id: str = Depends(auth.get_current_user_id),
+):
+    """Persist the chosen Design Studio direction and switch future turns into refinement."""
+    conversation = await storage.get_conversation(conversation_id, user_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    if normalize_session_type(conversation.get("session_type")) != "design_studio":
+        raise HTTPException(
+            status_code=400,
+            detail="Approved directions are only available for Design Studio sessions.",
+        )
+    candidate_ids = _get_design_studio_candidate_ids(conversation)
+    if candidate_ids and request.direction_id not in candidate_ids:
+        raise HTTPException(status_code=400, detail="Direction is not available in this Design Studio session.")
+
+    current_config = normalize_session_config(
+        conversation.get("session_config"),
+        session_type="design_studio",
+    )
+    next_config = {
+        **current_config,
+        "studio_goal": "iterate",
+        "approved_direction_id": request.direction_id,
+    }
+
+    return await storage.update_conversation_context(
+        conversation_id,
+        user_id,
+        session_config=next_config,
+    )
 
 
 @app.get("/api/conversations/{conversation_id}/documents", response_model=List[DocumentMetadata])

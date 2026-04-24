@@ -468,15 +468,32 @@ const designWorkspaceStatusCopy = {
   complete: 'Comparison complete',
 };
 
-const DesignStudioWorkspacePanel = memo(({ designStudio, stage1Errors }) => {
+const DesignStudioWorkspacePanel = memo(({
+  designStudio,
+  stage1Errors,
+  approvedDirectionId,
+  onApproveDesignDirection,
+}) => {
   const workspace = useMemo(
     () => buildDesignStudioWorkspaceView(designStudio, stage1Errors),
     [designStudio, stage1Errors]
   );
+  const [approvingDirectionId, setApprovingDirectionId] = useState(null);
 
   if (!designStudio) return null;
 
   const selectedLabel = workspace.selectedCard?.label || workspace.selectedDirectionId || 'No leading direction';
+  const canApprove = typeof onApproveDesignDirection === 'function';
+
+  const handleApprove = async (directionId) => {
+    if (!canApprove || !directionId || approvingDirectionId) return;
+    setApprovingDirectionId(directionId);
+    try {
+      await onApproveDesignDirection(directionId);
+    } finally {
+      setApprovingDirectionId(null);
+    }
+  };
 
   return (
     <div className="mb-5 overflow-hidden rounded-xl border border-violet-500/20 bg-background">
@@ -501,6 +518,11 @@ const DesignStudioWorkspacePanel = memo(({ designStudio, stage1Errors }) => {
             {workspace.selectedCard && (
               <Badge variant="outline" className="text-xs">
                 Leading: {selectedLabel}
+              </Badge>
+            )}
+            {approvedDirectionId && (
+              <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-700 dark:text-emerald-300">
+                Approved: {approvedDirectionId}
               </Badge>
             )}
           </div>
@@ -540,70 +562,100 @@ const DesignStudioWorkspacePanel = memo(({ designStudio, stage1Errors }) => {
 
             <div className="grid gap-3 lg:grid-cols-2">
               {workspace.candidateCards.map((card) => (
-                <div
-                  key={card.id}
-                  className={cn(
-                    'rounded-lg border bg-card/60 p-4',
-                    card.isSelected && 'border-emerald-500/40 bg-emerald-500/10'
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-sm font-semibold">{card.label}</h3>
-                        {card.isSelected && (
-                          <Badge className="gap-1 border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                            <Trophy className="h-3 w-3" />
-                            Leading
-                          </Badge>
+                <div key={card.id}>
+                  {(() => {
+                    const isApproved = card.id === approvedDirectionId;
+                    const isApproving = approvingDirectionId === card.id;
+
+                    return (
+                      <div
+                        className={cn(
+                          'rounded-lg border bg-card/60 p-4',
+                          card.isSelected && 'border-emerald-500/40 bg-emerald-500/10',
+                          isApproved && 'ring-1 ring-emerald-500/40'
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="text-sm font-semibold">{card.label}</h3>
+                              {card.isSelected && (
+                                <Badge className="gap-1 border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                                  <Trophy className="h-3 w-3" />
+                                  Leading
+                                </Badge>
+                              )}
+                              {isApproved && (
+                                <Badge className="gap-1 border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Approved
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {card.sourceModel}
+                            </div>
+                          </div>
+                          {card.rank && (
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-bold">
+                              {card.rank}
+                            </div>
+                          )}
+                        </div>
+
+                        {card.summary ? (
+                          <p className="mt-3 text-sm text-foreground/85">{card.summary}</p>
+                        ) : (
+                          <p className="mt-3 text-sm text-muted-foreground">No summary captured for this variant.</p>
+                        )}
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Badge variant="outline">Avg rank {formatDesignStudioScore(card.averageRank)}</Badge>
+                          <Badge variant="outline">Score {formatDesignStudioScore(card.overallScore)}/5</Badge>
+                          {card.rankingsCount !== null && (
+                            <Badge variant="outline">{card.rankingsCount} evaluations</Badge>
+                          )}
+                          {card.totalWeight !== null && (
+                            <Badge variant="outline">Weight {formatDesignStudioScore(card.totalWeight)}</Badge>
+                          )}
+                        </div>
+
+                        {card.criteria.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {card.criteria.slice(0, 4).map((criterion, index) => {
+                              const criterionLabel = criterion.label || criterion.key || 'Criterion';
+                              return (
+                                <div
+                                  key={`${card.id}-${criterionLabel}-${index}`}
+                                  className={cn(
+                                    'rounded-full border px-2.5 py-1 text-xs font-medium',
+                                    rubricToneClass(criterion.average_score)
+                                  )}
+                                >
+                                  {criterionLabel} {formatDesignStudioScore(criterion.average_score)}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {canApprove && (
+                          <div className="mt-4">
+                            <Button
+                              type="button"
+                              variant={isApproved ? 'secondary' : 'outline'}
+                              size="sm"
+                              onClick={() => handleApprove(card.id)}
+                              disabled={isApproved || Boolean(approvingDirectionId)}
+                            >
+                              <CheckCircle2 className={cn('mr-1 h-3.5 w-3.5', isApproving && 'animate-pulse')} />
+                              {isApproved ? 'Approved for Refinement' : isApproving ? 'Approving...' : 'Approve Direction'}
+                            </Button>
+                          </div>
                         )}
                       </div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {card.sourceModel}
-                      </div>
-                    </div>
-                    {card.rank && (
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-bold">
-                        {card.rank}
-                      </div>
-                    )}
-                  </div>
-
-                  {card.summary ? (
-                    <p className="mt-3 text-sm text-foreground/85">{card.summary}</p>
-                  ) : (
-                    <p className="mt-3 text-sm text-muted-foreground">No summary captured for this variant.</p>
-                  )}
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Badge variant="outline">Avg rank {formatDesignStudioScore(card.averageRank)}</Badge>
-                    <Badge variant="outline">Score {formatDesignStudioScore(card.overallScore)}/5</Badge>
-                    {card.rankingsCount !== null && (
-                      <Badge variant="outline">{card.rankingsCount} evaluations</Badge>
-                    )}
-                    {card.totalWeight !== null && (
-                      <Badge variant="outline">Weight {formatDesignStudioScore(card.totalWeight)}</Badge>
-                    )}
-                  </div>
-
-                  {card.criteria.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {card.criteria.slice(0, 4).map((criterion, index) => {
-                        const criterionLabel = criterion.label || criterion.key || 'Criterion';
-                        return (
-                          <div
-                            key={`${card.id}-${criterionLabel}-${index}`}
-                            className={cn(
-                              'rounded-full border px-2.5 py-1 text-xs font-medium',
-                              rubricToneClass(criterion.average_score)
-                            )}
-                          >
-                            {criterionLabel} {formatDesignStudioScore(criterion.average_score)}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -758,7 +810,13 @@ const buildComparisonDiff = (stage1Results) => {
   return { consensusSentences, overlaps, uniqueTerms };
 };
 
-const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => {
+const CouncilMessageBlock = ({
+  message,
+  messageIndex,
+  onRetryFailedModels,
+  onApproveDesignDirection,
+  conversationSessionConfig,
+}) => {
   const { stage1, stage2, stage3, loading, errors, metadata } = message;
   const [activeTab, setActiveTab] = useState('consensus');
   const [isRetryingFailedModels, setIsRetryingFailedModels] = useState(false);
@@ -786,6 +844,11 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
   const designStudioMetadata = metadata?.session_type === 'design_studio'
     ? metadata?.design_studio
     : null;
+  const approvedDirectionId = (
+    metadata?.session_config?.approved_direction_id ||
+    conversationSessionConfig?.approved_direction_id ||
+    null
+  );
   const designStudioHandoff = (
     designStudioMetadata?.handoff?.status === 'ready'
   )
@@ -1014,14 +1077,24 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
                       </Button>
                     </div>
                   )}
-                  <DesignStudioWorkspacePanel designStudio={designStudioMetadata} stage1Errors={stage1Errors} />
+                  <DesignStudioWorkspacePanel
+                    designStudio={designStudioMetadata}
+                    stage1Errors={stage1Errors}
+                    approvedDirectionId={approvedDirectionId}
+                    onApproveDesignDirection={onApproveDesignDirection}
+                  />
                   <DesignStudioHandoffPanel handoff={designStudioHandoff} />
                   <MarkdownContent content={stage3.response} />
                   {loading?.stage3 && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1" />}
                 </>
               ) : (
                 <>
-                  <DesignStudioWorkspacePanel designStudio={designStudioMetadata} stage1Errors={stage1Errors} />
+                  <DesignStudioWorkspacePanel
+                    designStudio={designStudioMetadata}
+                    stage1Errors={stage1Errors}
+                    approvedDirectionId={approvedDirectionId}
+                    onApproveDesignDirection={onApproveDesignDirection}
+                  />
                   <div className="flex flex-col items-center justify-center p-8 text-muted-foreground gap-3">
                     <BrainCircuit className="h-8 w-8 animate-pulse text-primary/50" />
                     <p>The Council is deliberating...</p>
