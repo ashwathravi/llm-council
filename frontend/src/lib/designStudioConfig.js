@@ -10,8 +10,8 @@ export const DESIGN_TARGET_OPTIONS = [
     description: 'Native iPhone and iPad design directions.',
   },
   {
-    id: 'both',
-    name: 'Web + iOS',
+    id: 'mixed',
+    name: 'Mixed Web + iOS',
     description: 'Cross-platform direction with shared intent.',
   },
 ];
@@ -58,11 +58,25 @@ export const DEFAULT_DESIGN_STUDIO_CONFIG = {
   approved_direction_id: null,
 };
 
-export const getDesignTargetLabel = (value) =>
-  DESIGN_TARGET_LABELS[value] || DESIGN_TARGET_LABELS[DEFAULT_DESIGN_STUDIO_CONFIG.design_target];
-
 export const getStudioGoalLabel = (value) =>
   STUDIO_GOAL_LABELS[value] || STUDIO_GOAL_LABELS[DEFAULT_DESIGN_STUDIO_CONFIG.studio_goal];
+
+const normalizeDesignTarget = (value) => {
+  if (typeof value !== 'string') {
+    return DEFAULT_DESIGN_STUDIO_CONFIG.design_target;
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/[-\s]+/g, '_');
+  if (normalized === 'both') {
+    return 'mixed';
+  }
+  return DESIGN_TARGET_LABELS[normalized]
+    ? normalized
+    : DEFAULT_DESIGN_STUDIO_CONFIG.design_target;
+};
+
+export const getDesignTargetLabel = (value) =>
+  DESIGN_TARGET_LABELS[normalizeDesignTarget(value)];
 
 export const normalizeSessionConfig = (sessionType, sessionConfig = {}) => {
   if (sessionType !== 'design_studio') {
@@ -75,9 +89,7 @@ export const normalizeSessionConfig = (sessionType, sessionConfig = {}) => {
     : null;
 
   return {
-    design_target: DESIGN_TARGET_LABELS[next.design_target]
-      ? next.design_target
-      : DEFAULT_DESIGN_STUDIO_CONFIG.design_target,
+    design_target: normalizeDesignTarget(next.design_target),
     studio_goal: STUDIO_GOAL_LABELS[next.studio_goal]
       ? next.studio_goal
       : DEFAULT_DESIGN_STUDIO_CONFIG.studio_goal,

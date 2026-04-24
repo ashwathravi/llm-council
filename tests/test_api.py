@@ -309,7 +309,7 @@ async def test_create_conversation_persists_design_studio_session_config(async_c
                 "specialist_template_id": "design_cross_platform_studio",
                 "execution_mode": "disabled",
                 "session_config": {
-                    "design_target": "both",
+                    "design_target": "mixed",
                     "studio_goal": "handoff",
                     "approved_direction_id": None,
                 },
@@ -326,7 +326,7 @@ async def test_create_conversation_persists_design_studio_session_config(async_c
                     "session_type": "design_studio",
                     "specialist_template_id": "design_cross_platform_studio",
                     "session_config": {
-                        "design_target": "both",
+                        "design_target": "mixed",
                         "studio_goal": "handoff",
                     },
                     "council_models": ["openai/gpt-5.2"],
@@ -337,12 +337,12 @@ async def test_create_conversation_persists_design_studio_session_config(async_c
             payload = response.json()
             assert payload["session_type"] == "design_studio"
             assert payload["session_config"] == {
-                "design_target": "both",
+                "design_target": "mixed",
                 "studio_goal": "handoff",
                 "approved_direction_id": None,
             }
             assert mock_create_conversation.await_args.kwargs["session_config"] == {
-                "design_target": "both",
+                "design_target": "mixed",
                 "studio_goal": "handoff",
                 "approved_direction_id": None,
             }
@@ -358,7 +358,7 @@ async def test_send_message_design_studio_includes_session_context(async_client)
         "session_type": "design_studio",
         "specialist_template_id": "design_cross_platform_studio",
         "session_config": {
-            "design_target": "both",
+            "design_target": "mixed",
             "studio_goal": "compare",
             "approved_direction_id": "direction-beta",
         },
@@ -400,7 +400,7 @@ async def test_send_message_design_studio_includes_session_context(async_client)
             assert "SPECIALIST TEMPLATE:" in effective_context
             assert "Cross-Platform Design Studio" in effective_context
             assert "DESIGN STUDIO CONFIG:" in effective_context
-            assert "Target: Web + iOS" in effective_context
+            assert "Target: Mixed Web + iOS" in effective_context
             assert "Goal: Compare" in effective_context
             assert "Approved Direction: direction-beta" in effective_context
             assert "retrieval context" in effective_context

@@ -52,7 +52,10 @@ ALLOWED_ARTIFACT_STATUSES = {"draft", "processing", "ready", "failed"}
 DESIGN_TARGETS: Dict[str, str] = {
     "web_app": "Web App",
     "ios_app": "iOS App",
-    "both": "Web + iOS",
+    "mixed": "Mixed Web + iOS",
+}
+DESIGN_TARGET_ALIASES: Dict[str, str] = {
+    "both": "mixed",
 }
 STUDIO_GOALS: Dict[str, str] = {
     "review": "Review",
@@ -103,6 +106,7 @@ def _normalize_string(value: Any) -> Optional[str]:
 def normalize_design_target(value: Optional[str]) -> str:
     if isinstance(value, str):
         normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        normalized = DESIGN_TARGET_ALIASES.get(normalized, normalized)
         if normalized in ALLOWED_DESIGN_TARGETS:
             return normalized
     return DEFAULT_DESIGN_TARGET

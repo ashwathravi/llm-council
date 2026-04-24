@@ -92,16 +92,24 @@ def test_design_studio_session_config_is_normalized():
     req = CreateConversationRequest(
         session_type="design_studio",
         session_config={
-            "design_target": "both",
+            "design_target": "mixed",
             "studio_goal": "handoff",
             "approved_direction_id": "  direction-2  ",
         },
     )
     assert req.session_config == {
-        "design_target": "both",
+        "design_target": "mixed",
         "studio_goal": "handoff",
         "approved_direction_id": "direction-2",
     }
+
+def test_design_studio_legacy_both_target_normalizes_to_mixed():
+    """Test that old cross-platform target values stay compatible."""
+    req = CreateConversationRequest(
+        session_type="design_studio",
+        session_config={"design_target": "both", "studio_goal": "compare"},
+    )
+    assert req.session_config["design_target"] == "mixed"
 
 def test_non_design_sessions_clear_session_config():
     """Test that non-design sessions do not retain design studio config."""

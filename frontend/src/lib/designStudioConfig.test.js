@@ -35,22 +35,29 @@ describe('designStudioConfig', () => {
   it('preserves valid design studio values and trims approved direction', () => {
     assert.deepStrictEqual(
       normalizeSessionConfig('design_studio', {
-        design_target: 'both',
+        design_target: 'mixed',
         studio_goal: 'compare',
         approved_direction_id: '  direction-7  ',
       }),
       {
-        design_target: 'both',
+        design_target: 'mixed',
         studio_goal: 'compare',
         approved_direction_id: 'direction-7',
       }
     );
   });
 
+  it('normalizes legacy both target to mixed', () => {
+    assert.strictEqual(
+      normalizeSessionConfig('design_studio', { design_target: 'both' }).design_target,
+      'mixed'
+    );
+  });
+
   it('clears config for non-design sessions', () => {
     assert.deepStrictEqual(
       normalizeSessionConfig('general', {
-        design_target: 'both',
+        design_target: 'mixed',
         studio_goal: 'handoff',
       }),
       {}
@@ -58,7 +65,8 @@ describe('designStudioConfig', () => {
   });
 
   it('returns readable labels', () => {
-    assert.strictEqual(getDesignTargetLabel('both'), 'Web + iOS');
+    assert.strictEqual(getDesignTargetLabel('mixed'), 'Mixed Web + iOS');
+    assert.strictEqual(getDesignTargetLabel('both'), 'Mixed Web + iOS');
     assert.strictEqual(getStudioGoalLabel('handoff'), 'Handoff');
   });
 });
