@@ -145,6 +145,48 @@ function App() {
     }
   }, [isMobile]);
 
+  const handleApproveDesignDirection = useCallback(async (directionId) => {
+    if (!currentConversationId || !directionId) return null;
+    try {
+      const updated = await api.approveDesignDirection(currentConversationId, directionId);
+      const patched = {
+        ...updated,
+        messages: Array.isArray(updated.messages)
+          ? updated.messages.map((message) => (
+            message?.role === 'assistant'
+              ? {
+                ...message,
+                metadata: {
+                  ...(message.metadata || {}),
+                  session_config: updated.session_config,
+                },
+              }
+              : message
+          ))
+          : updated.messages,
+      };
+      setCurrentConversation(patched);
+      setConversations((prev) =>
+        prev.map((conversation) =>
+          conversation.id === updated.id ? { ...conversation, ...patched } : conversation
+        )
+      );
+      toast({
+        title: 'Direction approved',
+        description: 'Future Design Studio turns will refine the selected direction.',
+      });
+      return patched;
+    } catch (error) {
+      logger.error('Failed to approve Design Studio direction:', error);
+      toast({
+        title: 'Could not approve direction',
+        description: error.message || 'Please try again.',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [currentConversationId, toast]);
+
   const handleSidebarClose = useCallback(() => {
     setIsSidebarOpen(false);
   }, []);
@@ -570,6 +612,7 @@ function App() {
             conversation={currentConversation}
             onSendMessage={handleSendMessage}
             onRetryFailedModels={handleRetryFailedModels}
+            onApproveDesignDirection={handleApproveDesignDirection}
             onConversationRefresh={handleRefreshCurrentConversation}
             isLoading={isLoading}
             isMobile={isMobile}

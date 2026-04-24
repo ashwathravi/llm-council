@@ -203,6 +203,32 @@ export const api = {
   },
 
   /**
+   * Approve a Design Studio direction for future refinement.
+   */
+  async approveDesignDirection(conversationId, directionId) {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/design-studio/approved-direction`,
+      {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ direction_id: directionId }),
+      }
+    );
+    if (!response.ok) {
+      let detail = 'Failed to approve direction';
+      try {
+        const data = await response.json();
+        detail = data.detail || data.error || detail;
+      } catch {
+        const text = await response.text();
+        if (text) detail = text;
+      }
+      throw new Error(detail);
+    }
+    return response.json();
+  },
+
+  /**
    * Send a message in a conversation.
    */
   async sendMessage(conversationId, content) {

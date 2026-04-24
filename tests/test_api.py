@@ -351,6 +351,147 @@ async def test_create_conversation_persists_design_studio_session_config(async_c
 
 
 @pytest.mark.asyncio
+async def test_approve_design_direction_persists_refinement_config(async_client):
+    conversation = {
+        "id": "conv-approve",
+        "created_at": "2026-01-01T00:00:00",
+        "title": "Approve Direction",
+        "framework": "standard",
+        "session_type": "design_studio",
+        "session_config": {
+            "design_target": "web_app",
+            "studio_goal": "compare",
+            "approved_direction_id": None,
+        },
+        "council_models": ["model-a"],
+        "chairman_model": "chair-model",
+        "primary_artifacts": [],
+        "messages": [
+            {
+                "role": "assistant",
+                "metadata": {
+                    "design_studio": {
+                        "candidate_directions": [
+                            {"id": "direction-b", "label": "Direction B"},
+                        ],
+                    },
+                },
+            },
+        ],
+    }
+    updated = {
+        **conversation,
+        "session_config": {
+            "design_target": "web_app",
+            "studio_goal": "iterate",
+            "approved_direction_id": "direction-b",
+        },
+    }
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.update_conversation_context", new_callable=AsyncMock) as mock_update_context:
+            mock_get_conversation.return_value = conversation
+            mock_update_context.return_value = updated
+
+            response = await async_client.post(
+                "/api/conversations/conv-approve/design-studio/approved-direction",
+                json={"direction_id": " direction-b "},
+            )
+
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["session_config"] == updated["session_config"]
+            mock_update_context.assert_awaited_once_with(
+                "conv-approve",
+                "test_user",
+                session_config={
+                    "design_target": "web_app",
+                    "studio_goal": "iterate",
+                    "approved_direction_id": "direction-b",
+                },
+            )
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_approve_design_direction_rejects_non_design_sessions(async_client):
+    conversation = {
+        "id": "conv-general",
+        "framework": "standard",
+        "session_type": "general",
+        "session_config": {},
+        "council_models": ["model-a"],
+        "chairman_model": "chair-model",
+        "primary_artifacts": [],
+        "messages": [],
+    }
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.update_conversation_context", new_callable=AsyncMock) as mock_update_context:
+            mock_get_conversation.return_value = conversation
+
+            response = await async_client.post(
+                "/api/conversations/conv-general/design-studio/approved-direction",
+                json={"direction_id": "direction-a"},
+            )
+
+            assert response.status_code == 400
+            mock_update_context.assert_not_awaited()
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+async def test_approve_design_direction_rejects_unknown_candidate(async_client):
+    conversation = {
+        "id": "conv-approve",
+        "framework": "standard",
+        "session_type": "design_studio",
+        "session_config": {
+            "design_target": "web_app",
+            "studio_goal": "compare",
+            "approved_direction_id": None,
+        },
+        "council_models": ["model-a"],
+        "chairman_model": "chair-model",
+        "primary_artifacts": [],
+        "messages": [
+            {
+                "role": "assistant",
+                "metadata": {
+                    "design_studio": {
+                        "candidate_directions": [
+                            {"id": "direction-a", "label": "Direction A"},
+                        ],
+                    },
+                },
+            },
+        ],
+    }
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.update_conversation_context", new_callable=AsyncMock) as mock_update_context:
+            mock_get_conversation.return_value = conversation
+
+            response = await async_client.post(
+                "/api/conversations/conv-approve/design-studio/approved-direction",
+                json={"direction_id": "direction-b"},
+            )
+
+            assert response.status_code == 400
+            mock_update_context.assert_not_awaited()
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
 async def test_send_message_design_studio_includes_session_context(async_client):
     conversation = {
         "id": "conv-design-studio",
