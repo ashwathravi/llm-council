@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, Trophy, Crown, BrainCircuit, CheckCircle2, FileImage, GitCompareArrows, PauseCircle, RefreshCw, RotateCcw, Wrench, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildDesignStudioWorkspaceView, formatDesignStudioScore } from "@/lib/designStudioWorkspace";
+import { buildVisualReviewSurface } from "@/lib/visualReviewSurface";
 import VisualReviewPanel from './VisualReviewPanel';
 
 // ⚡ Bolt: Memoize markdown rendering to prevent re-parsing on every parent re-render
@@ -779,13 +780,8 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
   const modelWeightProfile = Array.isArray(metadata?.model_weight_profile)
     ? metadata.model_weight_profile
     : [];
-  const visualArtifacts = Array.isArray(metadata?.primary_artifacts)
-    ? metadata.primary_artifacts.filter((artifact) => artifact?.kind === 'image' && artifact?.preview_url)
-    : EMPTY_LIST;
-  const visualFindings = Array.isArray(metadata?.visual_findings)
-    ? metadata.visual_findings
-    : EMPTY_LIST;
-  const hasVisualReviewTab = metadata?.session_type === 'visual_review' && visualArtifacts.length > 0;
+  const visualReviewSurface = useMemo(() => buildVisualReviewSurface(metadata), [metadata]);
+  const hasVisualReviewTab = visualReviewSurface.shouldShow;
   const hasExecutionTab = Boolean(executionReport);
   const designStudioMetadata = metadata?.session_type === 'design_studio'
     ? metadata?.design_studio
@@ -932,7 +928,7 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
             {hasVisualReviewTab && (
               <TabsTrigger value="visual" className="gap-2">
                 <FileImage className="h-3.5 w-3.5 text-sky-500" />
-                Visual
+                {visualReviewSurface.tabLabel}
               </TabsTrigger>
             )}
             {hasExecutionTab && (
@@ -1052,7 +1048,12 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
           </TabsContent>
 
           <TabsContent value="visual" className="m-0 focus-visible:ring-0">
-            <VisualReviewPanel artifacts={visualArtifacts} findings={visualFindings} />
+            <VisualReviewPanel
+              artifacts={visualReviewSurface.imageArtifacts}
+              findings={visualReviewSurface.findings}
+              title={visualReviewSurface.title}
+              description={visualReviewSurface.description}
+            />
           </TabsContent>
 
           <TabsContent value="execution" className="m-0 focus-visible:ring-0">

@@ -480,6 +480,52 @@ def _should_include_image_artifacts(
     return any(openrouter.supports_vision_model(model_id) for model_id in effective_models)
 
 
+DESIGN_STUDIO_VISUAL_CRITIQUE_GOALS = {"review", "iterate", "compare", "handoff"}
+
+
+def _should_enable_visual_artifact_review(conversation: Dict[str, Any]) -> bool:
+    session_type = normalize_session_type(conversation.get("session_type"))
+    if not _get_ready_image_artifacts(conversation.get("primary_artifacts")):
+        return False
+    if session_type == "visual_review":
+        return True
+    if session_type != "design_studio":
+        return False
+
+    session_config = normalize_session_config(
+        conversation.get("session_config"),
+        session_type=session_type,
+    )
+    return session_config.get("studio_goal") in DESIGN_STUDIO_VISUAL_CRITIQUE_GOALS
+
+
+def _build_visual_review_surface_metadata(
+    conversation: Dict[str, Any],
+    visual_findings: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    enabled = _should_enable_visual_artifact_review(conversation)
+    session_type = normalize_session_type(conversation.get("session_type"))
+    mode = "design_studio_critique" if session_type == "design_studio" else "visual_review"
+    findings_count = len(visual_findings or [])
+    artifact_count = len(_get_ready_image_artifacts(conversation.get("primary_artifacts")))
+
+    return {
+        "enabled": enabled,
+        "panel_enabled": enabled and (
+            session_type == "visual_review" or findings_count > 0
+        ),
+        "mode": mode,
+        "tab_label": "Critique" if mode == "design_studio_critique" else "Visual",
+        "title": "Artifact Critique Surface" if mode == "design_studio_critique" else None,
+        "description": (
+            "Inspect artifact-tied critique findings without leaving the Design Studio flow."
+            if mode == "design_studio_critique" else None
+        ),
+        "artifact_count": artifact_count,
+        "findings_count": findings_count,
+    }
+
+
 def _visual_review_requires_vision_models(conversation: Dict[str, Any], effective_models: List[str]) -> None:
     if normalize_session_type(conversation.get("session_type")) == "visual_review" and not effective_models:
         raise HTTPException(
@@ -1077,7 +1123,8 @@ async def send_message(
         primary_artifacts=conversation.get("primary_artifacts"),
         retrieval_context=effective_context,
         retrieval_citations=citations,
-        conversation_messages=conversation.get("messages")
+        conversation_messages=conversation.get("messages"),
+        visual_findings_enabled=_should_enable_visual_artifact_review(conversation),
     )
     metadata["requested_council_models"] = requested_council_models
     metadata["effective_council_models"] = effective_council_models
@@ -1099,6 +1146,10 @@ async def send_message(
     )
     metadata["primary_artifacts"] = conversation.get("primary_artifacts", [])
     metadata["primary_artifact_count"] = len(conversation.get("primary_artifacts") or [])
+    metadata["visual_review"] = _build_visual_review_surface_metadata(
+        conversation,
+        metadata.get("visual_findings"),
+    )
     design_studio_metadata = build_design_studio_metadata(
         session_type=conversation.get("session_type"),
         stage1_results=stage1_results,
@@ -1192,7 +1243,8 @@ async def _rerun_stage2_and_stage3(
     execution_mode: Optional[str],
     primary_artifacts: Optional[List[Dict[str, Any]]],
     retrieval_context: str,
-    conversation_messages: Optional[List[Dict[str, Any]]] = None
+    conversation_messages: Optional[List[Dict[str, Any]]] = None,
+    visual_findings_enabled: Optional[bool] = None,
 ) -> Dict[str, Any]:
     stage2_results: List[Dict[str, Any]] = []
     aggregate_rankings: List[Dict[str, Any]] = []
@@ -1263,6 +1315,7 @@ async def _rerun_stage2_and_stage3(
         execution_context=execution_context,
         aggregate_rankings=aggregate_rankings,
         aggregate_rubrics=aggregate_rubrics,
+        visual_findings_enabled=visual_findings_enabled,
     ):
         full_stage3_response += token
 
@@ -1270,7 +1323,12 @@ async def _rerun_stage2_and_stage3(
         raise RuntimeError("The chairman model returned an empty response.")
 
     visual_findings: List[Dict[str, Any]] = []
-    if session_type == "visual_review":
+    should_extract_visual_findings = (
+        session_type == "visual_review"
+        if visual_findings_enabled is None
+        else visual_findings_enabled
+    )
+    if should_extract_visual_findings:
         full_stage3_response, visual_findings = extract_visual_findings_from_response(
             full_stage3_response,
             primary_artifacts=primary_artifacts,
@@ -1533,7 +1591,8 @@ async def retry_failed_stage1_models(
                     execution_mode=conversation.get("execution_mode"),
                     primary_artifacts=conversation.get("primary_artifacts"),
                     retrieval_context=effective_context,
-                    conversation_messages=messages[:message_index]
+                    conversation_messages=messages[:message_index],
+                    visual_findings_enabled=_should_enable_visual_artifact_review(conversation),
                 )
                 target_message["stage2"] = refreshed_data["stage2"]
                 target_message["stage3"] = refreshed_data["stage3"]
@@ -1542,6 +1601,10 @@ async def retry_failed_stage1_models(
                 metadata["aggregate_rubrics"] = refreshed_data["aggregate_rubrics"]
                 metadata["execution"] = refreshed_data["execution"]
                 metadata["visual_findings"] = refreshed_data["visual_findings"]
+                metadata["visual_review"] = _build_visual_review_surface_metadata(
+                    conversation,
+                    refreshed_data["visual_findings"],
+                )
                 if refreshed_data.get("model_weight_profile"):
                     metadata["model_weight_profile"] = refreshed_data["model_weight_profile"]
                 if refreshed_data.get("ballot_weighting"):
@@ -1681,6 +1744,15 @@ async def send_message_stream(
                 "responded_council_models": responded_council_models,
                 "stage1_errors": stage1_errors,
                 "stage1_duration_seconds": stage1_duration,
+                "session_type": conversation.get("session_type", DEFAULT_SESSION_TYPE),
+                "session_config": normalize_session_config(
+                    conversation.get("session_config"),
+                    session_type=conversation.get("session_type"),
+                ),
+                "specialist_template_id": conversation.get("specialist_template_id"),
+                "primary_artifacts": conversation.get("primary_artifacts", []),
+                "primary_artifact_count": len(conversation.get("primary_artifacts") or []),
+                "visual_review": _build_visual_review_surface_metadata(conversation, []),
             }
             if design_studio_metadata:
                 stage1_meta["design_studio"] = design_studio_metadata
@@ -1710,6 +1782,15 @@ async def send_message_stream(
                 "model_selection": model_selection_metadata,
                 "responded_council_models": responded_council_models,
                 "stage1_errors": stage1_errors,
+                "session_type": conversation.get("session_type", DEFAULT_SESSION_TYPE),
+                "session_config": normalize_session_config(
+                    conversation.get("session_config"),
+                    session_type=conversation.get("session_type"),
+                ),
+                "specialist_template_id": conversation.get("specialist_template_id"),
+                "primary_artifacts": conversation.get("primary_artifacts", []),
+                "primary_artifact_count": len(conversation.get("primary_artifacts") or []),
+                "visual_review": _build_visual_review_surface_metadata(conversation, []),
             }
             hetero_meta = {}
             design_stage_meta = design_studio_metadata
@@ -1806,6 +1887,7 @@ async def send_message_stream(
             # Stage 3: Synthesize final answer (Streaming)
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
             stage3_start = time.monotonic()
+            visual_findings_enabled = _should_enable_visual_artifact_review(conversation)
             full_stage3_response = ""
             async for token in stage3_synthesize_final(
                 request.content,
@@ -1819,6 +1901,7 @@ async def send_message_stream(
                 execution_context=execution_context,
                 aggregate_rankings=aggregate_rankings,
                 aggregate_rubrics=aggregate_rubrics,
+                visual_findings_enabled=visual_findings_enabled,
             ):
                 full_stage3_response += token
                 yield f"data: {json.dumps({'type': 'stage3_token', 'data': token})}\n\n"
@@ -1827,7 +1910,7 @@ async def send_message_stream(
                 raise RuntimeError("The chairman model returned an empty response.")
 
             visual_findings: List[Dict[str, Any]] = []
-            if conversation.get("session_type") == "visual_review":
+            if visual_findings_enabled:
                 full_stage3_response, visual_findings = extract_visual_findings_from_response(
                     full_stage3_response,
                     primary_artifacts=conversation.get("primary_artifacts"),
@@ -1846,6 +1929,19 @@ async def send_message_stream(
                 aggregate_rubrics=aggregate_rubrics,
             )
             stage3_metadata = {"design_studio": design_stage_meta} if design_stage_meta else {}
+            stage3_metadata["session_type"] = conversation.get("session_type", DEFAULT_SESSION_TYPE)
+            stage3_metadata["session_config"] = normalize_session_config(
+                conversation.get("session_config"),
+                session_type=conversation.get("session_type"),
+            )
+            stage3_metadata["specialist_template_id"] = conversation.get("specialist_template_id")
+            stage3_metadata["primary_artifacts"] = conversation.get("primary_artifacts", [])
+            stage3_metadata["primary_artifact_count"] = len(conversation.get("primary_artifacts") or [])
+            stage3_metadata["visual_review"] = _build_visual_review_surface_metadata(
+                conversation,
+                visual_findings,
+            )
+            stage3_metadata["visual_findings"] = visual_findings
             yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result, 'metadata': stage3_metadata})}\n\n"
             stage3_duration = round(time.monotonic() - stage3_start, 3)
             logger.info(f"[stream] conversation={conversation_id} stage3_complete duration={stage3_duration}s")
@@ -1871,6 +1967,7 @@ async def send_message_stream(
                 "aggregate_rubrics": aggregate_rubrics,
                 "execution": execution_report,
                 "visual_findings": visual_findings,
+                "visual_review": _build_visual_review_surface_metadata(conversation, visual_findings),
                 "stage1_errors": stage1_errors,
                 "session_type": conversation.get("session_type", DEFAULT_SESSION_TYPE),
                 "specialist_template_id": conversation.get("specialist_template_id"),

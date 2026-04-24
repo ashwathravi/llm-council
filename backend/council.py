@@ -921,7 +921,8 @@ async def run_full_council(
     primary_artifacts: Optional[List[Dict[str, Any]]] = None,
     retrieval_context: Optional[str] = None,
     retrieval_citations: Optional[List[Dict[str, Any]]] = None,
-    conversation_messages: Optional[List[Dict[str, Any]]] = None
+    conversation_messages: Optional[List[Dict[str, Any]]] = None,
+    visual_findings_enabled: Optional[bool] = None,
 ):
     """
     Orchestrates the selected council process.
@@ -1044,11 +1045,17 @@ async def run_full_council(
         execution_context=execution_context,
         aggregate_rankings=aggregate_rankings,
         aggregate_rubrics=aggregate_rubrics,
+        visual_findings_enabled=visual_findings_enabled,
     ):
         stage3_text += chunk
 
     visual_findings: List[Dict[str, Any]] = []
-    if session_type == "visual_review":
+    should_extract_visual_findings = (
+        session_type == "visual_review"
+        if visual_findings_enabled is None
+        else visual_findings_enabled
+    )
+    if should_extract_visual_findings:
         stage3_text, visual_findings = extract_visual_findings_from_response(
             stage3_text,
             primary_artifacts=primary_artifacts,
@@ -1212,6 +1219,7 @@ async def stage3_synthesize_final(
     execution_context: Optional[str] = None,
     aggregate_rankings: Optional[List[Dict[str, Any]]] = None,
     aggregate_rubrics: Optional[List[Dict[str, Any]]] = None,
+    visual_findings_enabled: Optional[bool] = None,
 ):
     """
     Stage 3: Chairman synthesizes final response (streaming).
@@ -1282,8 +1290,13 @@ async def stage3_synthesize_final(
                 )
         weighted_consensus_block = "WEIGHTED CONSENSUS SUMMARY:\n" + "\n".join(summary_lines) + "\n"
     rubric_summary_block = _build_rubric_summary_block(aggregate_rubrics)
+    visual_findings_requested = (
+        session_type == "visual_review"
+        if visual_findings_enabled is None
+        else visual_findings_enabled
+    )
     visual_findings_block = ""
-    if session_type == "visual_review":
+    if visual_findings_requested:
         visual_findings_block = """VISUAL FINDINGS APPENDIX:
 - After the main answer, append a fenced JSON block introduced by the exact heading "VISUAL FINDINGS JSON:".
 - Return an array of up to 6 findings.

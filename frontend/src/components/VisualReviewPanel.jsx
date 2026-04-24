@@ -13,7 +13,12 @@ function severityClass(severity) {
   return SEVERITY_STYLES[severity] || SEVERITY_STYLES.medium;
 }
 
-export default function VisualReviewPanel({ artifacts = [], findings = [] }) {
+export default function VisualReviewPanel({
+  artifacts = [],
+  findings = [],
+  title,
+  description,
+}) {
   const imageArtifacts = useMemo(
     () => (Array.isArray(artifacts) ? artifacts : []).filter((artifact) =>
       artifact?.kind === 'image' && artifact?.preview_url
@@ -48,12 +53,12 @@ export default function VisualReviewPanel({ artifacts = [], findings = [] }) {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h3 className="font-semibold">
-            {hasComparison ? 'Side-by-Side Comparison' : 'Visual Review Surface'}
+            {title || (hasComparison ? 'Side-by-Side Comparison' : 'Visual Review Surface')}
           </h3>
           <p className="text-sm text-muted-foreground">
-            {hasComparison
+            {description || (hasComparison
               ? 'Review both artifacts together and inspect region-tied findings directly on the images.'
-              : 'Inspect the uploaded artifact and jump through structured visual findings.'}
+              : 'Inspect the uploaded artifact and jump through structured visual findings.')}
           </p>
         </div>
         <Badge variant="outline">{structuredFindings.length} findings</Badge>
