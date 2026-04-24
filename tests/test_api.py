@@ -721,6 +721,107 @@ async def test_send_message_stream_design_studio_emits_structured_stage_metadata
 
 
 @pytest.mark.asyncio
+async def test_send_message_stream_design_studio_with_image_findings_enables_critique_surface(async_client):
+    conversation = {
+        "id": "conv-design-image-stream",
+        "framework": "standard",
+        "session_type": "design_studio",
+        "specialist_template_id": "design_web_app_studio",
+        "session_config": {
+            "design_target": "web_app",
+            "studio_goal": "review",
+            "approved_direction_id": None,
+        },
+        "council_models": ["vision-a", "vision-b"],
+        "chairman_model": "chair-model",
+        "primary_artifacts": [
+            {
+                "id": "img-1",
+                "kind": "image",
+                "label": "mockup.png",
+                "source": "upload",
+                "status": "ready",
+                "filename": "mockup.png",
+                "mime_type": "image/png",
+                "size_bytes": 128,
+                "storage_path": "conv-design-image-stream/img-1.png",
+                "preview_url": "/artifact-files/conv-design-image-stream/img-1.png",
+            }
+        ],
+        "messages": [],
+    }
+
+    async def mock_stage1_stream(*args, **kwargs):
+        yield {"model": "vision-a", "response": "Direction A critiques the current hero."}
+        yield {"model": "vision-b", "response": "Direction B critiques the current card layout."}
+
+    async def mock_stage3_stream(*args, **kwargs):
+        yield """Ship Direction A.
+
+VISUAL FINDINGS JSON:
+```json
+[
+  {
+    "artifact_label": "mockup.png",
+    "title": "CTA lacks contrast",
+    "comment": "The primary action is too low contrast against the background.",
+    "severity": "high",
+    "x": 60,
+    "y": 20,
+    "w": 18,
+    "h": 10
+  }
+]
+```"""
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", new_callable=AsyncMock) as mock_get_conversation, \
+             patch("backend.storage.add_user_message", new_callable=AsyncMock), \
+             patch("backend.storage.update_conversation_title", new_callable=AsyncMock), \
+             patch("backend.storage.add_assistant_message", new_callable=AsyncMock) as mock_add_assistant_message, \
+             patch("backend.retrieval.build_retrieval_context", new_callable=AsyncMock) as mock_retrieval, \
+             patch("backend.main.generate_conversation_title", new_callable=AsyncMock) as mock_generate_title, \
+             patch("backend.main.stage1_collect_responses", side_effect=mock_stage1_stream), \
+             patch("backend.main.stage2_collect_rankings", new_callable=AsyncMock) as mock_stage2, \
+             patch("backend.main.stage3_synthesize_final", side_effect=mock_stage3_stream) as mock_stage3, \
+             patch("backend.openrouter.supports_vision_model", return_value=True), \
+             patch("backend.image_artifacts.load_image_as_data_url", return_value="data:image/png;base64,abc"):
+            mock_get_conversation.return_value = conversation
+            mock_retrieval.return_value = ("", [])
+            mock_generate_title.return_value = "Design Image Review"
+            mock_stage2.return_value = (
+                [{"model": "judge", "ranking": "FINAL RANKING:\n1. Response A\n2. Response B"}],
+                {"Response A": "vision-a", "Response B": "vision-b"},
+            )
+
+            async with async_client.stream(
+                "POST",
+                "/api/conversations/conv-design-image-stream/message/stream",
+                json={"content": "Critique this mockup"},
+            ) as response:
+                assert response.status_code == 200
+                events = []
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        events.append(json.loads(line[6:]))
+
+            stage3_complete = next(event for event in events if event["type"] == "stage3_complete")
+            assert stage3_complete["data"]["response"] == "Ship Direction A."
+            assert stage3_complete["metadata"]["visual_review"]["panel_enabled"] is True
+            assert stage3_complete["metadata"]["visual_review"]["mode"] == "design_studio_critique"
+            assert stage3_complete["metadata"]["visual_review"]["tab_label"] == "Critique"
+            assert stage3_complete["metadata"]["visual_findings"][0]["artifact_id"] == "img-1"
+
+            assert mock_stage3.call_args.kwargs["visual_findings_enabled"] is True
+            saved_metadata = mock_add_assistant_message.await_args.args[5]
+            assert saved_metadata["visual_review"]["panel_enabled"] is True
+            assert saved_metadata["visual_findings"][0]["title"] == "CTA lacks contrast"
+    finally:
+        app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
 async def test_send_message_code_review_returns_execution_metadata(async_client):
     conversation = {
         "id": "conv-exec",

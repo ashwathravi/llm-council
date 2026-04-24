@@ -177,6 +177,46 @@ async def test_stage3_synthesis_visual_review_requests_visual_findings_json():
     assert "Coordinates must be normalized percentages" in prompt
 
 
+@pytest.mark.asyncio
+async def test_stage3_synthesis_design_studio_can_request_visual_findings_json():
+    async def mock_stream(*args, **kwargs):
+        yield "Final"
+
+    with patch("backend.council.query_model_stream", side_effect=mock_stream) as mock_stream_fn:
+        async for _token in council.stage3_synthesize_final(
+            "Critique this mockup",
+            [{"model": "gpt-4", "response": "Resp"}],
+            [{"model": "claude-3", "ranking": "Feedback"}],
+            "chairman-model",
+            session_type="design_studio",
+            visual_findings_enabled=True,
+        ):
+            pass
+
+    prompt = mock_stream_fn.call_args.args[1][0]["content"]
+    assert "VISUAL FINDINGS JSON" in prompt
+    assert "artifact_label" in prompt
+
+
+@pytest.mark.asyncio
+async def test_stage3_synthesis_design_studio_skips_visual_findings_by_default():
+    async def mock_stream(*args, **kwargs):
+        yield "Final"
+
+    with patch("backend.council.query_model_stream", side_effect=mock_stream) as mock_stream_fn:
+        async for _token in council.stage3_synthesize_final(
+            "Generate options",
+            [{"model": "gpt-4", "response": "Resp"}],
+            [{"model": "claude-3", "ranking": "Feedback"}],
+            "chairman-model",
+            session_type="design_studio",
+        ):
+            pass
+
+    prompt = mock_stream_fn.call_args.args[1][0]["content"]
+    assert "VISUAL FINDINGS JSON" not in prompt
+
+
 def test_parse_confidence_from_text():
     assert council.parse_confidence_from_text("FINAL RANKING:\n1. Response A\nCONFIDENCE: 82") == 82
     assert council.parse_confidence_from_text("confidence: 150") == 100
