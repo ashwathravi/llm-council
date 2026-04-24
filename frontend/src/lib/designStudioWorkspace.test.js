@@ -14,6 +14,17 @@ describe('designStudioWorkspace', () => {
     assert.strictEqual(view.selectedCard, null);
   });
 
+  it('keeps empty candidate arrays explicit instead of producing blank panels', () => {
+    const view = buildDesignStudioWorkspaceView({
+      candidate_directions: [],
+      comparison: { status: 'pending' },
+    });
+
+    assert.strictEqual(view.status, 'empty');
+    assert.strictEqual(view.hasComparison, false);
+    assert.deepStrictEqual(view.failedVariants, []);
+  });
+
   it('handles one pending candidate without comparison data', () => {
     const view = buildDesignStudioWorkspaceView({
       candidate_directions: [
@@ -97,6 +108,21 @@ describe('designStudioWorkspace', () => {
     assert.strictEqual(view.hasPartialFailures, true);
     assert.deepStrictEqual(view.failedVariants, [{ model: 'model-c', error: 'timeout' }]);
     assert.deepStrictEqual(view.candidateCards[0].criteria, []);
+  });
+
+  it('keeps pending comparison states operable with multiple variants', () => {
+    const view = buildDesignStudioWorkspaceView({
+      candidate_directions: [
+        { id: 'direction-a', label: 'Direction A', source_model: 'model-a' },
+        { id: 'direction-b', label: 'Direction B', source_model: 'model-b' },
+      ],
+      comparison: { status: 'pending' },
+    });
+
+    assert.strictEqual(view.status, 'pending');
+    assert.strictEqual(view.hasComparison, true);
+    assert.strictEqual(view.candidateCards.length, 2);
+    assert.strictEqual(view.selectedDirectionId, 'direction-a');
   });
 
   it('formats numeric scores for compact UI labels', () => {
