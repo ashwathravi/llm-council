@@ -111,6 +111,22 @@ def test_design_studio_legacy_both_target_normalizes_to_mixed():
     )
     assert req.session_config["design_target"] == "mixed"
 
+def test_design_studio_invalid_config_values_fall_back_to_defaults():
+    """Test malformed design studio config cannot leak into stored contracts."""
+    req = CreateConversationRequest(
+        session_type="design_studio",
+        session_config={
+            "design_target": "desktop_app",
+            "studio_goal": "storyboard",
+            "approved_direction_id": 123,
+        },
+    )
+    assert req.session_config == {
+        "design_target": "web_app",
+        "studio_goal": "generate",
+        "approved_direction_id": None,
+    }
+
 def test_non_design_sessions_clear_session_config():
     """Test that non-design sessions do not retain design studio config."""
     req = CreateConversationRequest(

@@ -133,3 +133,39 @@ async def test_design_studio_session_config_persists_in_file_storage():
     )
     assert reset["session_type"] == "general"
     assert reset["session_config"] == {}
+
+def test_legacy_file_conversation_hydrates_design_studio_defaults():
+    conversation = storage._hydrate_conversation_dict({
+        "id": "legacy-design",
+        "user_id": "user_design",
+        "session_type": "design_studio",
+        "session_config": {
+            "design_target": "both",
+            "studio_goal": "compare",
+            "approved_direction_id": "  direction-b  ",
+        },
+    })
+
+    assert conversation["session_type"] == "design_studio"
+    assert conversation["session_config"] == {
+        "design_target": "mixed",
+        "studio_goal": "compare",
+        "approved_direction_id": "direction-b",
+    }
+    assert conversation["primary_artifacts"] == []
+    assert conversation["execution_mode"] == "disabled"
+
+def test_legacy_non_design_conversation_drops_stale_design_config():
+    conversation = storage._hydrate_conversation_dict({
+        "id": "legacy-general",
+        "user_id": "user_general",
+        "session_type": "visual_review",
+        "session_config": {
+            "design_target": "ios_app",
+            "studio_goal": "handoff",
+            "approved_direction_id": "direction-a",
+        },
+    })
+
+    assert conversation["session_type"] == "visual_review"
+    assert conversation["session_config"] == {}
