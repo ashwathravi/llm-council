@@ -865,7 +865,26 @@ async def test_send_message_stream_design_studio_emits_structured_stage_metadata
         yield {"model": "model-b", "response": "Direction B\nCalmer editorial layout."}
 
     async def mock_stage3_stream(*args, **kwargs):
-        yield "Ship Direction B."
+        yield """## Selected Direction
+Direction B is recommended.
+
+## Rationale
+- Calmer hierarchy is easier to scan.
+
+## Component Map
+- Workspace: comparison-first layout.
+
+## Handoff Notes
+Use existing workspace primitives.
+
+## State Notes
+- Empty state prompts users to generate variants.
+
+## Platform Constraints
+- Web keeps keyboard navigation visible.
+
+## Open Questions
+- Should saved variants ship in v1?"""
 
     app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
     try:
@@ -909,19 +928,39 @@ async def test_send_message_stream_design_studio_emits_structured_stage_metadata
                 "direction-b",
             ]
             assert stage1_design["comparison"]["status"] == "pending"
+            assert stage1_complete["metadata"]["session_config"] == conversation["session_config"]
 
             stage2_design = stage2_complete["metadata"]["design_studio"]
             assert stage2_design["comparison"]["status"] == "complete"
             assert stage2_design["comparison"]["ranked_directions"][0]["direction_id"] == "direction-b"
+            assert stage2_design["comparison"]["rubric_summaries"][0]["direction_id"] == "direction-b"
+            assert stage2_design["comparison"]["judge_results"][0]["ranked_directions"][0]["direction_id"] == "direction-b"
             assert stage2_design["selected_direction_id"] == "direction-b"
 
             stage3_design = stage3_complete["metadata"]["design_studio"]
             assert stage3_design["handoff"]["status"] == "ready"
             assert stage3_design["handoff"]["selected_direction_id"] == "direction-b"
+            assert [section["key"] for section in stage3_design["handoff"]["sections"]] == [
+                "selected_direction",
+                "rationale",
+                "component_map",
+                "handoff_notes",
+                "state_notes",
+                "platform_constraints",
+                "open_questions",
+            ]
+            assert stage3_design["handoff"]["state_notes"]["items"] == [
+                "Empty state prompts users to generate variants."
+            ]
+            assert stage3_design["handoff"]["platform_constraints"]["items"] == [
+                "Web keeps keyboard navigation visible."
+            ]
 
             saved_metadata = mock_add_assistant_message.await_args.args[5]
             assert saved_metadata["design_studio"]["selected_direction_id"] == "direction-b"
             assert saved_metadata["design_studio"]["handoff"]["status"] == "ready"
+            assert saved_metadata["session_type"] == "design_studio"
+            assert saved_metadata["session_config"] == conversation["session_config"]
     finally:
         app.dependency_overrides = {}
 
