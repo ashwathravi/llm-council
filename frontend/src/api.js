@@ -396,7 +396,9 @@ export const api = {
     // Filename is usually in Content-Disposition header, but we can guess or let browser handle it
     // Or we can try to extract it from headers if needed.
     // For simplicity, we just trigger click.
-    a.download = `conversation_${conversationId}.${format === 'md' ? 'md' : 'pdf'}`;
+    a.download = format === 'design_md'
+      ? 'DESIGN.md'
+      : `conversation_${conversationId}.${format === 'md' ? 'md' : 'pdf'}`;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);

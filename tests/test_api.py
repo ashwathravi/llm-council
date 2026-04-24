@@ -33,6 +33,71 @@ async def test_health_check_public(async_client):
     assert response.json()["status"] == "ok"
 
 @pytest.mark.asyncio
+async def test_export_design_handoff_markdown(async_client):
+    """Test Design Studio conversations can export a compact DESIGN.md handoff."""
+    conversation = {
+        "id": "conv-design-export",
+        "title": "Design Export",
+        "session_type": "design_studio",
+        "session_config": {
+            "design_target": "web_app",
+            "studio_goal": "iterate",
+            "approved_direction_id": "direction-a",
+        },
+        "messages": [
+            {
+                "role": "assistant",
+                "metadata": {
+                    "design_studio": {
+                        "candidate_directions": [
+                            {"id": "direction-a", "label": "Direction A", "summary": "Focused dashboard."}
+                        ],
+                        "handoff": {
+                            "status": "ready",
+                            "selected_direction_id": "direction-a",
+                            "selected_direction": {
+                                "label": "Selected Direction",
+                                "content": "Direction A is approved.",
+                                "items": [],
+                            },
+                        },
+                    }
+                },
+            }
+        ],
+    }
+
+    async def mock_get_conversation(*args, **kwargs):
+        return conversation
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", side_effect=mock_get_conversation):
+            response = await async_client.get("/api/conversations/conv-design-export/export?format=design_md")
+        assert response.status_code == 200
+        assert response.headers["content-disposition"] == "attachment; filename=DESIGN.md"
+        assert "# DESIGN.md" in response.text
+        assert "**Approved Direction:** direction-a" in response.text
+        assert "Direction A is approved." in response.text
+    finally:
+        app.dependency_overrides = {}
+
+@pytest.mark.asyncio
+async def test_export_design_handoff_rejects_non_design_session(async_client):
+    """Test DESIGN.md export remains scoped to Design Studio sessions."""
+    async def mock_get_conversation(*args, **kwargs):
+        return {"id": "conv-general", "session_type": "general", "messages": []}
+
+    app.dependency_overrides[auth.get_current_user_id] = lambda: "test_user"
+    try:
+        with patch("backend.storage.get_conversation", side_effect=mock_get_conversation):
+            response = await async_client.get("/api/conversations/conv-general/export?format=design_md")
+        assert response.status_code == 400
+        assert response.json()["detail"] == "DESIGN.md export is only available for Design Studio sessions."
+    finally:
+        app.dependency_overrides = {}
+
+@pytest.mark.asyncio
 async def test_list_models_mocked(async_client):
     """Test listing models uses the mocked OpenRouter auth."""
     mock_models = [

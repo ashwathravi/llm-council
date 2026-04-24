@@ -657,7 +657,7 @@ async def export_conversation(
     format: str = "md",
     user_id: str = Depends(auth.get_current_user_id)
 ):
-    """Export a conversation to Markdown or PDF."""
+    """Export a conversation to Markdown, PDF, or a compact Design Studio handoff."""
     conversation = await storage.get_conversation(conversation_id, user_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -669,6 +669,15 @@ async def export_conversation(
             media_type="text/markdown",
             headers={"Content-Disposition": f"attachment; filename=conversation_{conversation_id}.md"}
         )
+    elif format == "design_md":
+        if normalize_session_type(conversation.get("session_type")) != "design_studio":
+            raise HTTPException(status_code=400, detail="DESIGN.md export is only available for Design Studio sessions.")
+        content = export.export_design_handoff_to_markdown(conversation)
+        return StreamingResponse(
+            io.StringIO(content),
+            media_type="text/markdown",
+            headers={"Content-Disposition": "attachment; filename=DESIGN.md"}
+        )
     elif format == "pdf":
         content_bytes = export.export_to_pdf(conversation)
         return StreamingResponse(
@@ -677,7 +686,7 @@ async def export_conversation(
             headers={"Content-Disposition": f"attachment; filename=conversation_{conversation_id}.pdf"}
         )
     else:
-        raise HTTPException(status_code=400, detail="Invalid format. Use 'md' or 'pdf'.")
+        raise HTTPException(status_code=400, detail="Invalid format. Use 'md', 'design_md', or 'pdf'.")
 
 
 @app.get("/api/conversations", response_model=List[ConversationMetadata])
