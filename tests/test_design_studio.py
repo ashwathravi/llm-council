@@ -93,6 +93,14 @@ Direction B is the selected direction.
 ## Handoff Notes
 Use the existing card primitives and keep empty states explicit.
 
+## State Notes
+- Empty state should invite users to add their first variant.
+- Loading state should preserve the comparison frame.
+
+## Platform Constraints
+- Web needs keyboard-first navigation.
+- iOS should keep primary actions thumb-reachable.
+
 ## Open Questions
 - Should the workspace include saved variants in v1?""",
     }
@@ -118,6 +126,14 @@ Use the existing card primitives and keep empty states explicit.
         "Workspace: editorial layout with preview pane.",
     ]
     assert handoff["handoff_notes"]["content"] == "Use the existing card primitives and keep empty states explicit."
+    assert handoff["state_notes"]["items"] == [
+        "Empty state should invite users to add their first variant.",
+        "Loading state should preserve the comparison frame.",
+    ]
+    assert handoff["platform_constraints"]["items"] == [
+        "Web needs keyboard-first navigation.",
+        "iOS should keep primary actions thumb-reachable.",
+    ]
     assert handoff["open_questions"]["items"] == [
         "Should the workspace include saved variants in v1?",
     ]
@@ -126,6 +142,8 @@ Use the existing card primitives and keep empty states explicit.
         "rationale",
         "component_map",
         "handoff_notes",
+        "state_notes",
+        "platform_constraints",
         "open_questions",
     ]
 

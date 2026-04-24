@@ -46,6 +46,160 @@ def test_markdown_export():
     assert "## User" in md
     assert "Hello" in md
 
+def test_design_handoff_markdown_export_uses_approved_direction():
+    conversation = {
+        "id": "conv-design",
+        "title": "Checkout Redesign",
+        "created_at": "2026-04-24",
+        "session_type": "design_studio",
+        "session_config": {
+            "design_target": "mixed",
+            "studio_goal": "iterate",
+            "approved_direction_id": "direction-b",
+        },
+        "primary_artifacts": [
+            {"label": "checkout.png", "kind": "image", "status": "ready"},
+        ],
+        "messages": [
+            {
+                "role": "assistant",
+                "metadata": {
+                    "design_studio": {
+                        "candidate_directions": [
+                            {
+                                "id": "direction-b",
+                                "label": "Direction B",
+                                "source_model": "model-b",
+                                "summary": "Calmer checkout hierarchy.",
+                            }
+                        ],
+                        "comparison": {
+                            "ranked_directions": [
+                                {"direction_id": "direction-b", "rank": 1, "average_rank": 1.0}
+                            ]
+                        },
+                        "handoff": {
+                            "status": "ready",
+                            "selected_direction_id": "direction-b",
+                            "selected_direction_ref": {
+                                "id": "direction-b",
+                                "label": "Direction B",
+                                "source_model": "model-b",
+                                "summary": "Calmer checkout hierarchy.",
+                            },
+                            "selected_direction": {
+                                "label": "Selected Direction",
+                                "content": "Direction B is approved.",
+                                "items": [],
+                            },
+                            "rationale": {
+                                "label": "Rationale",
+                                "content": "- Stronger purchase clarity.",
+                                "items": ["Stronger purchase clarity."],
+                            },
+                            "component_map": {
+                                "label": "Component Map",
+                                "content": "- Order summary: sticky confirmation module.",
+                                "items": ["Order summary: sticky confirmation module."],
+                            },
+                            "state_notes": {
+                                "label": "State Notes",
+                                "content": "- Preserve totals during loading.",
+                                "items": ["Preserve totals during loading."],
+                            },
+                            "platform_constraints": {
+                                "label": "Platform Constraints",
+                                "content": "- iOS actions stay thumb-reachable.",
+                                "items": ["iOS actions stay thumb-reachable."],
+                            },
+                            "handoff_notes": {
+                                "label": "Handoff Notes",
+                                "content": "Use existing checkout primitives.",
+                                "items": [],
+                            },
+                            "open_questions": {
+                                "label": "Open Questions",
+                                "content": "- Confirm promo code placement.",
+                                "items": ["Confirm promo code placement."],
+                            },
+                        },
+                    },
+                },
+            }
+        ],
+    }
+
+    md = export.export_design_handoff_to_markdown(conversation)
+
+    assert md.startswith("# DESIGN.md")
+    assert "**Approved Direction:** direction-b" in md
+    assert "## Chosen Direction" in md
+    assert "Direction B is approved." in md
+    assert "## Why This Direction Won" in md
+    assert "- Stronger purchase clarity." in md
+    assert "## Component Map" in md
+    assert "## State Notes" in md
+    assert "- Preserve totals during loading." in md
+    assert "## Platform Constraints" in md
+    assert "- iOS actions stay thumb-reachable." in md
+    assert "## Decision Trace" in md
+
+def test_design_handoff_markdown_export_ignores_stale_selected_handoff():
+    conversation = {
+        "id": "conv-design-stale",
+        "title": "Checkout Redesign",
+        "session_type": "design_studio",
+        "session_config": {
+            "design_target": "web_app",
+            "studio_goal": "iterate",
+            "approved_direction_id": "direction-a",
+        },
+        "messages": [
+            {
+                "role": "assistant",
+                "metadata": {
+                    "design_studio": {
+                        "candidate_directions": [
+                            {
+                                "id": "direction-a",
+                                "label": "Direction A",
+                                "source_model": "model-a",
+                                "summary": "Dense operational dashboard.",
+                            },
+                            {
+                                "id": "direction-b",
+                                "label": "Direction B",
+                                "source_model": "model-b",
+                                "summary": "Calmer editorial layout.",
+                            },
+                        ],
+                        "handoff": {
+                            "status": "ready",
+                            "selected_direction_id": "direction-b",
+                            "selected_direction_ref": {
+                                "id": "direction-b",
+                                "label": "Direction B",
+                                "summary": "Calmer editorial layout.",
+                            },
+                            "selected_direction": {
+                                "label": "Selected Direction",
+                                "content": "Direction B is recommended.",
+                                "items": [],
+                            },
+                        },
+                    },
+                },
+            }
+        ],
+    }
+
+    md = export.export_design_handoff_to_markdown(conversation)
+
+    assert "**Approved Direction:** direction-a" in md
+    assert "Direction A" in md
+    assert "Dense operational dashboard." in md
+    assert "Direction B is recommended." not in md
+
 def test_export_empty_conversation():
     """Test exporting an empty conversation dictionary."""
     conv = {}

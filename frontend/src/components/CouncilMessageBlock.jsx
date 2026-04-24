@@ -331,7 +331,14 @@ const DiffTabContent = memo(({ diffData, rubricHotspots }) => {
 
 DiffTabContent.displayName = 'DiffTabContent';
 
-const DESIGN_HANDOFF_KEYS = ['rationale', 'component_map', 'handoff_notes', 'open_questions'];
+const DESIGN_HANDOFF_KEYS = [
+  'rationale',
+  'component_map',
+  'handoff_notes',
+  'state_notes',
+  'platform_constraints',
+  'open_questions',
+];
 
 const getHandoffSection = (handoff, key) => {
   const directSection = handoff?.[key];

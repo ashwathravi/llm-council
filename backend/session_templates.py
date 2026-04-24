@@ -6,7 +6,8 @@ from typing import Dict, List, Optional
 
 DESIGN_STUDIO_DELIVERABLE_INSTRUCTION = (
     "Use sections titled Candidate Directions, Comparison, Recommended Direction, "
-    "Selected Direction, Rationale, Component Map, Handoff Notes, and Open Questions. "
+    "Selected Direction, Rationale, Component Map, Handoff Notes, State Notes, "
+    "Platform Constraints, and Open Questions. "
     "Keep section headings exact so the app can render a structured design handoff."
 )
 

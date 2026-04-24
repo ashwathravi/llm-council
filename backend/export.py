@@ -14,6 +14,185 @@ from .session_context import (
     normalize_session_config,
 )
 
+
+DESIGN_MD_SECTION_KEYS = [
+    ("selected_direction", "Chosen Direction"),
+    ("rationale", "Why This Direction Won"),
+    ("component_map", "Component Map"),
+    ("state_notes", "State Notes"),
+    ("platform_constraints", "Platform Constraints"),
+    ("handoff_notes", "Implementation Notes"),
+    ("open_questions", "Open Questions"),
+]
+
+
+def _clean_markdown_value(value) -> str:
+    return str(value or "").strip()
+
+
+def _latest_design_studio_metadata(conversation: dict) -> dict:
+    for message in reversed(conversation.get("messages") or []):
+        if not isinstance(message, dict):
+            continue
+        metadata = message.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        design_studio = metadata.get("design_studio")
+        if isinstance(design_studio, dict):
+            return design_studio
+    return {}
+
+
+def _latest_ready_design_handoff(conversation: dict, approved_direction_id: str) -> dict:
+    fallback = {}
+    for message in reversed(conversation.get("messages") or []):
+        if not isinstance(message, dict):
+            continue
+        metadata = message.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        design_studio = metadata.get("design_studio")
+        if not isinstance(design_studio, dict):
+            continue
+        handoff = design_studio.get("handoff")
+        if not isinstance(handoff, dict) or handoff.get("status") != "ready":
+            continue
+        if not fallback:
+            fallback = handoff
+        if approved_direction_id and handoff.get("selected_direction_id") == approved_direction_id:
+            return handoff
+    return {} if approved_direction_id else fallback
+
+
+def _section_from_handoff(handoff: dict, key: str) -> dict:
+    direct = handoff.get(key)
+    if isinstance(direct, dict):
+        return {
+            "content": _clean_markdown_value(direct.get("content")),
+            "items": direct.get("items") if isinstance(direct.get("items"), list) else [],
+        }
+
+    for item in handoff.get("sections") or []:
+        if isinstance(item, dict) and item.get("key") == key:
+            return {
+                "content": _clean_markdown_value(item.get("content")),
+                "items": item.get("items") if isinstance(item.get("items"), list) else [],
+            }
+    return {"content": "", "items": []}
+
+
+def _append_design_section(lines: list[str], title: str, section: dict, fallback: str = "") -> None:
+    content = _clean_markdown_value(section.get("content")) or fallback
+    items = [
+        _clean_markdown_value(item)
+        for item in (section.get("items") or [])
+        if _clean_markdown_value(item)
+    ]
+
+    lines.append(f"## {title}\n\n")
+    if items:
+        for item in items:
+            lines.append(f"- {item}\n")
+        lines.append("\n")
+    elif content:
+        lines.append(f"{content}\n\n")
+    else:
+        lines.append("_Not captured._\n\n")
+
+
+def _selected_direction_ref(design_studio: dict, handoff: dict, approved_direction_id: str) -> dict:
+    if approved_direction_id:
+        for direction in design_studio.get("candidate_directions") or []:
+            if isinstance(direction, dict) and direction.get("id") == approved_direction_id:
+                return direction
+
+    selected_ref = handoff.get("selected_direction_ref")
+    if (
+        isinstance(selected_ref, dict)
+        and selected_ref
+        and (not approved_direction_id or selected_ref.get("id") == approved_direction_id)
+    ):
+        return selected_ref
+
+    for direction in design_studio.get("candidate_directions") or []:
+        if isinstance(direction, dict) and direction.get("id") == approved_direction_id:
+            return direction
+    return {}
+
+
+def export_design_handoff_to_markdown(conversation: dict) -> str:
+    """Export the approved Design Studio direction as a compact DESIGN.md handoff."""
+    if not isinstance(conversation, dict):
+        conversation = {}
+
+    session_config = normalize_session_config(
+        conversation.get("session_config"),
+        session_type=conversation.get("session_type"),
+    )
+    approved_direction_id = session_config.get("approved_direction_id") or ""
+    design_studio = _latest_design_studio_metadata(conversation)
+    handoff = _latest_ready_design_handoff(conversation, approved_direction_id)
+    selected_ref = _selected_direction_ref(design_studio, handoff, approved_direction_id)
+    selected_direction_id = approved_direction_id or handoff.get("selected_direction_id") or selected_ref.get("id") or ""
+
+    lines = []
+    lines.append("# DESIGN.md\n\n")
+    lines.append(f"**Conversation:** {conversation.get('title') or 'Conversation'}\n")
+    lines.append(f"**Generated From:** {conversation.get('id') or ''}\n")
+    lines.append(f"**Date:** {conversation.get('created_at') or ''}\n")
+    lines.append(f"**Design Target:** {get_design_target_label(session_config.get('design_target'))}\n")
+    lines.append(f"**Studio Goal:** {get_studio_goal_label(session_config.get('studio_goal'))}\n")
+    if selected_direction_id:
+        lines.append(f"**Approved Direction:** {selected_direction_id}\n")
+    lines.append("\n")
+
+    primary_artifacts = normalize_primary_artifacts(conversation.get("primary_artifacts"))
+    lines.append("## Source Artifacts\n\n")
+    if primary_artifacts:
+        for artifact in primary_artifacts:
+            label = artifact.get("label") or artifact.get("filename") or "Artifact"
+            kind = artifact.get("kind") or "artifact"
+            status = artifact.get("status") or "ready"
+            lines.append(f"- {label} ({kind}, {status})\n")
+        lines.append("\n")
+    else:
+        lines.append("_No primary artifacts attached._\n\n")
+
+    selected_summary = _clean_markdown_value(selected_ref.get("summary"))
+    if selected_ref:
+        ref_lines = []
+        label = _clean_markdown_value(selected_ref.get("label"))
+        source_model = _clean_markdown_value(selected_ref.get("source_model"))
+        if label:
+            ref_lines.append(label)
+        if source_model:
+            ref_lines.append(f"Source model: {source_model}")
+        if selected_summary:
+            ref_lines.append(selected_summary)
+        fallback_selected = "\n\n".join(ref_lines)
+    else:
+        fallback_selected = selected_direction_id
+
+    for key, title in DESIGN_MD_SECTION_KEYS:
+        fallback = fallback_selected if key == "selected_direction" else ""
+        _append_design_section(lines, title, _section_from_handoff(handoff, key), fallback=fallback)
+
+    comparison = design_studio.get("comparison") if isinstance(design_studio, dict) else {}
+    ranked_directions = comparison.get("ranked_directions") if isinstance(comparison, dict) else []
+    if isinstance(ranked_directions, list) and ranked_directions:
+        lines.append("## Decision Trace\n\n")
+        for item in ranked_directions[:5]:
+            if not isinstance(item, dict):
+                continue
+            direction_id = item.get("direction_id") or "direction"
+            rank = item.get("rank") or "n/a"
+            average_rank = item.get("average_rank")
+            suffix = f", average rank {average_rank}" if average_rank is not None else ""
+            lines.append(f"- Rank {rank}: {direction_id}{suffix}\n")
+        lines.append("\n")
+
+    return "".join(lines)
+
 def export_to_markdown(conversation: dict) -> str:
     """
     Export conversation to Markdown format.

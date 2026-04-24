@@ -4,7 +4,7 @@ import { api } from '../api';
 import { logger } from '@/lib/logger';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Download, Link as LinkIcon, FileText, Check } from "lucide-react";
+import { Download, Link as LinkIcon, FileText, Check, ClipboardList } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -45,6 +45,7 @@ const ChatHeader = memo(({
   const normalizedSessionConfig = normalizeSessionConfig(sessionType, sessionConfig);
   const specialistTemplateLabel = getSpecialistTemplateLabel(specialistTemplateId);
   const chairmanLabel = chairmanModel || 'Auto';
+  const canExportDesignHandoff = sessionType === 'design_studio' && Boolean(normalizedSessionConfig.approved_direction_id);
 
   const handleExport = async (format) => {
     if (!conversationId) return;
@@ -113,6 +114,17 @@ const ChatHeader = memo(({
             </TooltipTrigger>
             <TooltipContent>Export to Markdown</TooltipContent>
           </Tooltip>
+
+          {canExportDesignHandoff && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={() => handleExport('design_md')}>
+                  <ClipboardList className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Export DESIGN.md</TooltipContent>
+            </Tooltip>
+          )}
 
           <Tooltip>
             <TooltipTrigger asChild>

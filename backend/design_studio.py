@@ -29,6 +29,16 @@ HANDOFF_SECTION_SPECS = [
         "aliases": ("handoff notes", "handoff", "implementation notes"),
     },
     {
+        "key": "state_notes",
+        "label": "State Notes",
+        "aliases": ("state notes", "interaction states", "empty loading and error states", "states"),
+    },
+    {
+        "key": "platform_constraints",
+        "label": "Platform Constraints",
+        "aliases": ("platform constraints", "platform notes", "constraints"),
+    },
+    {
         "key": "open_questions",
         "label": "Open Questions",
         "aliases": ("open questions", "questions", "risks and open questions"),
@@ -84,7 +94,7 @@ def _split_markdown_sections(text: str) -> Dict[str, str]:
         heading_match = re.match(r"^\s{0,3}#{1,6}\s+(.+?)\s*$", line)
         bold_heading_match = re.match(r"^\s{0,3}\*\*(.+?)\*\*:?\s*$", line)
         plain_heading_match = re.match(
-            r"^\s{0,3}(Selected Direction|Recommended Direction|Recommendation|Rationale|Why This Direction|Decision Rationale|Component Map|Component Mapping|Implementation Map|Screens and Components|Handoff Notes|Handoff|Implementation Notes|Open Questions|Questions|Risks and Open Questions):?\s*$",
+            r"^\s{0,3}(Selected Direction|Recommended Direction|Recommendation|Rationale|Why This Direction|Decision Rationale|Component Map|Component Mapping|Implementation Map|Screens and Components|Handoff Notes|Handoff|Implementation Notes|State Notes|Interaction States|Empty Loading and Error States|States|Platform Constraints|Platform Notes|Constraints|Open Questions|Questions|Risks and Open Questions):?\s*$",
             line,
             flags=re.IGNORECASE,
         )
