@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Trophy, Crown, BrainCircuit, CheckCircle2, FileImage, GitCompareArrows, PauseCircle, RefreshCw, RotateCcw, Wrench, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { buildDesignStudioWorkspaceView, formatDesignStudioScore } from "@/lib/designStudioWorkspace";
 import VisualReviewPanel from './VisualReviewPanel';
 
 // ⚡ Bolt: Memoize markdown rendering to prevent re-parsing on every parent re-render
@@ -459,6 +460,161 @@ const DesignStudioHandoffPanel = memo(({ handoff }) => {
 HandoffSectionContent.displayName = 'HandoffSectionContent';
 DesignStudioHandoffPanel.displayName = 'DesignStudioHandoffPanel';
 
+const designWorkspaceStatusCopy = {
+  empty: 'Waiting for candidate directions',
+  single: 'One viable direction',
+  pending: 'Comparison pending',
+  complete: 'Comparison complete',
+};
+
+const DesignStudioWorkspacePanel = memo(({ designStudio, stage1Errors }) => {
+  const workspace = useMemo(
+    () => buildDesignStudioWorkspaceView(designStudio, stage1Errors),
+    [designStudio, stage1Errors]
+  );
+
+  if (!designStudio) return null;
+
+  const selectedLabel = workspace.selectedCard?.label || workspace.selectedDirectionId || 'No leading direction';
+
+  return (
+    <div className="mb-5 overflow-hidden rounded-xl border border-violet-500/20 bg-background">
+      <div className="border-b bg-muted/40 px-4 py-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <GitCompareArrows className="h-4 w-4 text-violet-600 dark:text-violet-300" />
+              Design Studio workspace
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Candidate directions, comparison status, and current selection.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="secondary" className="text-xs">
+              {designWorkspaceStatusCopy[workspace.status] || workspace.comparisonStatus}
+            </Badge>
+            <Badge variant="outline" className="text-xs">
+              {workspace.candidateCards.length} variants
+            </Badge>
+            {workspace.selectedCard && (
+              <Badge variant="outline" className="text-xs">
+                Leading: {selectedLabel}
+              </Badge>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-4 p-4">
+        {workspace.hasPartialFailures && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
+            <div className="mb-2 flex items-center gap-2 font-semibold">
+              <AlertTriangle className="h-4 w-4" />
+              Partial run
+            </div>
+            <div className="space-y-1">
+              {workspace.failedVariants.map((failure, index) => (
+                <div key={`${failure.model}-${index}`}>
+                  <span className="font-medium">{failure.model}:</span> {failure.error}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {workspace.status === 'empty' ? (
+          <div className="rounded-lg border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">
+            No candidate directions have arrived yet.
+          </div>
+        ) : (
+          <>
+            <div className="text-sm text-muted-foreground">
+              {workspace.hasComparison
+                ? workspace.status === 'complete'
+                  ? 'Aggregate scoring is available across the viable directions.'
+                  : 'Multiple viable directions are available; aggregate comparison has not completed yet.'
+                : 'Waiting for another viable direction before aggregate comparison.'}
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              {workspace.candidateCards.map((card) => (
+                <div
+                  key={card.id}
+                  className={cn(
+                    'rounded-lg border bg-card/60 p-4',
+                    card.isSelected && 'border-emerald-500/40 bg-emerald-500/10'
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm font-semibold">{card.label}</h3>
+                        {card.isSelected && (
+                          <Badge className="gap-1 border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                            <Trophy className="h-3 w-3" />
+                            Leading
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {card.sourceModel}
+                      </div>
+                    </div>
+                    {card.rank && (
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-bold">
+                        {card.rank}
+                      </div>
+                    )}
+                  </div>
+
+                  {card.summary ? (
+                    <p className="mt-3 text-sm text-foreground/85">{card.summary}</p>
+                  ) : (
+                    <p className="mt-3 text-sm text-muted-foreground">No summary captured for this variant.</p>
+                  )}
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Badge variant="outline">Avg rank {formatDesignStudioScore(card.averageRank)}</Badge>
+                    <Badge variant="outline">Score {formatDesignStudioScore(card.overallScore)}/5</Badge>
+                    {card.rankingsCount !== null && (
+                      <Badge variant="outline">{card.rankingsCount} evaluations</Badge>
+                    )}
+                    {card.totalWeight !== null && (
+                      <Badge variant="outline">Weight {formatDesignStudioScore(card.totalWeight)}</Badge>
+                    )}
+                  </div>
+
+                  {card.criteria.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {card.criteria.slice(0, 4).map((criterion, index) => {
+                        const criterionLabel = criterion.label || criterion.key || 'Criterion';
+                        return (
+                          <div
+                            key={`${card.id}-${criterionLabel}-${index}`}
+                            className={cn(
+                              'rounded-full border px-2.5 py-1 text-xs font-medium',
+                              rubricToneClass(criterion.average_score)
+                            )}
+                          >
+                            {criterionLabel} {formatDesignStudioScore(criterion.average_score)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+});
+
+DesignStudioWorkspacePanel.displayName = 'DesignStudioWorkspacePanel';
+
 const formatModelList = (models) => {
   if (!Array.isArray(models) || models.length === 0) {
     return 'None';
@@ -631,11 +787,13 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
     : EMPTY_LIST;
   const hasVisualReviewTab = metadata?.session_type === 'visual_review' && visualArtifacts.length > 0;
   const hasExecutionTab = Boolean(executionReport);
+  const designStudioMetadata = metadata?.session_type === 'design_studio'
+    ? metadata?.design_studio
+    : null;
   const designStudioHandoff = (
-    metadata?.session_type === 'design_studio' &&
-    metadata?.design_studio?.handoff?.status === 'ready'
+    designStudioMetadata?.handoff?.status === 'ready'
   )
-    ? metadata.design_studio.handoff
+    ? designStudioMetadata.handoff
     : null;
 
   const requestedCouncilModels = Array.isArray(metadata?.requested_council_models)
@@ -860,22 +1018,26 @@ const CouncilMessageBlock = ({ message, messageIndex, onRetryFailedModels }) => 
                       </Button>
                     </div>
                   )}
+                  <DesignStudioWorkspacePanel designStudio={designStudioMetadata} stage1Errors={stage1Errors} />
                   <DesignStudioHandoffPanel handoff={designStudioHandoff} />
                   <MarkdownContent content={stage3.response} />
                   {loading?.stage3 && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1" />}
                 </>
               ) : (
-                <div className="flex flex-col items-center justify-center p-8 text-muted-foreground gap-3">
-                  <BrainCircuit className="h-8 w-8 animate-pulse text-primary/50" />
-                  <p>The Council is deliberating...</p>
-                  <div className="flex gap-2 text-xs">
-                    <span className={cn('transition-opacity', loading?.stage1 ? 'opacity-100 font-medium text-foreground' : 'opacity-50')}>Collecting Thoughts</span>
-                    <span>→</span>
-                    <span className={cn('transition-opacity', loading?.stage2 ? 'opacity-100 font-medium text-foreground' : 'opacity-50')}>Debating</span>
-                    <span>→</span>
-                    <span className={cn('transition-opacity', loading?.stage3 ? 'opacity-100 font-medium text-foreground' : 'opacity-50')}>Synthesizing</span>
+                <>
+                  <DesignStudioWorkspacePanel designStudio={designStudioMetadata} stage1Errors={stage1Errors} />
+                  <div className="flex flex-col items-center justify-center p-8 text-muted-foreground gap-3">
+                    <BrainCircuit className="h-8 w-8 animate-pulse text-primary/50" />
+                    <p>The Council is deliberating...</p>
+                    <div className="flex gap-2 text-xs">
+                      <span className={cn('transition-opacity', loading?.stage1 ? 'opacity-100 font-medium text-foreground' : 'opacity-50')}>Collecting Thoughts</span>
+                      <span>→</span>
+                      <span className={cn('transition-opacity', loading?.stage2 ? 'opacity-100 font-medium text-foreground' : 'opacity-50')}>Debating</span>
+                      <span>→</span>
+                      <span className={cn('transition-opacity', loading?.stage3 ? 'opacity-100 font-medium text-foreground' : 'opacity-50')}>Synthesizing</span>
+                    </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </TabsContent>
